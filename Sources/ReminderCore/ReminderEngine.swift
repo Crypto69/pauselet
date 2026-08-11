@@ -118,6 +118,14 @@ public final class ReminderEngine: ObservableObject {
             events: Array(events.suffix(Self.maxStoredEvents))
         )
         try? store.save(data)
+        // Adopt the stored precision in memory. Dates are written at
+        // whole-second precision, so without this the in-memory values would
+        // differ from disk by a fraction of a second and comparisons against a
+        // reloaded reminder would fail.
+        let normalized = FileDataStore.normalizingDates(data)
+        reminders = normalized.reminders
+        settings = normalized.settings
+        events = normalized.events
     }
 
     // MARK: - CRUD

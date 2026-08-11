@@ -53,7 +53,9 @@ final class StoreTests: XCTestCase {
         try store.save(data)
         let loaded = try store.load()
 
-        XCTAssertEqual(loaded, data)
+        // Exact equality: dates are stored at whole-second precision precisely
+        // so a reloaded value compares equal to the one written.
+        XCTAssertEqual(loaded, FileDataStore.normalizingDates(data))
     }
 
     func testEachScheduleKindSurvivesRoundTrip() throws {

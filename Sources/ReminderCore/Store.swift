@@ -74,17 +74,54 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
     private static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        // Numeric timestamps rather than ISO8601: ISO8601 drops fractional
-        // seconds, which would round `lastFiredAt` on every save/load cycle and
-        // let interval schedules drift.
-        encoder.dateEncodingStrategy = .secondsSince1970
+        // Whole seconds since 1970.
+        //
+        // ISO8601 was tried first and silently truncated fractional seconds,
+        // which rounded `lastFiredAt` on every save/load cycle. Raw
+        // `.secondsSince1970` keeps the fraction but loses the low bits of the
+        // Double in the JSON round trip, so a reloaded `Reminder` compared
+        // unequal to the one just written even though both printed the same.
+        //
+        // Rounding to whole seconds makes the round trip exact. Nothing in a
+        // reminder app schedules on sub-second boundaries, so the precision is
+        // not worth the surprise.
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(date.timeIntervalSince1970.rounded())
+        }
         return encoder
     }
 
     private static func makeDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .secondsSince1970
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let seconds = try container.decode(Double.self)
+            return Date(timeIntervalSince1970: seconds.rounded())
+        }
         return decoder
+    }
+
+    /// Rounds every date in `data` to whole seconds, matching what a save/load
+    /// cycle produces. The engine stamps this on values it holds in memory so
+    /// they stay equal to what is on disk.
+    public static func normalizingDates(_ data: AppData) -> AppData {
+        var copy = data
+        copy.reminders = data.reminders.map { reminder in
+            var reminder = reminder
+            reminder.createdAt = reminder.createdAt.roundedToSecond
+            reminder.lastFiredAt = reminder.lastFiredAt?.roundedToSecond
+            reminder.lastAcknowledgedAt = reminder.lastAcknowledgedAt?.roundedToSecond
+            reminder.snoozedUntil = reminder.snoozedUntil?.roundedToSecond
+            return reminder
+        }
+        copy.events = data.events.map { event in
+            var event = event
+            event.date = event.date.roundedToSecond
+            return event
+        }
+        copy.settings.pausedUntil = data.settings.pausedUntil?.roundedToSecond
+        return copy
     }
 
     public func load() throws -> AppData {
@@ -102,7 +139,7 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
 
     public func save(_ data: AppData) throws {
         try queue.sync {
-            let encoded = try Self.makeEncoder().encode(data)
+            let encoded = try Self.makeEncoder().encode(Self.normalizingDates(data))
             let directory = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(
                 at: directory, withIntermediateDirectories: true
@@ -201,5 +238,12 @@ private extension Reminder {
             activityDurationSeconds: activityDurationSeconds,
             createdAt: createdAt
         )
+    }
+}
+
+extension Date {
+    /// The date rounded to a whole second, matching the on-disk precision.
+    var roundedToSecond: Date {
+        Date(timeIntervalSince1970: timeIntervalSince1970.rounded())
     }
 }
