@@ -210,7 +210,7 @@ struct PreferencesTab: View {
                 }
 
                 if engine.settings.quietHours.isEnabled {
-                    HStack(spacing: 4) {
+                    HStack(alignment: .center, spacing: 4) {
                         Text("From")
                         HelpBadge(
                             text: "The quiet window. It may run past midnight — "
@@ -222,6 +222,17 @@ struct PreferencesTab: View {
                             minute: binding(\.quietHours.startMinute)
                         )
                         Text("to")
+                            .foregroundStyle(.secondary)
+                            // Breathing room either side: without it the word
+                            // sits hard against the digits and the two times
+                            // read as one run of numbers.
+                            .padding(.horizontal, 10)
+                            .alignmentGuide(VerticalAlignment.center) { d in
+                                // Match the TimeField's optical centre, which
+                                // sits below this label's own because of the
+                                // stepper correction inside it.
+                                d[VerticalAlignment.center] - 5
+                            }
                         TimeField(
                             hour: binding(\.quietHours.endHour),
                             minute: binding(\.quietHours.endMinute)
@@ -367,13 +378,21 @@ struct TimeComponentField: View {
     @State private var text: String = ""
     @FocusState private var isFocused: Bool
 
+    /// Corrects the stepper's built-in label spacing so its arrows sit level
+    /// with the digits beside them.
+    private static let stepperVerticalCorrection: CGFloat = 11
+
     var body: some View {
-        HStack(spacing: 2) {
+        // A Stepper wrapping an EmptyView still reserves space for that label
+        // above its arrows, which pushed it up off the digits. Giving the
+        // stepper a fixed size and centring both in a shared-height row is what
+        // actually lines them up.
+        HStack(alignment: .center, spacing: 3) {
             TextField("", text: $text)
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.center)
                 .monospacedDigit()
-                .frame(width: 40)
+                .frame(width: 42)
                 .focused($isFocused)
                 .accessibilityLabel(label)
                 .onSubmit(commit)
@@ -383,11 +402,15 @@ struct TimeComponentField: View {
                     if !focused { commit() }
                 }
 
-            Stepper(value: $value, in: range) {
-                EmptyView()
-            }
-            .labelsHidden()
-            .accessibilityLabel(label)
+            // A labelless Stepper still reserves the space its label would
+            // have taken above the arrows, so it renders ~11pt higher than the
+            // field beside it. Measured against a screenshot and corrected
+            // here, since no alignment guide reaches inside the control.
+            Stepper("", value: $value, in: range)
+                .labelsHidden()
+                .fixedSize()
+                .offset(y: Self.stepperVerticalCorrection)
+                .accessibilityLabel(label)
         }
         .onAppear { text = formatted }
         .onChange(of: value) { _ in
