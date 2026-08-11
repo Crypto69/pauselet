@@ -74,6 +74,15 @@ not a guess.
   <img src="docs/images/editor-new.png" width="440" alt="New Reminder sheet with fields for title and message, a grid of icons, a Repeating/Daily/Weekly schedule picker, and Subtle/Normal/Important/Critical priority options.">
 </p>
 
+## Every setting explains itself
+
+Each preference has an (i) button. They open on a click rather than a hover, so
+they work with head-pointer, switch and keyboard input.
+
+<p align="center">
+  <img src="docs/images/preferences.png" width="620" alt="Preferences tab showing Quiet Hours and Behaviour settings, each row with a small circled i help button beside its label.">
+</p>
+
 ---
 
 ## Priority tiers
