@@ -2,18 +2,26 @@
   <!--
     Menu bar template icon.
 
-    A deliberately simplified version of the app icon: at 18pt the seated figure
-    turns to mush, so this keeps only the open cycle ring plus a single dot for
-    the person. Pure black on transparent — macOS treats a "Template" image as a
-    mask and tints it for light or dark menu bars, so any colour here is ignored.
+    A simplified version of the app icon: at 18pt the tick and the coloured
+    segments turn to mush, so this keeps only the open clock ring and the tick,
+    which together still read as "recurring reminder".
+
+    Pure black on transparent — macOS treats a "Template" image as a mask and
+    tints it for light or dark menu bars, so any colour here is ignored.
 
     Stroke weights are heavier than the app icon in relative terms, because thin
     strokes disappear at menu bar size.
   -->
-  <g fill="none" stroke="#000000" stroke-linecap="round" stroke-width="92">
-    <!-- Open cycle ring, gap at the top right. -->
-    <path d="M 512 190 A 322 322 0 1 0 740 285"/>
+  <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round">
+    <!--
+      Clock ring, open on the right where the app icon carries its coloured
+      priority segments.
+    -->
+    <path d="M 690 236
+             A 330 330 0 1 0 690 788"
+          stroke-width="104"/>
+
+    <!-- The tick, sized to stay legible when the icon is only 18pt across. -->
+    <path d="M 380 508 L 476 604 L 660 400" stroke-width="104"/>
   </g>
-  <!-- The person, reduced to a single centred dot. -->
-  <circle cx="512" cy="512" r="104" fill="#000000"/>
 </svg>

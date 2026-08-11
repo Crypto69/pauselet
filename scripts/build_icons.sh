@@ -9,18 +9,26 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-SVG="Resources/icon.svg"
 ICONSET="build/AppIcon.iconset"
 OUT="Sources/ReminderApp/Resources/AppIcon.icns"
+MASTER="Resources/icon-master.png"
+
+# Shape the artwork into a rounded, correctly-inset 1024px master.
+python3 scripts/prepare_icon.py Resources/icon-source.png "$MASTER"
 
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET" "$(dirname "$OUT")"
 
-# The sizes macOS expects in an iconset, each at 1x and 2x.
+# The sizes macOS expects in an iconset, each at 1x and 2x, downsampled from
+# the master with Lanczos so small sizes stay sharp.
 for size in 16 32 128 256 512; do
   double=$((size * 2))
-  swift scripts/rasterize.swift "$SVG" "$ICONSET/icon_${size}x${size}.png" "$size"
-  swift scripts/rasterize.swift "$SVG" "$ICONSET/icon_${size}x${size}@2x.png" "$double"
+  python3 -c "
+from PIL import Image
+m = Image.open('$MASTER')
+m.resize(($size, $size), Image.LANCZOS).save('$ICONSET/icon_${size}x${size}.png')
+m.resize(($double, $double), Image.LANCZOS).save('$ICONSET/icon_${size}x${size}@2x.png')
+"
 done
 
 iconutil --convert icns "$ICONSET" --output "$OUT"

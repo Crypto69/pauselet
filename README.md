@@ -1,4 +1,20 @@
-# Reminder
+<p align="center">
+  <img src="docs/images/logo.png" width="260" alt="Reminder logo: a clock face made of a white ring that breaks into green, blue, orange and red segments, with a tick at its centre.">
+</p>
+
+<h1 align="center">Reminder</h1>
+
+<p align="center">
+  <em>Recurring reminders for macOS, where you choose how loudly each one interrupts you.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Crypto69/reminder/releases/latest"><img src="https://img.shields.io/github/v/release/Crypto69/reminder?color=2e8c93&label=download" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-2e8c93" alt="macOS 13 or later">
+  <img src="https://img.shields.io/badge/licence-MIT-2e8c93" alt="MIT licence">
+</p>
+
+---
 
 A macOS menu bar app for recurring activity reminders, where how *loudly* a
 reminder interrupts you is something you choose per reminder.
