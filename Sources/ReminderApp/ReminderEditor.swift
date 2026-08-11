@@ -227,7 +227,10 @@ struct ReminderEditor: View {
             }
             .padding(12)
         }
-        .frame(width: 460, height: 620)
+        // Tall enough that the whole form — including all four priority options,
+        // which are the point of the app — is visible without scrolling on a
+        // typical display. The ScrollView still handles smaller screens.
+        .frame(width: 470, height: 760)
     }
 
     private func save() {

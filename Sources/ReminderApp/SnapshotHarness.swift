@@ -126,10 +126,20 @@ enum SnapshotHarness {
             )
         }
 
+        // Editors render at their real sheet size. The form scrolls in the app,
+        // so the snapshot shows the top of it, which is the part worth showing.
         snapshot(
             ReminderEditor(reminder: engine.reminders.first) { _ in },
-            size: NSSize(width: 460, height: 620),
+            size: NSSize(width: 470, height: 760),
             named: "editor",
+            into: directory
+        )
+
+        // The blank editor: what you see when adding a reminder from scratch.
+        snapshot(
+            ReminderEditor(reminder: nil) { _ in },
+            size: NSSize(width: 470, height: 760),
+            named: "editor-new",
             into: directory
         )
     }
@@ -154,7 +164,9 @@ enum SnapshotHarness {
             defer: false
         )
         window.contentView = hosting
-        window.backgroundColor = .clear
+        // Opaque window background: a clear one leaves white bands where the
+        // view does not paint, which looks like a rendering fault in a README.
+        window.backgroundColor = .windowBackgroundColor
         window.orderFrontRegardless()
 
         // Give SwiftUI a turn of the run loop to lay out before snapshotting;

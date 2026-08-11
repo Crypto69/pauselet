@@ -13,7 +13,6 @@ final class NotificationPresenter: NSObject {
     weak var engine: ReminderEngine?
 
     private let center = UNUserNotificationCenter.current()
-    private var isAuthorized = false
 
     /// Identifiers used to wire notification buttons back to reminders.
     private enum Action {
@@ -28,6 +27,19 @@ final class NotificationPresenter: NSObject {
     /// the reminder some other way rather than dropping it silently.
     var fallbackPresenter: ((Reminder, ReminderCore.Settings) -> Void)?
 
+    /// Whether the system will currently deliver notifications for us.
+    ///
+    /// Starts as `.unknown` rather than "no": on first launch the authorization
+    /// request has not come back yet, and treating that as a refusal would send
+    /// every early reminder down the fallback path.
+    private enum Availability {
+        case unknown
+        case available
+        case unavailable
+    }
+
+    private var availability: Availability = .unknown
+
     func configure() {
         center.delegate = self
         registerCategories()
@@ -35,12 +47,14 @@ final class NotificationPresenter: NSObject {
     }
 
     private func requestAuthorization() {
+        // Read the stored decision first. If the user has already answered, this
+        // settles it without waiting; if not, the request below prompts them.
+        refreshAuthorizationStatus()
         center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
             Task { @MainActor in
-                self?.isAuthorized = granted
+                self?.availability = granted ? .available : .unavailable
             }
         }
-        refreshAuthorizationStatus()
     }
 
     /// Re-reads the current authorization. System notifications are unavailable
@@ -49,10 +63,21 @@ final class NotificationPresenter: NSObject {
     /// this and fall back to the app's own windows when it is not available.
     func refreshAuthorizationStatus() {
         center.getNotificationSettings { [weak self] settings in
-            let usable = settings.authorizationStatus == .authorized
-                || settings.authorizationStatus == .provisional
+            let availability: Availability
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                availability = .available
+            case .denied:
+                availability = .unavailable
+            case .notDetermined:
+                // Still waiting on the user; leave the current value alone so a
+                // pending prompt does not look like a refusal.
+                return
+            @unknown default:
+                availability = .unavailable
+            }
             Task { @MainActor in
-                self?.isAuthorized = usable
+                self?.availability = availability
             }
         }
     }
@@ -86,7 +111,7 @@ final class NotificationPresenter: NSObject {
     /// handed to `fallbackPresenter` instead. Missing a pressure-relief prompt
     /// because of a permissions technicality is not an acceptable failure.
     func post(_ reminder: Reminder, settings: ReminderCore.Settings) {
-        guard isAuthorized else {
+        if availability == .unavailable {
             fallbackPresenter?(reminder, settings)
             return
         }
@@ -121,13 +146,40 @@ final class NotificationPresenter: NSObject {
             trigger: nil
         )
         center.add(request) { [weak self] error in
-            guard error != nil else { return }
-            // Delivery failed after we thought we were authorized; show it
-            // ourselves rather than losing the reminder.
             Task { @MainActor in
-                self?.isAuthorized = false
-                self?.fallbackPresenter?(reminder, settings)
+                guard let self else { return }
+                if error != nil {
+                    // Delivery failed; show it ourselves rather than losing it.
+                    self.availability = .unavailable
+                    self.fallbackPresenter?(reminder, settings)
+                    return
+                }
+                // Accepted by the system. Confirm it was actually delivered
+                // rather than silently swallowed, because a reminder that no
+                // one sees is the one failure this app cannot afford.
+                self.confirmDelivery(of: request.identifier, reminder: reminder, settings: settings)
             }
+        }
+    }
+
+    /// Checks that a posted notification really reached the user, and shows the
+    /// in-app card if it did not.
+    private func confirmDelivery(
+        of identifier: String, reminder: Reminder, settings: ReminderCore.Settings
+    ) {
+        Task { @MainActor [weak self] in
+            // A moment's grace: the system registers a delivered notification
+            // slightly after accepting it, and checking too eagerly would report
+            // a false failure and show the card on top of a real banner.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self else { return }
+
+            let delivered = await self.center.deliveredNotifications()
+            let landed = delivered.contains { $0.request.identifier == identifier }
+            guard !landed else { return }
+
+            self.availability = .unavailable
+            self.fallbackPresenter?(reminder, settings)
         }
     }
 
