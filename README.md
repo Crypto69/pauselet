@@ -106,7 +106,9 @@ All of them can be edited or deleted, and you can add your own.
 
 ## Other behaviour
 
-- **Quiet hours**, with an option to let critical reminders through anyway
+- **Quiet hours** — set them in Preferences → Quiet Hours. Switching them on
+  reveals the time range and a "Still show critical reminders" option, which is
+  on by default so pressure-relief prompts are not silenced overnight
 - **Pause** for 30/60/120 minutes or indefinitely; resuming re-anchors the
   intervals so you do not get a backlog dumped on you at once
 - **Snooze**, which is authoritative: it will bring a reminder back even if the
