@@ -125,7 +125,7 @@ Plain JSON — readable, editable, backup-able, and yours.
 ```
 Sources/ReminderCore/   Models, scheduler, storage, engine (no UI, fully tested)
 Sources/ReminderApp/    Menu bar, overlays, notifications, settings
-Tests/                  64 tests against the core
+Tests/                  78 tests against the core
 scripts/                Build, icon generation, rasterizer
 ```
 
