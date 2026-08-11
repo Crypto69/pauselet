@@ -83,6 +83,28 @@ To sign for distribution to other machines:
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/build_app.sh
 ```
 
+### Notifications and notarization
+
+macOS will not grant notification authorization to an app it does not fully
+trust, so on an unnotarized build the Normal and Important tiers fall back to
+the app's own on-screen card. Everything still works — the reminder is never
+dropped — but they are not true system notifications.
+
+To get real notifications, notarize the app once:
+
+```sh
+xcrun notarytool store-credentials "reminder-notary" \
+  --apple-id "you@example.com" --team-id "TEAMID" \
+  --password "app-specific-password"
+
+./scripts/notarize.sh
+```
+
+An app-specific password is created at
+[appleid.apple.com](https://appleid.apple.com) under "App-Specific Passwords".
+Subtle and Critical reminders use the app's own windows and are unaffected
+either way.
+
 ### Tests
 
 ```sh
@@ -125,7 +147,7 @@ Plain JSON — readable, editable, backup-able, and yours.
 ```
 Sources/ReminderCore/   Models, scheduler, storage, engine (no UI, fully tested)
 Sources/ReminderApp/    Menu bar, overlays, notifications, settings
-Tests/                  78 tests against the core
+Tests/                  83 tests against the core
 scripts/                Build, icon generation, rasterizer
 ```
 
