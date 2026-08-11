@@ -94,6 +94,13 @@ public final class ReminderEngine: ObservableObject {
             reminders = data.reminders
             settings = data.settings
             events = data.events
+            // A first launch loads the starter set from a file that does not
+            // exist yet. Write it out straight away, so the reminders' timing
+            // anchors survive a restart instead of being reseeded to "now"
+            // every time the app opens.
+            if !store.hasPersistedData {
+                persist()
+            }
         } catch {
             // A corrupt or unreadable file must not prevent the app from
             // starting; fall back to defaults rather than crashing on launch.

@@ -28,6 +28,10 @@ public struct AppData: Codable, Equatable, Sendable {
 public protocol DataStoring: AnyObject {
     func load() throws -> AppData
     func save(_ data: AppData) throws
+    /// Whether anything has actually been written yet. Lets the engine tell a
+    /// genuine first launch from a returning one, so it can persist the starter
+    /// set once rather than reseeding timing anchors on every launch.
+    var hasPersistedData: Bool { get }
 }
 
 /// Persists `AppData` as pretty-printed JSON in a single local file.
@@ -55,6 +59,12 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
+    }
+
+    public var hasPersistedData: Bool {
+        guard let size = try? FileManager.default
+            .attributesOfItem(atPath: fileURL.path)[.size] as? Int else { return false }
+        return size > 0
     }
 
     public convenience init(fileManager: FileManager = .default) throws {
@@ -112,6 +122,8 @@ public final class InMemoryDataStore: DataStoring, @unchecked Sendable {
     public init(data: AppData = AppData()) {
         self.data = data
     }
+
+    public var hasPersistedData: Bool { saveCount > 0 }
 
     public func load() throws -> AppData { data }
 

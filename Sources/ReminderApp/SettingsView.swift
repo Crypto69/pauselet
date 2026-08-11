@@ -1,0 +1,422 @@
+import SwiftUI
+import ReminderCore
+
+/// The main window: manage reminders, global preferences, and history.
+struct SettingsView: View {
+    @EnvironmentObject private var engine: ReminderEngine
+    @State private var selection: Tab = .reminders
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case reminders, preferences, history
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .reminders: return "Reminders"
+            case .preferences: return "Preferences"
+            case .history: return "History"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .reminders: return "bell.badge"
+            case .preferences: return "gearshape"
+            case .history: return "chart.bar"
+            }
+        }
+    }
+
+    var body: some View {
+        TabView(selection: $selection) {
+            ForEach(Tab.allCases) { tab in
+                Group {
+                    switch tab {
+                    case .reminders: RemindersTab()
+                    case .preferences: PreferencesTab()
+                    case .history: HistoryTab()
+                    }
+                }
+                .tabItem { Label(tab.title, systemImage: tab.symbol) }
+                .tag(tab)
+            }
+        }
+        .padding(.top, 6)
+        .frame(minWidth: 640, minHeight: 460)
+    }
+}
+
+// MARK: - Reminders
+
+struct RemindersTab: View {
+    @EnvironmentObject private var engine: ReminderEngine
+    @State private var editing: Reminder?
+    @State private var isCreating = false
+    @State private var pendingDeletion: Reminder?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if engine.reminders.isEmpty {
+                emptyState
+            } else {
+                List {
+                    ForEach(engine.reminders) { reminder in
+                        ReminderEditRow(reminder: reminder)
+                            .contentShape(Rectangle())
+                            .onTapGesture { editing = reminder }
+                            .contextMenu {
+                                Button("Edit…") { editing = reminder }
+                                Button("Duplicate") { duplicate(reminder) }
+                                Divider()
+                                Button("Delete", role: .destructive) {
+                                    pendingDeletion = reminder
+                                }
+                            }
+                    }
+                }
+                .listStyle(.inset)
+            }
+
+            Divider()
+
+            HStack {
+                Button {
+                    isCreating = true
+                } label: {
+                    Label("Add Reminder", systemImage: "plus")
+                }
+
+                Spacer()
+
+                Text("\(engine.reminders.filter(\.isEnabled).count) active")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+        }
+        .sheet(item: $editing) { reminder in
+            ReminderEditor(reminder: reminder) { updated in
+                engine.update(updated)
+            }
+        }
+        .sheet(isPresented: $isCreating) {
+            ReminderEditor(reminder: nil) { created in
+                engine.add(created)
+            }
+        }
+        // A confirmation step, because deleting a reminder silently loses its
+        // history as well as the reminder itself.
+        .alert(
+            "Delete \(pendingDeletion?.title ?? "reminder")?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            )
+        ) {
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+            Button("Delete", role: .destructive) {
+                if let pendingDeletion { engine.delete(id: pendingDeletion.id) }
+                pendingDeletion = nil
+            }
+        } message: {
+            Text("This cannot be undone.")
+        }
+    }
+
+    private func duplicate(_ reminder: Reminder) {
+        var copy = reminder
+        copy.id = UUID()
+        copy.title = "\(reminder.title) copy"
+        copy.lastFiredAt = nil
+        copy.lastAcknowledgedAt = nil
+        copy.snoozedUntil = nil
+        engine.add(copy)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "bell.slash")
+                .font(.system(size: 38))
+                .foregroundStyle(.tertiary)
+            Text("No reminders")
+                .font(.headline)
+            Text("Add a reminder to get started.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct ReminderEditRow: View {
+    @EnvironmentObject private var engine: ReminderEngine
+    let reminder: Reminder
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: reminder.symbolName)
+                .font(.system(size: 17))
+                .frame(width: 26)
+                .foregroundStyle(reminder.isEnabled ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(reminder.title)
+                    .font(.system(size: 13, weight: .medium))
+                HStack(spacing: 6) {
+                    Text(reminder.schedule.summary)
+                    Text("·")
+                    HStack(spacing: 4) {
+                        PriorityDot(priority: reminder.priority)
+                        Text(reminder.priority.displayName)
+                    }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle(
+                "",
+                isOn: Binding(
+                    get: { reminder.isEnabled },
+                    set: { engine.setEnabled($0, for: reminder.id) }
+                )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 5)
+    }
+}
+
+// MARK: - Preferences
+
+struct PreferencesTab: View {
+    @EnvironmentObject private var engine: ReminderEngine
+
+    var body: some View {
+        Form {
+            Section("Quiet Hours") {
+                Toggle(
+                    "Enable quiet hours",
+                    isOn: binding(\.quietHours.isEnabled)
+                )
+
+                if engine.settings.quietHours.isEnabled {
+                    HStack {
+                        Text("From")
+                        TimeField(
+                            hour: binding(\.quietHours.startHour),
+                            minute: binding(\.quietHours.startMinute)
+                        )
+                        Text("to")
+                        TimeField(
+                            hour: binding(\.quietHours.endHour),
+                            minute: binding(\.quietHours.endMinute)
+                        )
+                    }
+
+                    Toggle(
+                        "Still show critical reminders",
+                        isOn: binding(\.quietHours.allowsCritical)
+                    )
+                    .help(
+                        "Health-critical reminders such as pressure relief can "
+                            + "still appear during quiet hours."
+                    )
+                }
+            }
+
+            Section("Behaviour") {
+                Stepper(
+                    "Snooze length: \(engine.settings.snoozeMinutes) min",
+                    value: binding(\.snoozeMinutes),
+                    in: 1...120
+                )
+                Stepper(
+                    "Subtle reminders stay for \(engine.settings.subtleDisplaySeconds)s",
+                    value: binding(\.subtleDisplaySeconds),
+                    in: 2...60
+                )
+                Toggle("Play sounds", isOn: binding(\.soundEnabled))
+                Toggle(
+                    "Show countdown in menu bar",
+                    isOn: binding(\.showsNextReminderInMenuBar)
+                )
+            }
+
+            Section("Startup") {
+                Toggle("Launch at login", isOn: launchAtLoginBinding)
+                    .help("Start Reminder automatically when you log in.")
+            }
+
+            Section("Data") {
+                LabeledContent("Stored at") {
+                    Text(storageDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Text("All reminders and history stay on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var storageDescription: String {
+        (try? FileDataStore.defaultFileURL().path) ?? "Application Support/Reminder"
+    }
+
+    /// Writes straight through to the engine so changes persist immediately.
+    private func binding<Value>(
+        _ keyPath: WritableKeyPath<ReminderCore.Settings, Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: { engine.settings[keyPath: keyPath] },
+            set: { newValue in
+                var settings = engine.settings
+                settings[keyPath: keyPath] = newValue
+                engine.updateSettings(settings)
+            }
+        )
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { engine.settings.launchAtLogin },
+            set: { newValue in
+                var settings = engine.settings
+                settings.launchAtLogin = newValue
+                engine.updateSettings(settings)
+                LaunchAtLogin.set(enabled: newValue)
+            }
+        )
+    }
+}
+
+/// Two steppers for an hour and minute, kept compact enough to sit inline.
+struct TimeField: View {
+    @Binding var hour: Int
+    @Binding var minute: Int
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Stepper(value: $hour, in: 0...23) {
+                Text(String(format: "%02d", hour)).monospacedDigit()
+            }
+            .labelsHidden()
+            Text(String(format: "%02d", hour)).monospacedDigit().frame(width: 24)
+            Text(":")
+            Text(String(format: "%02d", minute)).monospacedDigit().frame(width: 24)
+            Stepper(value: $minute, in: 0...59, step: 5) {
+                Text(String(format: "%02d", minute)).monospacedDigit()
+            }
+            .labelsHidden()
+        }
+    }
+}
+
+// MARK: - History
+
+struct HistoryTab: View {
+    @EnvironmentObject private var engine: ReminderEngine
+    @State private var windowDays = 7
+
+    private var since: Date {
+        Calendar.current.date(byAdding: .day, value: -windowDays, to: Date()) ?? Date()
+    }
+
+    private var recentEvents: [ReminderEvent] {
+        engine.events.filter { $0.date >= since }.sorted { $0.date > $1.date }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Picker("Window", selection: $windowDays) {
+                    Text("24 hours").tag(1)
+                    Text("7 days").tag(7)
+                    Text("30 days").tag(30)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 280)
+
+                Spacer()
+
+                Button("Clear History") { engine.clearHistory() }
+                    .disabled(engine.events.isEmpty)
+            }
+            .padding(12)
+
+            Divider()
+
+            if recentEvents.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "chart.bar")
+                        .font(.system(size: 34))
+                        .foregroundStyle(.tertiary)
+                    Text("No activity in this period")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    Section("Adherence") {
+                        ForEach(engine.reminders) { reminder in
+                            if let adherence = engine.adherence(
+                                for: reminder.id, since: since
+                            ) {
+                                AdherenceRow(reminder: reminder, adherence: adherence)
+                            }
+                        }
+                    }
+
+                    Section("Recent") {
+                        ForEach(recentEvents.prefix(200)) { event in
+                            HStack {
+                                Text(event.reminderTitle)
+                                    .font(.system(size: 12))
+                                Spacer()
+                                Text(event.outcome.rawValue.capitalized)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                Text(event.date, style: .relative)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                    .frame(width: 96, alignment: .trailing)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.inset)
+            }
+        }
+    }
+}
+
+struct AdherenceRow: View {
+    let reminder: Reminder
+    let adherence: Double
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: reminder.symbolName)
+                .frame(width: 20)
+                .foregroundStyle(.tint)
+            Text(reminder.title)
+                .font(.system(size: 12))
+            Spacer()
+            ProgressView(value: adherence)
+                .frame(width: 120)
+            Text("\(Int(adherence * 100))%")
+                .font(.system(size: 11, weight: .medium))
+                .monospacedDigit()
+                .frame(width: 40, alignment: .trailing)
+        }
+    }
+}

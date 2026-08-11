@@ -38,7 +38,7 @@ final class OverlayPanel: NSPanel {
 /// Owns every on-screen reminder surface and routes each priority tier to the
 /// right presentation.
 @MainActor
-final class OverlayPresenter: NSObject, ReminderPresenting {
+final class OverlayPresenter: NSObject, @preconcurrency ReminderPresenting {
     /// Critical overlays, one per display so the prompt cannot be missed.
     private var criticalPanels: [OverlayPanel] = []
     private var subtlePanel: OverlayPanel?
@@ -53,7 +53,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         super.init()
     }
 
-    func present(_ reminder: Reminder, settings: Settings) {
+    func present(_ reminder: Reminder, settings: ReminderCore.Settings) {
         switch reminder.priority {
         case .subtle:
             showSubtle(reminder, settings: settings)
@@ -71,7 +71,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
     // MARK: - Critical takeover
 
-    private func showCritical(_ reminder: Reminder, settings: Settings) {
+    private func showCritical(_ reminder: Reminder, settings: ReminderCore.Settings) {
         closeCritical()
 
         if settings.soundEnabled {
@@ -109,7 +109,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
     // MARK: - Subtle hint
 
-    private func showSubtle(_ reminder: Reminder, settings: Settings) {
+    private func showSubtle(_ reminder: Reminder, settings: ReminderCore.Settings) {
         closeSubtle()
 
         guard let screen = NSScreen.main else { return }

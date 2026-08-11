@@ -116,6 +116,35 @@ final class StoreTests: XCTestCase {
         XCTAssertFalse(loaded.reminders.isEmpty)
     }
 
+    /// A first launch must write the starter set to disk immediately. Without
+    /// this the file stays absent until the user changes something, so every
+    /// relaunch reseeds `createdAt` and the interval anchors slide forward.
+    @MainActor
+    func testFirstLaunchPersistsStarterSetSoAnchorsSurviveRelaunch() throws {
+        let store = makeStore()
+        XCTAssertFalse(store.hasPersistedData)
+
+        let first = ReminderEngine(store: store)
+        XCTAssertTrue(
+            store.hasPersistedData,
+            "Starting with no data file should write one"
+        )
+        let originalAnchors = first.reminders
+            .map { $0.createdAt.timeIntervalSince1970 }
+            .sorted()
+
+        // A second launch against the same file must reuse the stored anchors.
+        let second = ReminderEngine(store: FileDataStore(fileURL: store.fileURL))
+        let reloadedAnchors = second.reminders
+            .map { $0.createdAt.timeIntervalSince1970 }
+            .sorted()
+
+        XCTAssertEqual(originalAnchors.count, reloadedAnchors.count)
+        for (original, reloaded) in zip(originalAnchors, reloadedAnchors) {
+            XCTAssertEqual(original, reloaded, accuracy: 0.001)
+        }
+    }
+
     // MARK: - Corruption
 
     func testCorruptFileThrowsSoTheEngineCanFallBack() throws {

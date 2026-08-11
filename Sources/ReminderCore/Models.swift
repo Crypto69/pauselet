@@ -86,7 +86,7 @@ public enum Schedule: Codable, Equatable, Sendable {
         }
     }
 
-    static func humanDuration(minutes: Int) -> String {
+    public static func humanDuration(minutes: Int) -> String {
         if minutes < 60 { return "\(minutes) min" }
         if minutes % 60 == 0 {
             let hours = minutes / 60
