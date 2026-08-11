@@ -38,7 +38,7 @@ final class OverlayPanel: NSPanel {
 /// Owns every on-screen reminder surface and routes each priority tier to the
 /// right presentation.
 @MainActor
-final class OverlayPresenter: NSObject, @preconcurrency ReminderPresenting {
+final class OverlayPresenter: NSObject, ReminderPresenting {
     /// Critical overlays, one per display so the prompt cannot be missed.
     private var criticalPanels: [OverlayPanel] = []
     private var subtlePanel: OverlayPanel?

@@ -6,6 +6,7 @@ import Combine
 /// The engine never touches AppKit directly; it hands fired reminders to a
 /// presenter. Tests substitute a recording presenter to assert exactly what
 /// would have been shown.
+@MainActor
 public protocol ReminderPresenting: AnyObject {
     func present(_ reminder: Reminder, settings: Settings)
     /// Called when a subtle/normal reminder should be taken off screen because

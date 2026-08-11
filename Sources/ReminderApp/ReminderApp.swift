@@ -80,9 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let timer = Timer.scheduledTimer(
             withTimeInterval: Self.tickInterval, repeats: true
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.engine?.tick()
-                self?.statusController?.refresh()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.engine?.tick()
+                self.statusController?.refresh()
             }
         }
         // Keep firing while menus are open or a window is being resized.
@@ -101,9 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.engine?.tick()
-                self?.statusController?.refresh()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.engine?.tick()
+                self.statusController?.refresh()
             }
         }
     }
