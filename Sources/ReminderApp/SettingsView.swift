@@ -345,19 +345,67 @@ struct TimeField: View {
     @Binding var minute: Int
 
     var body: some View {
-        HStack(spacing: 2) {
-            Stepper(value: $hour, in: 0...23) {
-                Text(String(format: "%02d", hour)).monospacedDigit()
-            }
-            .labelsHidden()
-            Text(String(format: "%02d", hour)).monospacedDigit().frame(width: 24)
+        HStack(spacing: 3) {
+            TimeComponentField(value: $hour, range: 0...23, label: "Hour")
             Text(":")
-            Text(String(format: "%02d", minute)).monospacedDigit().frame(width: 24)
-            Stepper(value: $minute, in: 0...59, step: 5) {
-                Text(String(format: "%02d", minute)).monospacedDigit()
+                .foregroundStyle(.secondary)
+            TimeComponentField(value: $minute, range: 0...59, label: "Minute")
+        }
+    }
+}
+
+/// One editable two-digit component of a time, with a stepper beside it.
+///
+/// Typing matters here: stepping from 00 to 59 a minute at a time is no way to
+/// set a time, and it is worse with assistive input. The field accepts a typed
+/// value and clamps it, while the stepper stays for fine adjustment.
+struct TimeComponentField: View {
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let label: String
+
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            TextField("", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.center)
+                .monospacedDigit()
+                .frame(width: 40)
+                .focused($isFocused)
+                .accessibilityLabel(label)
+                .onSubmit(commit)
+                .onChange(of: isFocused) { focused in
+                    // Commit when focus leaves, so a typed value is not lost by
+                    // clicking elsewhere instead of pressing Return.
+                    if !focused { commit() }
+                }
+
+            Stepper(value: $value, in: range) {
+                EmptyView()
             }
             .labelsHidden()
+            .accessibilityLabel(label)
         }
+        .onAppear { text = formatted }
+        .onChange(of: value) { _ in
+            // Keep the text in step when the stepper drives the value.
+            if !isFocused { text = formatted }
+        }
+    }
+
+    private var formatted: String { String(format: "%02d", value) }
+
+    /// Applies whatever was typed, ignoring anything that is not a number and
+    /// clamping to the valid range rather than rejecting it outright.
+    private func commit() {
+        let digits = text.filter(\.isNumber)
+        if let typed = Int(digits) {
+            value = min(max(typed, range.lowerBound), range.upperBound)
+        }
+        text = formatted
     }
 }
 
