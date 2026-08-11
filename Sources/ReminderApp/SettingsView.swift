@@ -222,7 +222,8 @@ struct PreferencesTab: View {
                             minute: binding(\.quietHours.startMinute)
                         )
                         Text("to")
-                            .foregroundStyle(.secondary)
+                            // Full contrast, matching "From" — it is a label in
+                            // the same sentence, not secondary chrome.
                             // Breathing room either side: without it the word
                             // sits hard against the digits and the two times
                             // read as one run of numbers.
