@@ -74,9 +74,33 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         closeSubtle()
     }
 
+    /// Shows `reminder` exactly as it would appear when it fires, without
+    /// touching its schedule or history.
+    ///
+    /// Buttons on a previewed overlay only close it — a preview must never
+    /// complete or snooze the real reminder, or looking at one would silently
+    /// reset its timer.
+    func preview(_ reminder: Reminder, settings: ReminderCore.Settings) {
+        switch reminder.priority {
+        case .subtle:
+            showSubtle(reminder, settings: settings, isPreview: true)
+        case .normal, .important:
+            // Posting a real notification for a preview would leave it sitting
+            // in Notification Center, so show the in-app card instead. It
+            // carries the same title, message and icon.
+            showSubtle(reminder, settings: settings, isPreview: true)
+        case .critical:
+            showCritical(reminder, settings: settings, isPreview: true)
+        }
+    }
+
     // MARK: - Critical takeover
 
-    private func showCritical(_ reminder: Reminder, settings: ReminderCore.Settings) {
+    private func showCritical(
+        _ reminder: Reminder,
+        settings: ReminderCore.Settings,
+        isPreview: Bool = false
+    ) {
         closeCritical()
 
         if settings.soundEnabled {
@@ -90,11 +114,11 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             let view = CriticalOverlayView(
                 reminder: reminder,
                 onComplete: { [weak self] in
-                    self?.engine?.complete(id: reminder.id)
+                    if !isPreview { self?.engine?.complete(id: reminder.id) }
                     self?.closeCritical()
                 },
                 onSnooze: { [weak self] in
-                    self?.engine?.snooze(id: reminder.id)
+                    if !isPreview { self?.engine?.snooze(id: reminder.id) }
                     self?.closeCritical()
                 }
             )
@@ -114,11 +138,25 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
     // MARK: - Subtle hint
 
-    fileprivate func showSubtle(_ reminder: Reminder, settings: ReminderCore.Settings) {
+    fileprivate func showSubtle(
+        _ reminder: Reminder,
+        settings: ReminderCore.Settings,
+        isPreview: Bool = false
+    ) {
         closeSubtle()
 
         guard let screen = NSScreen.main else { return }
-        let size = NSSize(width: 320, height: 92)
+
+        let view = SubtleHintView(reminder: reminder) { [weak self] in
+            if !isPreview { self?.engine?.complete(id: reminder.id) }
+            self?.closeSubtle()
+        }
+
+        // The panel is generous enough for a few lines of message, and the card
+        // inside it hugs its content. Measuring the SwiftUI view first was
+        // tried and produced a badly oversized panel, so the height is fixed
+        // and the message is allowed up to four lines.
+        let size = NSSize(width: 330, height: 132)
         let margin: CGFloat = 16
         // Top-right, tucked under the menu bar near where the app lives.
         let origin = NSPoint(
@@ -128,10 +166,6 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         let panel = OverlayPanel(
             contentRect: NSRect(origin: origin, size: size), isInteractive: true
         )
-        let view = SubtleHintView(reminder: reminder) { [weak self] in
-            self?.engine?.complete(id: reminder.id)
-            self?.closeSubtle()
-        }
         panel.contentView = NSHostingView(rootView: view)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
@@ -143,7 +177,9 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         subtlePanel = panel
 
         // Self-dismiss: a subtle nudge the user ignores should not linger.
-        let seconds = max(2, settings.subtleDisplaySeconds)
+        // A per-reminder duration wins over the global default, so a wordy
+        // reminder can be given longer to read.
+        let seconds = max(2, reminder.displaySeconds ?? settings.subtleDisplaySeconds)
         subtleDismissTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             guard !Task.isCancelled else { return }

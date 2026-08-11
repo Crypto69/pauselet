@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.notifier = notifier
         self.overlays = overlays
         self.engine = engine
-        self.statusController = StatusBarController(engine: engine)
+        self.statusController = StatusBarController(engine: engine, overlays: overlays)
 
         startTicking()
         observeWake()

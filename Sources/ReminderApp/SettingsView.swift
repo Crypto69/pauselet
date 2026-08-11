@@ -199,14 +199,24 @@ struct PreferencesTab: View {
     var body: some View {
         Form {
             Section("Quiet Hours") {
-                Toggle(
-                    "Enable quiet hours",
-                    isOn: binding(\.quietHours.isEnabled)
-                )
+                HelpRow(
+                    title: "Enable quiet hours",
+                    help: "Silences reminders during a window you choose, such "
+                        + "as overnight. Reminders are skipped for that period, "
+                        + "not queued up and delivered later."
+                ) {
+                    Toggle("", isOn: binding(\.quietHours.isEnabled))
+                        .labelsHidden()
+                }
 
                 if engine.settings.quietHours.isEnabled {
-                    HStack {
+                    HStack(spacing: 4) {
                         Text("From")
+                        HelpBadge(
+                            text: "The quiet window. It may run past midnight — "
+                                + "22:00 to 07:00 covers the night."
+                        )
+                        Spacer(minLength: 8)
                         TimeField(
                             hour: binding(\.quietHours.startHour),
                             minute: binding(\.quietHours.startMinute)
@@ -218,38 +228,69 @@ struct PreferencesTab: View {
                         )
                     }
 
-                    Toggle(
-                        "Still show critical reminders",
-                        isOn: binding(\.quietHours.allowsCritical)
-                    )
-                    .help(
-                        "Health-critical reminders such as pressure relief can "
-                            + "still appear during quiet hours."
-                    )
+                    HelpRow(
+                        title: "Still show critical reminders",
+                        help: "Lets Critical reminders through during quiet "
+                            + "hours. Keep this on if a reminder matters "
+                            + "medically — pressure relief still matters at "
+                            + "3am. Every other tier stays silent."
+                    ) {
+                        Toggle("", isOn: binding(\.quietHours.allowsCritical))
+                            .labelsHidden()
+                    }
                 }
             }
 
             Section("Behaviour") {
-                Stepper(
-                    "Snooze length: \(engine.settings.snoozeMinutes) min",
-                    value: binding(\.snoozeMinutes),
-                    in: 1...120
-                )
-                Stepper(
-                    "Subtle reminders stay for \(engine.settings.subtleDisplaySeconds)s",
-                    value: binding(\.subtleDisplaySeconds),
-                    in: 2...60
-                )
-                Toggle("Play sounds", isOn: binding(\.soundEnabled))
-                Toggle(
-                    "Show countdown in menu bar",
-                    isOn: binding(\.showsNextReminderInMenuBar)
-                )
+                HelpRow(
+                    title: "Snooze length: \(engine.settings.snoozeMinutes) min",
+                    help: "How long Snooze puts a reminder off for. A snooze "
+                        + "always brings the reminder back, even if its next "
+                        + "scheduled time is further away."
+                ) {
+                    Stepper("", value: binding(\.snoozeMinutes), in: 1...120)
+                        .labelsHidden()
+                }
+
+                HelpRow(
+                    title: "Subtle reminders stay for "
+                        + "\(engine.settings.subtleDisplaySeconds)s",
+                    help: "How long a Subtle card stays on screen before it "
+                        + "fades away. Individual reminders can override this "
+                        + "in their own settings. Normal and Important use "
+                        + "macOS notifications, whose timing macOS controls."
+                ) {
+                    Stepper("", value: binding(\.subtleDisplaySeconds), in: 2...60)
+                        .labelsHidden()
+                }
+
+                HelpRow(
+                    title: "Play sounds",
+                    help: "Plays a sound for Important and Critical reminders. "
+                        + "Subtle reminders are always silent."
+                ) {
+                    Toggle("", isOn: binding(\.soundEnabled)).labelsHidden()
+                }
+
+                HelpRow(
+                    title: "Show countdown in menu bar",
+                    help: "Shows the time until your next reminder beside the "
+                        + "menu bar icon. Turn off for just the icon."
+                ) {
+                    Toggle("", isOn: binding(\.showsNextReminderInMenuBar))
+                        .labelsHidden()
+                }
             }
 
             Section("Startup") {
-                Toggle("Launch at login", isOn: launchAtLoginBinding)
-                    .help("Start Reminder automatically when you log in.")
+                HelpRow(
+                    title: "Launch at login",
+                    help: "Starts Reminder automatically when you log in. Worth "
+                        + "having on: a reminder app you have to remember to "
+                        + "start is not much of a reminder app."
+                ) {
+                    Toggle("", isOn: launchAtLoginBinding).labelsHidden()
+                }
             }
 
             Section("Data") {

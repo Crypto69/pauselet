@@ -114,6 +114,13 @@ All of them can be edited or deleted, and you can add your own.
 - **Snooze**, which is authoritative: it will bring a reminder back even if the
   natural next slot is further away, and it fires late rather than vanishing if
   your Mac was asleep at the moment it was due
+- **Preview**, in the reminder editor, so you can see exactly how a reminder
+  will appear before you commit to it
+- **Per-reminder on-screen time** for subtle cards, so a longer message can be
+  given longer to read. Normal and Important use macOS notifications, whose
+  timing macOS controls
+- **Help buttons** on every preference, explaining what it does — as a click
+  rather than a hover, so they work with assistive input
 - **History and adherence**, showing how often each reminder was completed
 - **Launch at login**, since a reminder app you have to remember to start is not
   much of a reminder app
@@ -206,7 +213,7 @@ Plain JSON — readable, editable, backup-able, and yours.
 ```
 Sources/ReminderCore/   Models, scheduler, storage, engine (no UI, fully tested)
 Sources/ReminderApp/    Menu bar, overlays, notifications, settings
-Tests/                  83 tests against the core
+Tests/                  88 tests against the core
 scripts/                Build, notarize, icon generation, rasterizer
 ```
 

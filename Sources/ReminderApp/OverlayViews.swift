@@ -196,7 +196,10 @@ struct SubtleHintView: View {
                     Text(reminder.message)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        // Four lines rather than two: at two, a normal sentence
+                        // was being cut off mid-word, and a reminder you cannot
+                        // finish reading has failed at its one job.
+                        .lineLimit(4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -218,7 +221,7 @@ struct SubtleHintView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.regularMaterial)

@@ -9,6 +9,7 @@ import ReminderCore
 /// both.
 struct ReminderEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.previewReminder) private var previewReminder
 
     private let existing: Reminder?
     private let onSave: (Reminder) -> Void
@@ -26,6 +27,8 @@ struct ReminderEditor: View {
     @State private var hasActivityDuration: Bool
     @State private var activityMinutes: Int
     @State private var soundName: String?
+    @State private var usesCustomDisplaySeconds: Bool
+    @State private var displaySeconds: Int
 
     enum ScheduleKind: String, CaseIterable, Identifiable {
         case interval, daily, weekly
@@ -49,6 +52,8 @@ struct ReminderEditor: View {
         _priority = State(initialValue: reminder?.priority ?? .normal)
         _symbolName = State(initialValue: reminder?.symbolName ?? "bell")
         _soundName = State(initialValue: reminder?.soundName)
+        _usesCustomDisplaySeconds = State(initialValue: reminder?.displaySeconds != nil)
+        _displaySeconds = State(initialValue: reminder?.displaySeconds ?? 8)
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
@@ -197,6 +202,39 @@ struct ReminderEditor: View {
                         }
                     }
 
+                    if priority == .subtle {
+                        Section("On-screen Time") {
+                            HelpRow(
+                                title: "Use a custom display time",
+                                help: "How long this card stays on screen before "
+                                    + "fading. Turn on and increase it if the "
+                                    + "message is long, or if you need longer to "
+                                    + "read it."
+                            ) {
+                                Toggle("", isOn: $usesCustomDisplaySeconds)
+                                    .labelsHidden()
+                            }
+                            if usesCustomDisplaySeconds {
+                                Stepper(
+                                    "Stay on screen for \(displaySeconds)s",
+                                    value: $displaySeconds,
+                                    in: 2...120
+                                )
+                            }
+                        }
+                    } else if priority == .normal || priority == .important {
+                        Section("On-screen Time") {
+                            Text(
+                                "macOS controls how long a notification banner "
+                                + "stays up. To keep it until you dismiss it, set "
+                                + "Reminder to \"Alerts\" in System Settings › "
+                                + "Notifications."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Section("Activity Timer") {
                         Toggle("Run a countdown", isOn: $hasActivityDuration)
                             .help(
@@ -220,6 +258,14 @@ struct ReminderEditor: View {
             HStack {
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+
+                Button {
+                    previewReminder(draft)
+                } label: {
+                    Label("Preview", systemImage: "eye")
+                }
+                .help("Show this reminder now, exactly as it will appear")
+
                 Spacer()
                 Button(existing == nil ? "Add" : "Save") { save() }
                     .keyboardShortcut(.defaultAction)
@@ -233,6 +279,24 @@ struct ReminderEditor: View {
         .frame(width: 470, height: 760)
     }
 
+    /// The reminder as currently configured, so Preview shows the unsaved edits
+    /// rather than what is on disk.
+    private var draft: Reminder {
+        var reminder = existing ?? Reminder(title: "", schedule: composedSchedule)
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        reminder.title = trimmed.isEmpty ? "Untitled reminder" : trimmed
+        reminder.message = message.trimmingCharacters(in: .whitespaces)
+        reminder.schedule = composedSchedule
+        reminder.priority = priority
+        reminder.symbolName = symbolName
+        reminder.soundName = soundName
+        reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
+        reminder.activityDurationSeconds = hasActivityDuration
+            ? activityMinutes * 60
+            : nil
+        return reminder
+    }
+
     private func save() {
         var reminder = existing ?? Reminder(title: "", schedule: composedSchedule)
         reminder.title = title.trimmingCharacters(in: .whitespaces)
@@ -241,6 +305,7 @@ struct ReminderEditor: View {
         reminder.priority = priority
         reminder.symbolName = symbolName
         reminder.soundName = soundName
+        reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
         reminder.activityDurationSeconds = hasActivityDuration
             ? activityMinutes * 60
             : nil

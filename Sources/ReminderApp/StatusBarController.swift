@@ -9,11 +9,14 @@ final class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private let engine: ReminderEngine
+    /// Used to show a reminder exactly as it will appear, from the editor.
+    private weak var overlays: OverlayPresenter?
     private var settingsWindow: NSWindow?
     private var eventMonitor: Any?
 
-    init(engine: ReminderEngine) {
+    init(engine: ReminderEngine, overlays: OverlayPresenter? = nil) {
         self.engine = engine
+        self.overlays = overlays
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -211,7 +214,12 @@ final class StatusBarController: NSObject {
         window.center()
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(
-            rootView: SettingsView().environmentObject(engine)
+            rootView: SettingsView()
+                .environmentObject(engine)
+                .onPreviewReminder { [weak self] reminder in
+                    guard let self else { return }
+                    self.overlays?.preview(reminder, settings: self.engine.settings)
+                }
         )
         window.minSize = NSSize(width: 640, height: 460)
         settingsWindow = window
@@ -227,15 +235,29 @@ private struct OpenSettingsKey: EnvironmentKey {
     static let defaultValue: () -> Void = {}
 }
 
+/// Lets the reminder editor show a reminder the way it will really appear.
+private struct PreviewReminderKey: EnvironmentKey {
+    static let defaultValue: (Reminder) -> Void = { _ in }
+}
+
 extension EnvironmentValues {
     var openReminderSettings: () -> Void {
         get { self[OpenSettingsKey.self] }
         set { self[OpenSettingsKey.self] = newValue }
+    }
+
+    var previewReminder: (Reminder) -> Void {
+        get { self[PreviewReminderKey.self] }
+        set { self[PreviewReminderKey.self] = newValue }
     }
 }
 
 extension View {
     func onOpenSettings(_ action: @escaping () -> Void) -> some View {
         environment(\.openReminderSettings, action)
+    }
+
+    func onPreviewReminder(_ action: @escaping (Reminder) -> Void) -> some View {
+        environment(\.previewReminder, action)
     }
 }

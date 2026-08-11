@@ -148,3 +148,110 @@ final class PresentationRoutingTests: XCTestCase {
         XCTAssertEqual(presenter.presented.first?.activityDurationSeconds, 300)
     }
 }
+
+/// Tests for the per-reminder on-screen duration.
+@MainActor
+final class DisplayDurationTests: XCTestCase {
+
+    /// Mirrors how `OverlayPresenter` picks a duration for a subtle card.
+    private func effectiveSeconds(
+        reminder: Reminder, settings: Settings
+    ) -> Int {
+        max(2, reminder.displaySeconds ?? settings.subtleDisplaySeconds)
+    }
+
+    func testFallsBackToTheGlobalSettingWhenUnset() {
+        var settings = Settings()
+        settings.subtleDisplaySeconds = 8
+        let reminder = Reminder(title: "Shift", schedule: .interval(minutes: 20))
+
+        XCTAssertNil(reminder.displaySeconds)
+        XCTAssertEqual(effectiveSeconds(reminder: reminder, settings: settings), 8)
+    }
+
+    /// The point of the feature: a wordy reminder can be given longer to read.
+    func testPerReminderValueOverridesTheGlobalSetting() {
+        var settings = Settings()
+        settings.subtleDisplaySeconds = 8
+        var reminder = Reminder(title: "Shift", schedule: .interval(minutes: 20))
+        reminder.displaySeconds = 25
+
+        XCTAssertEqual(effectiveSeconds(reminder: reminder, settings: settings), 25)
+    }
+
+    /// A too-short value would flash the card and vanish before it can be read.
+    func testDurationIsClampedToAReadableMinimum() {
+        var settings = Settings()
+        settings.subtleDisplaySeconds = 8
+        var reminder = Reminder(title: "Shift", schedule: .interval(minutes: 20))
+        reminder.displaySeconds = 0
+
+        XCTAssertEqual(effectiveSeconds(reminder: reminder, settings: settings), 2)
+    }
+
+    func testDisplaySecondsSurvivesARoundTrip() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ReminderDisplay-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = FileDataStore(
+            fileURL: directory.appendingPathComponent("data.json")
+        )
+        var reminder = Reminder(title: "Shift", schedule: .interval(minutes: 20))
+        reminder.displaySeconds = 30
+
+        try store.save(AppData(reminders: [reminder]))
+        let loaded = try store.load()
+
+        XCTAssertEqual(loaded.reminders.first?.displaySeconds, 30)
+    }
+
+    /// Reminders saved before this field existed must still load.
+    func testOlderDataWithoutDisplaySecondsStillLoads() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ReminderLegacy-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("data.json")
+
+        // A record written before `displaySeconds` was added.
+        let legacy = """
+        {
+          "schemaVersion": 1,
+          "reminders": [{
+            "id": "\(UUID().uuidString)",
+            "title": "Weight Shift",
+            "message": "Shift your weight.",
+            "schedule": { "interval": { "minutes": 20 } },
+            "priority": "subtle",
+            "isEnabled": true,
+            "symbolName": "arrow.up.and.down.circle",
+            "createdAt": 1780000000
+          }],
+          "settings": {
+            "quietHours": {
+              "isEnabled": false, "startHour": 22, "startMinute": 0,
+              "endHour": 7, "endMinute": 0, "allowsCritical": true
+            },
+            "isPaused": false, "snoozeMinutes": 5, "subtleDisplaySeconds": 8,
+            "launchAtLogin": false, "showsNextReminderInMenuBar": true,
+            "soundEnabled": true
+          },
+          "events": []
+        }
+        """
+        try Data(legacy.utf8).write(to: url)
+
+        let loaded = try FileDataStore(fileURL: url).load()
+        XCTAssertEqual(loaded.reminders.count, 1)
+        XCTAssertNil(
+            loaded.reminders.first?.displaySeconds,
+            "A missing field should decode as nil, not fail the whole file"
+        )
+    }
+}

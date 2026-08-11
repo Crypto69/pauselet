@@ -123,6 +123,13 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     public var activityDurationSeconds: Int?
     /// Optional sound played when the reminder fires. `nil` uses the tier default.
     public var soundName: String?
+    /// How long a subtle card stays on screen, in seconds. `nil` uses the global
+    /// setting.
+    ///
+    /// Only applies to the subtle tier: Normal and Important are macOS
+    /// notifications, whose on-screen time the system controls, and Critical
+    /// stays until acknowledged.
+    public var displaySeconds: Int?
     /// When the reminder last fired. Drives interval scheduling.
     public var lastFiredAt: Date?
     /// When the reminder was last acknowledged (completed or dismissed).
@@ -141,6 +148,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         symbolName: String = "bell",
         activityDurationSeconds: Int? = nil,
         soundName: String? = nil,
+        displaySeconds: Int? = nil,
         lastFiredAt: Date? = nil,
         lastAcknowledgedAt: Date? = nil,
         snoozedUntil: Date? = nil,
@@ -155,6 +163,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.symbolName = symbolName
         self.activityDurationSeconds = activityDurationSeconds
         self.soundName = soundName
+        self.displaySeconds = displaySeconds
         self.lastFiredAt = lastFiredAt
         self.lastAcknowledgedAt = lastAcknowledgedAt
         self.snoozedUntil = snoozedUntil
