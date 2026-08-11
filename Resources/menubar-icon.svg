@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Menu bar template icon.
+
+    A deliberately simplified version of the app icon: at 18pt the seated figure
+    turns to mush, so this keeps only the open cycle ring plus a single dot for
+    the person. Pure black on transparent — macOS treats a "Template" image as a
+    mask and tints it for light or dark menu bars, so any colour here is ignored.
+
+    Stroke weights are heavier than the app icon in relative terms, because thin
+    strokes disappear at menu bar size.
+  -->
+  <g fill="none" stroke="#000000" stroke-linecap="round" stroke-width="92">
+    <!-- Open cycle ring, gap at the top right. -->
+    <path d="M 512 190 A 322 322 0 1 0 740 285"/>
+  </g>
+  <!-- The person, reduced to a single centred dot. -->
+  <circle cx="512" cy="512" r="104" fill="#000000"/>
+</svg>
