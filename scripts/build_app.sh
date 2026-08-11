@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
 APP="dist/Reminder.app"
 BUNDLE_ID="com.collectaeon.reminder"
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 # Your Apple Team ID. Used when signing with a Developer ID certificate;
 # ignored for the default ad-hoc signature.
