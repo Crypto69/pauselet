@@ -106,9 +106,10 @@ macOS 13 or later.
 
 ## Installing
 
-Download the latest release, unzip it, and drag `Reminder.app` to your
-Applications folder. The released build is signed and notarized by Apple, so it
-opens without a Gatekeeper warning.
+**[Download the latest release](https://github.com/Crypto69/reminder/releases/latest)**,
+unzip it, and drag `Reminder.app` to your Applications folder. The released
+build is signed and notarized by Apple, so it opens without a Gatekeeper
+warning.
 
 macOS will ask for notification permission the first time it runs. If you
 decline, or the prompt never appears, the Normal and Important tiers fall back
