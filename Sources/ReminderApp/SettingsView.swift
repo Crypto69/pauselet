@@ -224,16 +224,14 @@ struct PreferencesTab: View {
                         Text("to")
                             // Full contrast, matching "From" — it is a label in
                             // the same sentence, not secondary chrome.
-                            // Breathing room either side: without it the word
-                            // sits hard against the digits and the two times
-                            // read as one run of numbers.
+                            //
+                            // Nudged onto the digits' centre line. TimeField
+                            // carries an internal correction for the stepper's
+                            // phantom label, which moves the row's centre away
+                            // from where a plain label lands; this offset is
+                            // measured from a rendered screenshot to match.
+                            .offset(y: TimeComponentField.separatorCorrection)
                             .padding(.horizontal, 10)
-                            .alignmentGuide(VerticalAlignment.center) { d in
-                                // Match the TimeField's optical centre, which
-                                // sits below this label's own because of the
-                                // stepper correction inside it.
-                                d[VerticalAlignment.center] - 5
-                            }
                         TimeField(
                             hour: binding(\.quietHours.endHour),
                             minute: binding(\.quietHours.endMinute)
@@ -382,6 +380,11 @@ struct TimeComponentField: View {
     /// Corrects the stepper's built-in label spacing so its arrows sit level
     /// with the digits beside them.
     private static let stepperVerticalCorrection: CGFloat = 11
+
+    /// Shifts a plain label sitting beside these controls onto their centre
+    /// line. Measured from rendered screenshots: it matches the correction the
+    /// stepper itself needs, which is the same phantom-label space.
+    static let separatorCorrection: CGFloat = 11
 
     var body: some View {
         // A Stepper wrapping an EmptyView still reserves space for that label
