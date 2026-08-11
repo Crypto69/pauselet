@@ -183,8 +183,10 @@ leap day, and month and year boundaries.
 
 ### Icons
 
-`Resources/icon.svg` is the source of truth; the `.icns` and the menu bar
-template images are generated from it:
+`Resources/icon-source.png` is the app icon artwork and
+`Resources/menubar-icon.svg` the menu bar mark. The `.icns` and the template
+images are generated from them — the build crops the artwork to its content and
+applies the rounded mask macOS expects:
 
 ```sh
 ./scripts/build_icons.sh
