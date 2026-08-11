@@ -51,6 +51,11 @@ final class OverlayPresenter: NSObject, @preconcurrency ReminderPresenting {
     init(notifier: NotificationPresenter) {
         self.notifier = notifier
         super.init()
+        // When the system will not deliver a notification, show the reminder in
+        // the app's own window instead so it is never silently dropped.
+        notifier.fallbackPresenter = { [weak self] reminder, settings in
+            self?.showSubtle(reminder, settings: settings)
+        }
     }
 
     func present(_ reminder: Reminder, settings: ReminderCore.Settings) {
@@ -109,7 +114,7 @@ final class OverlayPresenter: NSObject, @preconcurrency ReminderPresenting {
 
     // MARK: - Subtle hint
 
-    private func showSubtle(_ reminder: Reminder, settings: ReminderCore.Settings) {
+    fileprivate func showSubtle(_ reminder: Reminder, settings: ReminderCore.Settings) {
         closeSubtle()
 
         guard let screen = NSScreen.main else { return }

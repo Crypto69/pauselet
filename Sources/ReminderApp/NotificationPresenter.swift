@@ -24,6 +24,10 @@ final class NotificationPresenter: NSObject {
 
     private static let reminderIDKey = "reminderID"
 
+    /// Called when a notification cannot be delivered, so the caller can show
+    /// the reminder some other way rather than dropping it silently.
+    var fallbackPresenter: ((Reminder, ReminderCore.Settings) -> Void)?
+
     func configure() {
         center.delegate = self
         registerCategories()
@@ -34,6 +38,21 @@ final class NotificationPresenter: NSObject {
         center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
             Task { @MainActor in
                 self?.isAuthorized = granted
+            }
+        }
+        refreshAuthorizationStatus()
+    }
+
+    /// Re-reads the current authorization. System notifications are unavailable
+    /// unless the app is notarized and the user has allowed them, and a reminder
+    /// app that silently drops reminders is worse than useless — so we track
+    /// this and fall back to the app's own windows when it is not available.
+    func refreshAuthorizationStatus() {
+        center.getNotificationSettings { [weak self] settings in
+            let usable = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+            Task { @MainActor in
+                self?.isAuthorized = usable
             }
         }
     }
@@ -61,7 +80,17 @@ final class NotificationPresenter: NSObject {
     }
 
     /// Posts a notification for `reminder`. Delivered immediately.
+    ///
+    /// If the system will not deliver notifications — most commonly because the
+    /// app is not notarized, or the user declined the prompt — the reminder is
+    /// handed to `fallbackPresenter` instead. Missing a pressure-relief prompt
+    /// because of a permissions technicality is not an acceptable failure.
     func post(_ reminder: Reminder, settings: ReminderCore.Settings) {
+        guard isAuthorized else {
+            fallbackPresenter?(reminder, settings)
+            return
+        }
+
         let content = UNMutableNotificationContent()
         content.title = reminder.title
         if !reminder.message.isEmpty {
@@ -91,7 +120,15 @@ final class NotificationPresenter: NSObject {
             content: content,
             trigger: nil
         )
-        center.add(request, withCompletionHandler: nil)
+        center.add(request) { [weak self] error in
+            guard error != nil else { return }
+            // Delivery failed after we thought we were authorized; show it
+            // ourselves rather than losing the reminder.
+            Task { @MainActor in
+                self?.isAuthorized = false
+                self?.fallbackPresenter?(reminder, settings)
+            }
+        }
     }
 
     private func reminderID(from response: UNNotificationResponse) -> UUID? {
