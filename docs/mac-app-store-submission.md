@@ -1,4 +1,4 @@
-# Submitting Reminder to the Mac App Store
+# Submitting Pauselet to the Mac App Store
 
 What it takes to get this app from `scripts/build_app.sh` onto the Mac App
 Store, in order, with each step marked:
@@ -63,7 +63,7 @@ mean the paid membership already exists. Nothing to do.
 In [Certificates](https://developer.apple.com/account/resources/certificates/list)
 (or via Xcode → Settings → Accounts → Manage Certificates):
 
-- **Apple Distribution** — signs `Reminder.app` for the store (the modern name
+- **Apple Distribution** — signs `Pauselet.app` for the store (the modern name
   for "3rd Party Mac Developer Application").
 - **Mac Installer Distribution** — signs the `.pkg` that actually gets
   uploaded.
@@ -72,7 +72,7 @@ Install both in the login keychain. (These *can* be created via the App Store
 Connect API, but for one machine and one app the portal is faster.)
 
 ### 1.3 Register the App ID · [ONE-TIME]
-Register `ai.myaccessibility.interlude` as an explicit App ID under
+Register `com.pauselet.pauselet` as an explicit App ID under
 [Identifiers](https://developer.apple.com/account/resources/identifiers/list).
 No special capabilities needed — sandbox and Apple-events exceptions are
 entitlement-file matters, not App ID capabilities.
@@ -86,7 +86,7 @@ in the repo or a known path; it expires yearly and needs regenerating
 
 ### 1.5 Create the app record in App Store Connect · [ONE-TIME]
 [App Store Connect](https://appstoreconnect.apple.com) → My Apps → **+** →
-New App → macOS platform, name "Interlude — Break Reminders" (the working
+New App → macOS platform, name "Pauselet — Break Reminders" (the working
 name; listing names are unique storefront-wide, and the descriptor suffix
 keeps the exact string distinctive), primary language, bundle ID from 1.3,
 SKU (any internal string).
@@ -110,7 +110,7 @@ Add a store entitlements file (checked into `scripts/` or `Resources/`):
   <key>com.apple.security.app-sandbox</key><true/>
   <!-- Required by App Store processing; missing them fails after upload. -->
   <key>com.apple.application-identifier</key>
-  <string>4R94388LH8.ai.myaccessibility.interlude</string>
+  <string>4R94388LH8.com.pauselet.pauselet</string>
   <key>com.apple.developer.team-identifier</key>
   <string>4R94388LH8</string>
   <!-- Only if Part 0 chose to keep Spotify: -->
@@ -124,8 +124,8 @@ What the sandbox changes for this app:
 
 - **Data location moves.** `FileDataStore.defaultFileURL` resolves
   Application Support *inside the container*, so the store build writes to
-  `~/Library/Containers/ai.myaccessibility.interlude/Data/Library/Application
-  Support/Reminder/data.json` with **zero code changes**. There is no existing
+  `~/Library/Containers/com.pauselet.pauselet/Data/Library/Application
+  Support/Pauselet/data.json` with **zero code changes**. There is no existing
   user base yet, so no migration from the old path is needed — a store
   install simply starts with the starter set.
 - **Fine as-is:** `UserNotifications`, `SMAppService` launch-at-login,
@@ -153,26 +153,26 @@ A sibling of `build_app.sh` that:
 1. Builds and assembles the bundle exactly as today (reuse the existing
    script with env overrides rather than duplicating it, if practical).
 2. Copies the provisioning profile to
-   `dist/Reminder.app/Contents/embedded.provisionprofile`.
+   `dist/Pauselet.app/Contents/embedded.provisionprofile`.
 3. Strips quarantine attributes — since Feb 2025 uploads containing
    `com.apple.quarantine` xattrs are rejected:
-   `xattr -rd com.apple.quarantine dist/Reminder.app`.
+   `xattr -rd com.apple.quarantine dist/Pauselet.app`.
 4. Signs with the store certificate and store entitlements — note **no**
    `--options runtime` (hardened runtime is the Developer ID world; the
    store uses the sandbox):
    ```bash
    codesign --force --deep --timestamp \
      --entitlements scripts/appstore.entitlements \
-     --sign "Apple Distribution: Christian Venter (4R94388LH8)" dist/Reminder.app
+     --sign "Apple Distribution: Christian Venter (4R94388LH8)" dist/Pauselet.app
    ```
 5. Wraps it in the uploadable installer package:
    ```bash
-   productbuild --component dist/Reminder.app /Applications \
+   productbuild --component dist/Pauselet.app /Applications \
      --sign "3rd Party Mac Developer Installer: Christian Venter (4R94388LH8)" \
-     dist/Reminder.pkg
+     dist/Pauselet.pkg
    ```
-6. Sanity-checks locally: `codesign --verify --deep --strict dist/Reminder.app`
-   and `codesign -d --entitlements - dist/Reminder.app`.
+6. Sanity-checks locally: `codesign --verify --deep --strict dist/Pauselet.app`
+   and `codesign -d --entitlements - dist/Pauselet.app`.
 
 ### 2.4 Version discipline · [AUTO]
 Every upload needs a `CFBundleVersion` App Store Connect hasn't seen for that
@@ -222,7 +222,7 @@ Pick free/paid and territories. (See 1.5 for the paid-app paperwork.)
 
 ### 4.1 First upload — Transporter app · [MANUAL]
 Install [Transporter](https://apps.apple.com/app/transporter/id1450874784)
-from the Mac App Store, sign in with the Apple ID, drop in `dist/Reminder.pkg`,
+from the Mac App Store, sign in with the Apple ID, drop in `dist/Pauselet.pkg`,
 hit **Verify** (catches signing/entitlement mistakes before Apple's servers
 do), then **Deliver**. Post-upload processing takes a few minutes; failures
 arrive by email (missing `application-identifier` entitlement and stray

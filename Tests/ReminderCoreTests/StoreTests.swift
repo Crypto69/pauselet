@@ -230,6 +230,71 @@ final class StoreTests: XCTestCase {
     func testDefaultFileURLIsInsideApplicationSupport() throws {
         let url = try FileDataStore.defaultFileURL()
         XCTAssertEqual(url.lastPathComponent, "data.json")
-        XCTAssertTrue(url.path.contains("Application Support/Reminder"))
+        XCTAssertTrue(url.path.contains("Application Support/Pauselet"))
+    }
+
+    /// The rename must not orphan an existing install: data written under the
+    /// app's old name is adopted, rather than the app finding an empty folder
+    /// and reseeding the starter set over the top of the user's reminders.
+    func testDataFromTheOldAppNameIsAdopted() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let legacy = base.appendingPathComponent("Reminder", isDirectory: true)
+        let current = base.appendingPathComponent("Pauselet", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let original = AppData(reminders: [
+            Reminder(title: "Tilt Back", schedule: .interval(minutes: 60)),
+        ])
+        try FileDataStore(
+            fileURL: legacy.appendingPathComponent("data.json")
+        ).save(original)
+
+        FileDataStore.migrateLegacyDirectoryIfNeeded(
+            into: current, base: base, fileManager: .default
+        )
+
+        let migrated = try FileDataStore(
+            fileURL: current.appendingPathComponent("data.json")
+        ).load()
+        XCTAssertEqual(migrated.reminders.map(\.title), ["Tilt Back"])
+        // The old copy stays put as a safety net.
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: legacy.appendingPathComponent("data.json").path
+            )
+        )
+    }
+
+    /// Migration must never overwrite newer data with older. Once the current
+    /// folder has its own file, the old one is ignored for good.
+    func testExistingDataIsNeverOverwrittenByTheOldCopy() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let legacy = base.appendingPathComponent("Reminder", isDirectory: true)
+        let current = base.appendingPathComponent("Pauselet", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        try FileDataStore(fileURL: legacy.appendingPathComponent("data.json"))
+            .save(AppData(reminders: [
+                Reminder(title: "Stale", schedule: .interval(minutes: 60)),
+            ]))
+        try FileDataStore(fileURL: current.appendingPathComponent("data.json"))
+            .save(AppData(reminders: [
+                Reminder(title: "Current", schedule: .interval(minutes: 60)),
+            ]))
+
+        FileDataStore.migrateLegacyDirectoryIfNeeded(
+            into: current, base: base, fileManager: .default
+        )
+
+        let loaded = try FileDataStore(
+            fileURL: current.appendingPathComponent("data.json")
+        ).load()
+        XCTAssertEqual(loaded.reminders.map(\.title), ["Current"])
     }
 }

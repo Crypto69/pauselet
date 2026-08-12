@@ -41,7 +41,7 @@ final class StatusBarController: NSObject {
         button.action = #selector(handleClick)
         // Left click opens the popover; right click opens a quick menu.
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        button.toolTip = "Reminder"
+        button.toolTip = "Pauselet"
     }
 
     /// Loads the bundled template image, falling back to an SF Symbol so the
@@ -55,8 +55,8 @@ final class StatusBarController: NSObject {
         }
         let fallback = NSImage(
             systemSymbolName: "arrow.trianglehead.2.clockwise.rotate.90",
-            accessibilityDescription: "Reminder"
-        ) ?? NSImage(systemSymbolName: "bell", accessibilityDescription: "Reminder")
+            accessibilityDescription: "Pauselet"
+        ) ?? NSImage(systemSymbolName: "bell", accessibilityDescription: "Pauselet")
         fallback?.isTemplate = true
         return fallback
     }
@@ -163,7 +163,7 @@ final class StatusBarController: NSObject {
         ).target = self
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Quit Reminder", action: #selector(quit), keyEquivalent: "q"
+            withTitle: "Quit Pauselet", action: #selector(quit), keyEquivalent: "q"
         ).target = self
 
         // Pop the menu directly below the button rather than assigning
@@ -218,7 +218,7 @@ final class StatusBarController: NSObject {
             backing: .buffered,
             defer: false
         )
-        window.title = "Reminder"
+        window.title = "Pauselet"
         window.center()
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(

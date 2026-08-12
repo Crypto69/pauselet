@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/logo.png" width="260" alt="Reminder logo: a clock face made of a white ring that breaks into green, blue, orange and red segments, with a tick at its centre.">
+  <img src="docs/images/logo.png" width="260" alt="Pauselet logo: a clock face made of a white ring that breaks into green, blue, orange and red segments, with a tick at its centre.">
 </p>
 
-<h1 align="center">Reminder</h1>
+<h1 align="center">Pauselet</h1>
 
 <p align="center">
   <em>Recurring reminders for macOS, where you choose how loudly each one interrupts you.</em>
@@ -161,14 +161,14 @@ macOS 13 or later.
 ## Installing
 
 **[Download the latest release](https://github.com/Crypto69/reminder/releases/latest)**,
-unzip it, and drag `Reminder.app` to your Applications folder. The released
+unzip it, and drag `Pauselet.app` to your Applications folder. The released
 build is signed and notarized by Apple, so it opens without a Gatekeeper
 warning.
 
 macOS will ask for notification permission the first time it runs. If you
 decline, or the prompt never appears, the Normal and Important tiers fall back
 to the app's own on-screen card — nothing is silently dropped either way. You
-can change your mind later in System Settings → Notifications → Reminder.
+can change your mind later in System Settings → Notifications → Pauselet.
 
 If you set up a playlist, macOS also asks for permission to control Spotify.
 That prompt appears while you are saving the playlist, rather than an hour later
@@ -179,8 +179,8 @@ Automation.
 ## Building from source
 
 ```sh
-./scripts/build_app.sh      # builds dist/Reminder.app, ad-hoc signed
-open dist/Reminder.app
+./scripts/build_app.sh      # builds dist/Pauselet.app, ad-hoc signed
+open dist/Pauselet.app
 ```
 
 To sign with your own Developer ID:
@@ -230,8 +230,8 @@ applies the rounded mask macOS expects:
 ### Screenshots
 
 ```sh
-./dist/Reminder.app/Contents/MacOS/Reminder --snapshot build/ui
-./dist/Reminder.app/Contents/MacOS/Reminder --open-settings
+./dist/Pauselet.app/Contents/MacOS/Pauselet --snapshot build/ui
+./dist/Pauselet.app/Contents/MacOS/Pauselet --open-settings
 ```
 
 `--snapshot` renders each surface to a PNG, which is easier than trying to
@@ -240,10 +240,15 @@ photograph a transient popover.
 ## Where your data lives
 
 ```
-~/Library/Application Support/Reminder/data.json
+~/Library/Application Support/Pauselet/data.json
 ```
 
 Plain JSON — readable, editable, backup-able, and yours.
+
+The app was previously called Reminder. If you are upgrading from that, your
+reminders and history are copied across from
+`~/Library/Application Support/Reminder/` the first time Pauselet runs. The old
+folder is left where it is, as a safety net.
 
 ## Layout
 

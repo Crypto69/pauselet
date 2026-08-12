@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Builds Reminder.app from the SwiftPM executable.
+# Builds Pauselet.app from the SwiftPM executable.
 #
 # SwiftPM produces a bare binary, but a menu bar app needs a real bundle: an
 # Info.plist (for LSUIElement, notification permissions, and the icon) and a
@@ -11,8 +11,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${CONFIG:-release}"
-APP="dist/Reminder.app"
-BUNDLE_ID="ai.myaccessibility.interlude"
+APP="dist/Pauselet.app"
+BUNDLE_ID="com.pauselet.pauselet"
 VERSION="1.2.0"
 
 # Your Apple Team ID. Used when signing with a Developer ID certificate;
@@ -27,7 +27,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 BIN_PATH="$(swift build -c "$CONFIG" --product ReminderApp --show-bin-path)"
-cp "$BIN_PATH/ReminderApp" "$APP/Contents/MacOS/Reminder"
+cp "$BIN_PATH/ReminderApp" "$APP/Contents/MacOS/Pauselet"
 
 # The SwiftPM resource bundle carries the icons.
 if [ -d "$BIN_PATH/Reminder_ReminderApp.bundle" ]; then
@@ -45,12 +45,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Reminder</string>
-  <key>CFBundleDisplayName</key><string>Reminder</string>
+  <key>CFBundleName</key><string>Pauselet</string>
+  <key>CFBundleDisplayName</key><string>Pauselet</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleExecutable</key><string>Reminder</string>
+  <key>CFBundleExecutable</key><string>Pauselet</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
@@ -61,7 +61,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
        event instead of being allowed to ask. Together with the automation
        entitlement below, this is all that gates Apple events on macOS. -->
   <key>NSAppleEventsUsageDescription</key>
-  <string>Reminder uses this to start your chosen Spotify playlist when a reminder fires.</string>
+  <string>Pauselet uses this to start your chosen Spotify playlist when a reminder fires.</string>
   <key>NSHumanReadableCopyright</key><string>Local-only reminder app.</string>
 </dict>
 </plist>
@@ -72,7 +72,7 @@ echo "==> Signing"
 # entitlement, which is what lets a reminder drive Spotify on a notarized build.
 # Use the path mktemp created; appending a suffix would write to a file it
 # never made and leak the empty one it did.
-ENTITLEMENTS="$(mktemp -t reminder-entitlements)"
+ENTITLEMENTS="$(mktemp -t pauselet-entitlements)"
 cat > "$ENTITLEMENTS" <<ENT
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"

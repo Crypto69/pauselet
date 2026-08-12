@@ -42,7 +42,14 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
     public let fileURL: URL
     private let queue = DispatchQueue(label: "com.reminder.filedatastore")
 
-    /// The default location: `~/Library/Application Support/Reminder/data.json`.
+    /// The folder the app stores data in, under Application Support.
+    static let directoryName = "Pauselet"
+
+    /// What that folder was called before the app was renamed. Data found here
+    /// is moved across once; see `migrateLegacyDirectoryIfNeeded`.
+    static let legacyDirectoryName = "Reminder"
+
+    /// The default location: `~/Library/Application Support/Pauselet/data.json`.
     public static func defaultFileURL(
         fileManager: FileManager = .default
     ) throws -> URL {
@@ -52,9 +59,35 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
             appropriateFor: nil,
             create: true
         )
-        let directory = base.appendingPathComponent("Reminder", isDirectory: true)
+        let directory = base.appendingPathComponent(directoryName, isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        migrateLegacyDirectoryIfNeeded(into: directory, base: base, fileManager: fileManager)
         return directory.appendingPathComponent("data.json")
+    }
+
+    /// Moves data written under the app's old name into the current folder.
+    ///
+    /// The rename to Pauselet would otherwise orphan every existing install:
+    /// the app would find no file, fall back to the starter set, and the user's
+    /// reminders and history would look deleted. Copying rather than moving
+    /// leaves the old folder untouched as a safety net.
+    ///
+    /// Only ever runs when the new folder has no data of its own, so it cannot
+    /// overwrite newer state with older.
+    static func migrateLegacyDirectoryIfNeeded(
+        into directory: URL,
+        base: URL,
+        fileManager: FileManager
+    ) {
+        let destination = directory.appendingPathComponent("data.json")
+        guard !fileManager.fileExists(atPath: destination.path) else { return }
+
+        let legacy = base
+            .appendingPathComponent(legacyDirectoryName, isDirectory: true)
+            .appendingPathComponent("data.json")
+        guard fileManager.fileExists(atPath: legacy.path) else { return }
+
+        try? fileManager.copyItem(at: legacy, to: destination)
     }
 
     public init(fileURL: URL) {

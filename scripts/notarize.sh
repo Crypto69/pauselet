@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Signs, notarizes and staples Reminder.app.
+# Signs, notarizes and staples Pauselet.app.
 #
 # Notarization matters for more than Gatekeeper warnings: macOS refuses to grant
 # notification authorization to an app it does not fully trust, so without this
@@ -24,8 +24,8 @@ cd "$(dirname "$0")/.."
 PROFILE="${NOTARY_PROFILE:-reminder-notary}"
 TEAM_ID="${TEAM_ID:-4R94388LH8}"
 IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Christian Venter ($TEAM_ID)}"
-APP="dist/Reminder.app"
-ZIP="dist/Reminder.zip"
+APP="dist/Pauselet.app"
+ZIP="dist/Pauselet.zip"
 
 echo "==> Building and signing with a hardened runtime"
 SIGN_IDENTITY="$IDENTITY" ./scripts/build_app.sh
@@ -46,4 +46,4 @@ spctl -a -vv "$APP"
 
 echo
 echo "Done. Install with:"
-echo "  rm -rf /Applications/Reminder.app && cp -R $APP /Applications/"
+echo "  rm -rf /Applications/Pauselet.app && cp -R $APP /Applications/"
