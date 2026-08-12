@@ -11,6 +11,9 @@ import ReminderCore
 @MainActor
 final class NotificationPresenter: NSObject {
     weak var engine: ReminderEngine?
+    /// Set by the app so acting on a notification can also stop music the
+    /// reminder started, consistent with the overlay tiers.
+    weak var music: MusicPlayer?
 
     private let center = UNUserNotificationCenter.current()
 
@@ -113,6 +116,10 @@ final class NotificationPresenter: NSObject {
     func post(_ reminder: Reminder, settings: ReminderCore.Settings) {
         if availability == .unavailable {
             fallbackPresenter?(reminder, settings)
+            // Re-check in the background so a user who grants permission later
+            // (or a transient failure) gets system notifications back without
+            // relaunching — this is the only path out of the fallback state.
+            refreshAuthorizationStatus()
             return
         }
 
@@ -128,9 +135,12 @@ final class NotificationPresenter: NSObject {
         // reminder set does not become a stream of chimes.
         if settings.soundEnabled && reminder.priority >= .important {
             if let name = reminder.soundName {
-                content.sound = UNNotificationSound(
-                    named: UNNotificationSoundName(rawValue: "\(name).aiff")
-                )
+                // The editor offers system sounds (Glass, Submarine, ...) that
+                // live in /System/Library/Sounds, which UNNotificationSound
+                // cannot see — it only searches the app bundle and Library/
+                // Sounds. The notification posts immediately (no trigger), so
+                // playing the sound alongside it lands at the same moment.
+                Sounds.play(named: name)
             } else {
                 content.sound = .default
             }
@@ -178,8 +188,20 @@ final class NotificationPresenter: NSObject {
             let landed = delivered.contains { $0.request.identifier == identifier }
             guard !landed else { return }
 
-            self.availability = .unavailable
-            self.fallbackPresenter?(reminder, settings)
+            // Missing from the delivered list is ambiguous: it is also what a
+            // notification the user already clicked or cleared looks like.
+            // Only a non-authorized status is evidence of real failure —
+            // otherwise a quick "Done" on the banner would flip every future
+            // notification to the fallback card for the rest of the session
+            // and re-present the reminder the user just completed.
+            let status = await self.center.notificationSettings().authorizationStatus
+            switch status {
+            case .authorized, .provisional, .ephemeral:
+                return
+            default:
+                self.availability = .unavailable
+                self.fallbackPresenter?(reminder, settings)
+            }
         }
     }
 
@@ -213,10 +235,13 @@ extension NotificationPresenter: UNUserNotificationCenterDelegate {
             switch response.actionIdentifier {
             case Action.complete, UNNotificationDefaultActionIdentifier:
                 self.engine?.complete(id: id)
+                self.music?.stopReminderMusic()
             case Action.snooze:
                 self.engine?.snooze(id: id)
+                self.music?.stopReminderMusic()
             case UNNotificationDismissActionIdentifier:
                 self.engine?.dismiss(id: id)
+                self.music?.stopReminderMusic()
             default:
                 break
             }

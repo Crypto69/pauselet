@@ -160,17 +160,38 @@ final class SchedulerTests: XCTestCase {
         XCTAssertEqual(next, date(2026, 3, 10, 17, 0))
     }
 
-    func testDailyRollsToTomorrowWhenSlotHasPassed() {
+    func testDailyRollsToTomorrowOnceTodaysSlotHasFired() {
+        let created = date(2026, 3, 10, 8, 0)
+        var reminder = Reminder(
+            title: "Physio",
+            schedule: .dailyAt(hour: 17, minute: 0, dayInterval: 1),
+            createdAt: created
+        )
+        reminder.lastFiredAt = date(2026, 3, 10, 17, 0)
+        let next = Scheduler.nextFireDate(
+            for: reminder, now: date(2026, 3, 10, 18, 0), calendar: calendar
+        )
+        XCTAssertEqual(next, date(2026, 3, 11, 17, 0))
+    }
+
+    /// A slot that passed without ever firing (the app was closed at 17:00) is
+    /// overdue, not skipped: it must be due immediately so it fires once, late.
+    func testDailySlotThatPassedUnfiredIsDueImmediately() {
         let created = date(2026, 3, 10, 8, 0)
         let reminder = Reminder(
             title: "Physio",
             schedule: .dailyAt(hour: 17, minute: 0, dayInterval: 1),
             createdAt: created
         )
-        let next = Scheduler.nextFireDate(
-            for: reminder, now: date(2026, 3, 10, 18, 0), calendar: calendar
+        let now = date(2026, 3, 10, 18, 0)
+        XCTAssertEqual(
+            Scheduler.nextFireDate(for: reminder, now: now, calendar: calendar),
+            now,
+            "An elapsed, unfired slot answers 'now', not tomorrow"
         )
-        XCTAssertEqual(next, date(2026, 3, 11, 17, 0))
+        XCTAssertTrue(
+            Scheduler.isDue(reminder, now: now, settings: Settings(), calendar: calendar)
+        )
     }
 
     /// "Every 2 days" must stay in phase with the last fire rather than drifting
@@ -189,8 +210,10 @@ final class SchedulerTests: XCTestCase {
         XCTAssertEqual(next, date(2026, 3, 12, 17, 0), "Should skip the 11th")
     }
 
-    /// Even after missing several cycles, the next fire lands on the cycle grid.
-    func testEveryTwoDaysAfterLongGapLandsOnCycleGrid() {
+    /// After missing several cycles the reminder is due once, immediately, and
+    /// the catch-up collapses to the *latest* missed slot so the next fire
+    /// still lands on the cycle grid.
+    func testEveryTwoDaysAfterLongGapCatchesUpOnceAndKeepsTheGrid() {
         let created = date(2026, 3, 1, 8, 0)
         var reminder = Reminder(
             title: "Physio",
@@ -198,11 +221,26 @@ final class SchedulerTests: XCTestCase {
             createdAt: created
         )
         reminder.lastFiredAt = date(2026, 3, 2, 17, 0)
-        let next = Scheduler.nextFireDate(
-            for: reminder, now: date(2026, 3, 9, 12, 0), calendar: calendar
+        let now = date(2026, 3, 9, 12, 0)
+
+        // Grid from Mar 2: 4, 6, 8, 10. Slots on the 4th, 6th and 8th were
+        // missed, so the reminder is due right now.
+        XCTAssertEqual(
+            Scheduler.nextFireDate(for: reminder, now: now, calendar: calendar), now
         )
-        // Grid from Mar 2: 4, 6, 8, 10 -> first slot after Mar 9 noon is Mar 10.
-        XCTAssertEqual(next, date(2026, 3, 10, 17, 0))
+
+        // The engine stamps the latest elapsed slot when it fires the catch-up…
+        let elapsed = Scheduler.latestElapsedSlot(
+            for: reminder, now: now, calendar: calendar
+        )
+        XCTAssertEqual(elapsed, date(2026, 3, 8, 17, 0))
+
+        // …which keeps the grid in phase: the next fire is Mar 10, not Mar 11.
+        reminder.lastFiredAt = elapsed
+        XCTAssertEqual(
+            Scheduler.nextFireDate(for: reminder, now: now, calendar: calendar),
+            date(2026, 3, 10, 17, 0)
+        )
     }
 
     // MARK: - Weekly schedules
@@ -221,18 +259,36 @@ final class SchedulerTests: XCTestCase {
         XCTAssertEqual(next, date(2026, 3, 11, 10, 30), "Next Wednesday")
     }
 
-    func testWeeklyWrapsToNextWeek() {
+    func testWeeklyWrapsToNextWeekOnceThisWeeksSlotHasFired() {
         let created = date(2026, 3, 9, 8, 0)
-        let reminder = Reminder(
+        var reminder = Reminder(
             title: "Call Mum",
             schedule: .weeklyAt(hour: 10, minute: 30, weekdays: [2]), // Monday only
             createdAt: created
         )
-        // Monday 11:00, past the 10:30 slot -> next Monday.
+        // Monday 11:00, and the 10:30 slot already fired -> next Monday.
+        reminder.lastFiredAt = date(2026, 3, 9, 10, 30)
         let next = Scheduler.nextFireDate(
             for: reminder, now: date(2026, 3, 9, 11, 0), calendar: calendar
         )
         XCTAssertEqual(next, date(2026, 3, 16, 10, 30))
+    }
+
+    /// A weekly slot that passed without firing is due, not deferred a week.
+    func testWeeklySlotThatPassedUnfiredIsDueImmediately() {
+        let created = date(2026, 3, 9, 8, 0)
+        let reminder = Reminder(
+            title: "Call Mum",
+            schedule: .weeklyAt(hour: 10, minute: 30, weekdays: [2]),
+            createdAt: created
+        )
+        let now = date(2026, 3, 9, 11, 0)
+        XCTAssertEqual(
+            Scheduler.nextFireDate(for: reminder, now: now, calendar: calendar), now
+        )
+        XCTAssertTrue(
+            Scheduler.isDue(reminder, now: now, settings: Settings(), calendar: calendar)
+        )
     }
 
     func testWeeklyWithNoWeekdaysNeverFires() {

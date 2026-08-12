@@ -187,15 +187,44 @@ public final class ReminderEngine: ObservableObject {
         }
 
         var fired: [Reminder] = []
+        var skippedAny = false
         for index in reminders.indices {
             let reminder = reminders[index]
             guard Scheduler.isDue(
                 reminder, now: current, settings: settings, calendar: calendar
             ) else { continue }
 
-            reminders[index].lastFiredAt = current
+            // Wall-clock fires are stamped with the slot they honour, not the
+            // tick time, so an "every 2 days" grid stays in phase even when the
+            // fire itself lands a few seconds (or, after sleep, hours) late.
+            // Collapsing to the latest elapsed slot turns a week of missed
+            // slots into one catch-up fire. A snoozed fire keeps the tick time:
+            // the snooze, not the schedule, is what it honours.
+            var stamp = current
+            var skip = false
+            if reminder.snoozedUntil == nil, reminder.schedule.isWallClock {
+                let slot = Scheduler.latestElapsedSlot(
+                    for: reminder, now: current, calendar: calendar
+                ) ?? current
+                stamp = slot
+                // A slot that passed inside quiet hours is skipped, not
+                // delivered late: "daily at 23:00" arriving at 07:00 is noise.
+                // Interval reminders keep their catch-up delivery — "it has
+                // been an hour since water" is still true at 07:00.
+                skip = Scheduler.isSuppressedByQuietHours(
+                    priority: reminder.priority, settings: settings,
+                    now: slot, calendar: calendar
+                )
+            }
+
+            reminders[index].lastFiredAt = stamp
             reminders[index].snoozedUntil = nil
-            fired.append(reminders[index])
+            if skip {
+                record(.missed, for: reminders[index], at: current)
+                skippedAny = true
+            } else {
+                fired.append(reminders[index])
+            }
         }
 
         if !fired.isEmpty {
@@ -206,6 +235,8 @@ public final class ReminderEngine: ObservableObject {
                 record(.fired, for: reminder, at: current)
                 presenter?.present(reminder, settings: settings)
             }
+        }
+        if !fired.isEmpty || skippedAny {
             persist()
         }
 
@@ -222,15 +253,36 @@ public final class ReminderEngine: ObservableObject {
     }
 
     private func refreshNextUp() {
-        let candidates = reminders.filter { reminder in
-            reminder.isEnabled && !Scheduler.isSuppressedByQuietHours(
-                priority: reminder.priority,
-                settings: settings,
-                now: now,
-                calendar: calendar
-            )
+        // The countdown shows when a reminder will actually reach the user, so
+        // suppression is judged at each candidate's fire time, not at "now":
+        // during quiet hours the true next fire is the 07:00 one, and outside
+        // them a slot that lands inside the window will not really fire then.
+        let current = now
+        var best: (reminder: Reminder, date: Date)?
+        for reminder in reminders where reminder.isEnabled {
+            guard var date = Scheduler.nextFireDate(
+                for: reminder, now: current, calendar: calendar
+            ) else { continue }
+            if Scheduler.isSuppressedByQuietHours(
+                priority: reminder.priority, settings: settings,
+                now: date, calendar: calendar
+            ) {
+                guard let audible = Scheduler.nextAudibleFireDate(
+                    for: reminder, from: date, settings: settings, calendar: calendar
+                ) else { continue }
+                date = audible
+            }
+            if let currentBest = best {
+                if date < currentBest.date
+                    || (date == currentBest.date
+                        && reminder.priority > currentBest.reminder.priority) {
+                    best = (reminder, date)
+                }
+            } else {
+                best = (reminder, date)
+            }
         }
-        nextUp = Scheduler.nextUpcoming(among: candidates, now: now, calendar: calendar)
+        nextUp = best
     }
 
     // MARK: - User responses
@@ -238,8 +290,42 @@ public final class ReminderEngine: ObservableObject {
     public func complete(id: UUID) {
         guard let index = reminders.firstIndex(where: { $0.id == id }) else { return }
         let current = now
+        let reminder = reminders[index]
+
+        switch reminder.schedule {
+        case .interval:
+            // The interval restarts from the completion, so "done" always buys
+            // a full interval of peace.
+            reminders[index].lastFiredAt = current
+
+        case .dailyAt, .weeklyAt:
+            // Distinguish acknowledging a fire that just happened from marking
+            // the task done ahead of its slot. A fire newer than the last
+            // acknowledgement means this is the acknowledgement — keep the fire
+            // stamp so the next slot stays on schedule. Otherwise the user did
+            // the task early, so consume the upcoming slot rather than firing
+            // it a few hours after they said "done".
+            let awaitingAck: Bool = {
+                guard let firedAt = reminder.lastFiredAt else { return false }
+                guard let ackedAt = reminder.lastAcknowledgedAt else { return true }
+                return firedAt > ackedAt
+            }()
+            if !awaitingAck {
+                if let upcoming = Scheduler.nextScheduleSlot(
+                    for: reminder, calendar: calendar
+                ), upcoming > current {
+                    reminders[index].lastFiredAt = upcoming
+                } else {
+                    // The slot already elapsed without firing (sleep, quiet
+                    // hours): completing consumes that elapsed slot too.
+                    reminders[index].lastFiredAt = Scheduler.latestElapsedSlot(
+                        for: reminder, now: current, calendar: calendar
+                    ) ?? current
+                }
+            }
+        }
+
         reminders[index].lastAcknowledgedAt = current
-        reminders[index].lastFiredAt = current
         reminders[index].snoozedUntil = nil
         record(.completed, for: reminders[index], at: current)
         persist()

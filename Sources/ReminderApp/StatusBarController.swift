@@ -11,12 +11,20 @@ final class StatusBarController: NSObject {
     private let engine: ReminderEngine
     /// Used to show a reminder exactly as it will appear, from the editor.
     private weak var overlays: OverlayPresenter?
+    /// Shared with the fire path so the settings UI reports the same Spotify
+    /// state — a permission error raised by a real reminder shows up there too.
+    private let music: MusicPlayer
     private var settingsWindow: NSWindow?
     private var eventMonitor: Any?
 
-    init(engine: ReminderEngine, overlays: OverlayPresenter? = nil) {
+    init(
+        engine: ReminderEngine,
+        overlays: OverlayPresenter? = nil,
+        music: MusicPlayer
+    ) {
         self.engine = engine
         self.overlays = overlays
+        self.music = music
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -216,6 +224,7 @@ final class StatusBarController: NSObject {
         window.contentViewController = NSHostingController(
             rootView: SettingsView()
                 .environmentObject(engine)
+                .environmentObject(music)
                 .onPreviewReminder { [weak self] reminder in
                     guard let self else { return }
                     self.overlays?.preview(reminder, settings: self.engine.settings)

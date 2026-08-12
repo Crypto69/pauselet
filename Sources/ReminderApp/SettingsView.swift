@@ -50,6 +50,7 @@ struct SettingsView: View {
 
 struct RemindersTab: View {
     @EnvironmentObject private var engine: ReminderEngine
+    @EnvironmentObject private var music: MusicPlayer
     @State private var editing: Reminder?
     @State private var isCreating = false
     @State private var pendingDeletion: Reminder?
@@ -94,15 +95,21 @@ struct RemindersTab: View {
             }
             .padding(12)
         }
+        // A sheet gets a fresh environment, so the objects the editor reads are
+        // passed in explicitly rather than inherited from this view.
         .sheet(item: $editing) { reminder in
             ReminderEditor(reminder: reminder) { updated in
                 engine.update(updated)
             }
+            .environmentObject(engine)
+            .environmentObject(music)
         }
         .sheet(isPresented: $isCreating) {
             ReminderEditor(reminder: nil) { created in
                 engine.add(created)
             }
+            .environmentObject(engine)
+            .environmentObject(music)
         }
         // A confirmation step, because deleting a reminder silently loses its
         // history as well as the reminder itself.
@@ -202,8 +209,9 @@ struct PreferencesTab: View {
                 HelpRow(
                     title: "Enable quiet hours",
                     help: "Silences reminders during a window you choose, such "
-                        + "as overnight. Reminders are skipped for that period, "
-                        + "not queued up and delivered later."
+                        + "as overnight. Fixed-time reminders whose moment "
+                        + "falls inside the window are skipped; repeating "
+                        + "interval reminders resume once it ends."
                 ) {
                     Toggle("", isOn: binding(\.quietHours.isEnabled))
                         .labelsHidden()
@@ -292,6 +300,8 @@ struct PreferencesTab: View {
                 }
             }
 
+            MusicSettingsSection()
+
             Section("Startup") {
                 HelpRow(
                     title: "Launch at login",
@@ -316,6 +326,21 @@ struct PreferencesTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear(perform: syncLaunchAtLogin)
+    }
+
+    /// The user can flip this in System Settings › Login Items behind the
+    /// app's back; show the registration's real state, not the last thing
+    /// saved here. Skipped when running unbundled, where no registration
+    /// exists to compare against.
+    private func syncLaunchAtLogin() {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let actual = LaunchAtLogin.isEnabled
+        if engine.settings.launchAtLogin != actual {
+            var settings = engine.settings
+            settings.launchAtLogin = actual
+            engine.updateSettings(settings)
+        }
     }
 
     private var storageDescription: String {

@@ -24,8 +24,9 @@ central idea is that a medically important prompt and a nice-to-have nudge
 should not feel the same. It works just as well for anyone who wants to drink
 water, stretch, take medication, or call their mum every Sunday.
 
-Everything is stored locally. There is no account, no sync, and no network
-code in the app at all.
+Everything is stored locally. There is no account, no sync, and no network code
+in the app at all — the optional Spotify playback drives the Spotify app on your
+own Mac through AppleScript, not through any web service.
 
 ---
 
@@ -74,13 +75,28 @@ not a guess.
   <img src="docs/images/editor-new.png" width="440" alt="New Reminder sheet with fields for title and message, a grid of icons, a Repeating/Daily/Weekly schedule picker, and Subtle/Normal/Important/Critical priority options.">
 </p>
 
+## Reminders can start your music
+
+A reminder that tells you to stop working and relax is more convincing when the
+music starts by itself. Paste a Spotify playlist link into Preferences and any
+reminder can play it — launching Spotify first if it is not already running, and
+fading the volume up rather than starting at whatever it was last left at.
+
+Each reminder chooses for itself: no music, the default playlist, or one of its
+own. Calm piano for the tilt-back reminder, something with a pulse for a
+movement prompt.
+
+<p align="center">
+  <img src="docs/images/editor-music.png" width="440" alt="The Music section of a reminder, with No music / Default playlist / Its own playlist options, a field holding a Spotify playlist URI, Save and Test buttons, and a green 'Saved' confirmation.">
+</p>
+
 ## Every setting explains itself
 
 Each preference has an (i) button. They open on a click rather than a hover, so
 they work with head-pointer, switch and keyboard input.
 
 <p align="center">
-  <img src="docs/images/preferences.png" width="620" alt="Preferences tab showing Quiet Hours and Behaviour settings, each row with a small circled i help button beside its label.">
+  <img src="docs/images/preferences.png" width="620" alt="Preferences tab showing Quiet Hours, Behaviour and Music settings, each row with a small circled i help button beside its label.">
 </p>
 
 ---
@@ -130,6 +146,10 @@ All of them can be edited or deleted, and you can add your own.
   timing macOS controls
 - **Help buttons** on every preference, explaining what it does — as a click
   rather than a hover, so they work with assistive input
+- **Music**, per reminder — no music, a default Spotify playlist set once in
+  Preferences, or a playlist chosen for that one reminder. Spotify is launched
+  if it is not running, and the volume fades up rather than starting wherever it
+  was left
 - **History and adherence**, showing how often each reminder was completed
 - **Launch at login**, since a reminder app you have to remember to start is not
   much of a reminder app
@@ -149,6 +169,12 @@ macOS will ask for notification permission the first time it runs. If you
 decline, or the prompt never appears, the Normal and Important tiers fall back
 to the app's own on-screen card — nothing is silently dropped either way. You
 can change your mind later in System Settings → Notifications → Reminder.
+
+If you set up a playlist, macOS also asks for permission to control Spotify.
+That prompt appears while you are saving the playlist, rather than an hour later
+in the middle of a reminder. If you decline, reminders still fire — just without
+music — and you can grant it later in System Settings → Privacy & Security →
+Automation.
 
 ## Building from source
 
@@ -224,7 +250,7 @@ Plain JSON — readable, editable, backup-able, and yours.
 ```
 Sources/ReminderCore/   Models, scheduler, storage, engine (no UI, fully tested)
 Sources/ReminderApp/    Menu bar, overlays, notifications, settings
-Tests/                  88 tests against the core
+Tests/                  116 tests against the core
 scripts/                Build, notarize, icon generation, rasterizer
 ```
 

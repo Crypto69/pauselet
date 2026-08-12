@@ -211,11 +211,13 @@ final class EdgeCaseTests: XCTestCase {
     func testWeeklyReminderWrapsAcrossYearEnd() {
         // 31 December 2026 is a Thursday; the next Monday is 4 January 2027.
         let created = date(utc, 2026, 12, 28, 8, 0)
-        let reminder = Reminder(
+        var reminder = Reminder(
             title: "Call Mum",
             schedule: .weeklyAt(hour: 18, minute: 0, weekdays: [2]),
             createdAt: created
         )
+        // Monday the 28th's slot already fired, so the next is across the year.
+        reminder.lastFiredAt = date(utc, 2026, 12, 28, 18, 0)
 
         let next = Scheduler.nextFireDate(
             for: reminder, now: date(utc, 2026, 12, 31, 12, 0), calendar: utc

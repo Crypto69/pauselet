@@ -29,6 +29,7 @@ struct ReminderEditor: View {
     @State private var soundName: String?
     @State private var usesCustomDisplaySeconds: Bool
     @State private var displaySeconds: Int
+    @State private var music: MusicChoice
 
     enum ScheduleKind: String, CaseIterable, Identifiable {
         case interval, daily, weekly
@@ -54,6 +55,7 @@ struct ReminderEditor: View {
         _soundName = State(initialValue: reminder?.soundName)
         _usesCustomDisplaySeconds = State(initialValue: reminder?.displaySeconds != nil)
         _displaySeconds = State(initialValue: reminder?.displaySeconds ?? 8)
+        _music = State(initialValue: reminder?.music ?? .none)
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
@@ -235,6 +237,8 @@ struct ReminderEditor: View {
                         }
                     }
 
+                    ReminderMusicSection(music: $music)
+
                     Section("Activity Timer") {
                         Toggle("Run a countdown", isOn: $hasActivityDuration)
                             .help(
@@ -279,6 +283,20 @@ struct ReminderEditor: View {
         .frame(width: 470, height: 760)
     }
 
+    /// The music choice as it should be stored.
+    ///
+    /// Choosing "its own playlist" and then never pasting a link leaves an
+    /// empty URI behind. Saving that as `.playlist(uri: "")` would give the
+    /// reminder a music setting that can never play anything, so it collapses
+    /// to "no music" instead.
+    private var normalizedMusic: MusicChoice {
+        if case .playlist(let uri) = music,
+           uri.trimmingCharacters(in: .whitespaces).isEmpty {
+            return .none
+        }
+        return music
+    }
+
     /// The reminder as currently configured, so Preview shows the unsaved edits
     /// rather than what is on disk.
     private var draft: Reminder {
@@ -291,6 +309,7 @@ struct ReminderEditor: View {
         reminder.symbolName = symbolName
         reminder.soundName = soundName
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
+        reminder.music = normalizedMusic
         reminder.activityDurationSeconds = hasActivityDuration
             ? activityMinutes * 60
             : nil
@@ -306,6 +325,7 @@ struct ReminderEditor: View {
         reminder.symbolName = symbolName
         reminder.soundName = soundName
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
+        reminder.music = normalizedMusic
         reminder.activityDurationSeconds = hasActivityDuration
             ? activityMinutes * 60
             : nil

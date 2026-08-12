@@ -86,6 +86,15 @@ public enum Schedule: Codable, Equatable, Sendable {
         }
     }
 
+    /// Whether this schedule fires at fixed wall-clock moments (daily/weekly)
+    /// rather than a rolling interval. Wall-clock slots that pass unheard
+    /// inside quiet hours are skipped; interval reminders are delivered once
+    /// the window ends.
+    public var isWallClock: Bool {
+        if case .interval = self { return false }
+        return true
+    }
+
     public static func humanDuration(minutes: Int) -> String {
         if minutes < 60 { return "\(minutes) min" }
         if minutes % 60 == 0 {
@@ -130,6 +139,12 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// notifications, whose on-screen time the system controls, and Critical
     /// stays until acknowledged.
     public var displaySeconds: Int?
+    /// What music this reminder starts when it fires.
+    ///
+    /// Decoded leniently: reminders written before this existed have no `music`
+    /// key at all, and must load as "no music" rather than failing the whole
+    /// file and losing every reminder the user configured.
+    public var music: MusicChoice
     /// When the reminder last fired. Drives interval scheduling.
     public var lastFiredAt: Date?
     /// When the reminder was last acknowledged (completed or dismissed).
@@ -149,6 +164,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         activityDurationSeconds: Int? = nil,
         soundName: String? = nil,
         displaySeconds: Int? = nil,
+        music: MusicChoice = .none,
         lastFiredAt: Date? = nil,
         lastAcknowledgedAt: Date? = nil,
         snoozedUntil: Date? = nil,
@@ -164,10 +180,41 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.activityDurationSeconds = activityDurationSeconds
         self.soundName = soundName
         self.displaySeconds = displaySeconds
+        self.music = music
         self.lastFiredAt = lastFiredAt
         self.lastAcknowledgedAt = lastAcknowledgedAt
         self.snoozedUntil = snoozedUntil
         self.createdAt = createdAt
+    }
+
+    /// Decodes `music` as optional so a data file written before the music
+    /// feature existed still loads. Every other field keeps the synthesized
+    /// behaviour.
+    ///
+    /// Without this, adding the field would make `JSONDecoder` throw on an
+    /// existing install, which `ReminderEngine.loadFromStore` handles by
+    /// falling back to the starter set — quietly wiping the user's reminders.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        message = try container.decode(String.self, forKey: .message)
+        schedule = try container.decode(Schedule.self, forKey: .schedule)
+        priority = try container.decode(Priority.self, forKey: .priority)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        symbolName = try container.decode(String.self, forKey: .symbolName)
+        activityDurationSeconds = try container.decodeIfPresent(
+            Int.self, forKey: .activityDurationSeconds
+        )
+        soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
+        displaySeconds = try container.decodeIfPresent(Int.self, forKey: .displaySeconds)
+        music = try container.decodeIfPresent(MusicChoice.self, forKey: .music) ?? .none
+        lastFiredAt = try container.decodeIfPresent(Date.self, forKey: .lastFiredAt)
+        lastAcknowledgedAt = try container.decodeIfPresent(
+            Date.self, forKey: .lastAcknowledgedAt
+        )
+        snoozedUntil = try container.decodeIfPresent(Date.self, forKey: .snoozedUntil)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }
 
@@ -245,6 +292,19 @@ public struct QuietHours: Codable, Equatable, Sendable {
         // Wraps midnight.
         return now >= start || now < end
     }
+
+    /// The moment the quiet window containing `date` ends. Only meaningful when
+    /// `contains(date)` is true; used to show when a suppressed reminder will
+    /// actually surface.
+    public func nextEnd(after date: Date, calendar: Calendar = .current) -> Date? {
+        guard isEnabled else { return nil }
+        guard let endToday = calendar.date(
+            bySettingHour: endHour, minute: endMinute, second: 0, of: date
+        ) else { return nil }
+        if endToday > date { return endToday }
+        // Inside a window that wraps past midnight: the end is tomorrow.
+        return calendar.date(byAdding: .day, value: 1, to: endToday)
+    }
 }
 
 /// Global app preferences.
@@ -263,6 +323,19 @@ public struct Settings: Codable, Equatable, Sendable {
     public var showsNextReminderInMenuBar: Bool
     /// Play sound for important/critical tiers.
     public var soundEnabled: Bool
+    /// The playlist reminders set to "default" will play, as a canonical
+    /// `spotify:playlist:ID` URI. `nil` means none is configured yet.
+    public var defaultPlaylistURI: String?
+    /// Master switch for music, independent of the per-reminder choice.
+    ///
+    /// Separate from clearing the playlist so a user can silence every reminder
+    /// at once — during a meeting, say — without losing the playlist they
+    /// picked and the per-reminder settings around it.
+    public var musicEnabled: Bool
+    /// Volume to fade Spotify up to when a reminder starts music, 0–100.
+    /// Applied as a gentle ramp so a relaxation prompt does not blast whatever
+    /// volume Spotify was last left at.
+    public var musicVolume: Int
 
     public init(
         quietHours: QuietHours = QuietHours(),
@@ -272,7 +345,10 @@ public struct Settings: Codable, Equatable, Sendable {
         subtleDisplaySeconds: Int = 8,
         launchAtLogin: Bool = false,
         showsNextReminderInMenuBar: Bool = true,
-        soundEnabled: Bool = true
+        soundEnabled: Bool = true,
+        defaultPlaylistURI: String? = nil,
+        musicEnabled: Bool = true,
+        musicVolume: Int = 55
     ) {
         self.quietHours = quietHours
         self.isPaused = isPaused
@@ -282,5 +358,39 @@ public struct Settings: Codable, Equatable, Sendable {
         self.launchAtLogin = launchAtLogin
         self.showsNextReminderInMenuBar = showsNextReminderInMenuBar
         self.soundEnabled = soundEnabled
+        self.defaultPlaylistURI = defaultPlaylistURI
+        self.musicEnabled = musicEnabled
+        self.musicVolume = musicVolume
+    }
+
+    /// Decodes the music fields as optional, so settings written before the
+    /// music feature existed still load instead of throwing and resetting every
+    /// preference to its default. See `Reminder.init(from:)`.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        quietHours = try container.decode(QuietHours.self, forKey: .quietHours)
+        isPaused = try container.decode(Bool.self, forKey: .isPaused)
+        pausedUntil = try container.decodeIfPresent(Date.self, forKey: .pausedUntil)
+        snoozeMinutes = try container.decode(Int.self, forKey: .snoozeMinutes)
+        subtleDisplaySeconds = try container.decode(Int.self, forKey: .subtleDisplaySeconds)
+        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
+        showsNextReminderInMenuBar = try container.decode(
+            Bool.self, forKey: .showsNextReminderInMenuBar
+        )
+        soundEnabled = try container.decode(Bool.self, forKey: .soundEnabled)
+        defaultPlaylistURI = try container.decodeIfPresent(
+            String.self, forKey: .defaultPlaylistURI
+        )
+        musicEnabled = try container.decodeIfPresent(Bool.self, forKey: .musicEnabled) ?? true
+        musicVolume = try container.decodeIfPresent(Int.self, forKey: .musicVolume) ?? 55
+    }
+
+    /// The playlist `reminder` should start when it fires, or `nil` for silence.
+    ///
+    /// One place decides this, so the master switch and the per-reminder choice
+    /// cannot drift apart between the settings UI and the firing path.
+    public func playlistURI(for reminder: Reminder) -> String? {
+        guard musicEnabled else { return nil }
+        return reminder.music.resolvedURI(defaultPlaylistURI: defaultPlaylistURI)
     }
 }

@@ -83,14 +83,27 @@ enum SnapshotHarness {
             createdAt: now
         )
 
+        // Tilt Back is the reminder whose message asks for calming music, so it
+        // is the one that shows the music settings in a snapshot.
+        tilt.music = .defaultPlaylist
+
         let store = InMemoryDataStore(
-            data: AppData(reminders: [tilt, shift, water, physio, call])
+            data: AppData(
+                reminders: [tilt, shift, water, physio, call],
+                settings: Settings(
+                    defaultPlaylistURI: "spotify:playlist:37i9dQZF1DX4sWSpwq3LiO"
+                )
+            )
         )
         return ReminderEngine(store: store)
     }
 
     private static func render(into directory: URL) {
         let engine = sampleEngine()
+        // The settings and editor views read this from the environment. It is
+        // inert here: nothing calls it, so no Apple event is ever sent while
+        // rendering snapshots.
+        let music = MusicPlayer()
 
         snapshot(
             MenuBarView(engine: engine).environmentObject(engine),
@@ -100,9 +113,22 @@ enum SnapshotHarness {
         )
 
         snapshot(
-            SettingsView().environmentObject(engine),
+            SettingsView()
+                .environmentObject(engine)
+                .environmentObject(music),
             size: NSSize(width: 760, height: 560),
             named: "settings",
+            into: directory
+        )
+
+        // The preferences form on its own, tall enough that the whole thing —
+        // including the Music section — is in frame rather than scrolled off.
+        snapshot(
+            PreferencesTab()
+                .environmentObject(engine)
+                .environmentObject(music),
+            size: NSSize(width: 700, height: 700),
+            named: "preferences",
             into: directory
         )
 
@@ -129,15 +155,37 @@ enum SnapshotHarness {
         // Editors render at their real sheet size. The form scrolls in the app,
         // so the snapshot shows the top of it, which is the part worth showing.
         snapshot(
-            ReminderEditor(reminder: engine.reminders.first) { _ in },
+            ReminderEditor(reminder: engine.reminders.first) { _ in }
+                .environmentObject(engine)
+                .environmentObject(music),
             size: NSSize(width: 470, height: 760),
             named: "editor",
             into: directory
         )
 
+        // The per-reminder music controls on their own. The editor fixes its
+        // own height, so this section scrolls out of frame in the editor
+        // snapshots above; rendering it directly is the only way to review it
+        // without driving the real sheet by hand.
+        snapshot(
+            Form {
+                ReminderMusicSection(
+                    music: .constant(.playlist(uri: "spotify:playlist:37i9dQZF1DX4sWSpwq3LiO"))
+                )
+            }
+            .formStyle(.grouped)
+            .environmentObject(engine)
+            .environmentObject(music),
+            size: NSSize(width: 470, height: 250),
+            named: "editor-music",
+            into: directory
+        )
+
         // The blank editor: what you see when adding a reminder from scratch.
         snapshot(
-            ReminderEditor(reminder: nil) { _ in },
+            ReminderEditor(reminder: nil) { _ in }
+                .environmentObject(engine)
+                .environmentObject(music),
             size: NSSize(width: 470, height: 760),
             named: "editor-new",
             into: directory

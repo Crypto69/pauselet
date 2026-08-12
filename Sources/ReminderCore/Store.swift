@@ -124,6 +124,12 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
         return copy
     }
 
+    /// Where an unreadable data file is preserved before the engine's fallback
+    /// path overwrites it with defaults.
+    public var corruptBackupURL: URL {
+        fileURL.deletingPathExtension().appendingPathExtension("corrupt.json")
+    }
+
     public func load() throws -> AppData {
         try queue.sync {
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -133,7 +139,18 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
             guard !raw.isEmpty else {
                 return AppData(reminders: DefaultReminders.starterSet())
             }
-            return try Self.makeDecoder().decode(AppData.self, from: raw)
+            do {
+                return try Self.makeDecoder().decode(AppData.self, from: raw)
+            } catch {
+                // The engine reacts to an unreadable file by starting from the
+                // defaults, and its next persist overwrites this file. Keep
+                // the bytes around first, so a decode bug degrades into a
+                // recoverable incident instead of silently destroying every
+                // reminder the user configured.
+                try? FileManager.default.removeItem(at: corruptBackupURL)
+                try? FileManager.default.copyItem(at: fileURL, to: corruptBackupURL)
+                throw error
+            }
         }
     }
 

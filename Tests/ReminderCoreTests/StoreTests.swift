@@ -157,6 +157,24 @@ final class StoreTests: XCTestCase {
         XCTAssertThrowsError(try store.load())
     }
 
+    /// An unreadable file must be preserved before the fallback path can
+    /// overwrite it, so the user's data survives a decode bug.
+    func testCorruptFileIsBackedUpBeforeFallback() throws {
+        let url = tempDirectory.appendingPathComponent("data.json")
+        let corruptBytes = Data("{ this is not json".utf8)
+        try corruptBytes.write(to: url)
+        let store = FileDataStore(fileURL: url)
+
+        XCTAssertThrowsError(try store.load())
+
+        let backup = try Data(contentsOf: store.corruptBackupURL)
+        XCTAssertEqual(backup, corruptBytes, "The original bytes are kept intact")
+
+        // The fallback overwrite must not touch the backup.
+        try store.save(AppData(reminders: DefaultReminders.starterSet()))
+        XCTAssertEqual(try Data(contentsOf: store.corruptBackupURL), corruptBytes)
+    }
+
     /// The engine must start with defaults rather than crashing when the file
     /// on disk is unreadable.
     @MainActor

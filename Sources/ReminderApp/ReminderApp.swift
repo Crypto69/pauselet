@@ -22,8 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var engine: ReminderEngine?
     private var notifier: NotificationPresenter?
     private var overlays: OverlayPresenter?
+    private var music: MusicPlayer?
     private var tickTimer: Timer?
     private var wakeObserver: NSObjectProtocol?
+    private var activityToken: NSObjectProtocol?
 
     /// How often the engine re-evaluates. Every 5 seconds is far more often
     /// than any schedule needs, but it keeps the menu bar countdown honest and
@@ -42,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let notifier = NotificationPresenter()
-        let overlays = OverlayPresenter(notifier: notifier)
+        let music = MusicPlayer()
+        let overlays = OverlayPresenter(notifier: notifier, music: music)
 
         let store: DataStoring
         do {
@@ -57,13 +60,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let engine = ReminderEngine(store: store, presenter: overlays)
         notifier.engine = engine
+        notifier.music = music
         overlays.engine = engine
         notifier.configure()
+
+        // Opt out of App Nap for the timers only: a napped menu bar app gets
+        // its timers coalesced and a reminder that fires minutes late has
+        // failed at its one job. Idle *system* sleep stays allowed — this must
+        // never keep the Mac awake.
+        activityToken = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Reminder scheduling must stay on time"
+        )
 
         self.notifier = notifier
         self.overlays = overlays
         self.engine = engine
-        self.statusController = StatusBarController(engine: engine, overlays: overlays)
+        self.music = music
+        self.statusController = StatusBarController(
+            engine: engine, overlays: overlays, music: music
+        )
 
         startTicking()
         observeWake()
