@@ -132,6 +132,13 @@ enum SnapshotHarness {
             into: directory
         )
 
+        snapshot(
+            AboutTab(),
+            size: NSSize(width: 700, height: 620),
+            named: "about",
+            into: directory
+        )
+
         if let tilt = engine.reminders.first(where: { $0.priority == .critical }) {
             snapshot(
                 CriticalOverlayView(reminder: tilt, onComplete: {}, onSnooze: {}),

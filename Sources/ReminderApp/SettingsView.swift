@@ -7,7 +7,7 @@ struct SettingsView: View {
     @State private var selection: Tab = .reminders
 
     enum Tab: String, CaseIterable, Identifiable {
-        case reminders, preferences, history
+        case reminders, preferences, history, about
         var id: String { rawValue }
 
         var title: String {
@@ -15,6 +15,7 @@ struct SettingsView: View {
             case .reminders: return "Reminders"
             case .preferences: return "Preferences"
             case .history: return "History"
+            case .about: return "About"
             }
         }
 
@@ -23,6 +24,7 @@ struct SettingsView: View {
             case .reminders: return "bell.badge"
             case .preferences: return "gearshape"
             case .history: return "chart.bar"
+            case .about: return "info.circle"
             }
         }
     }
@@ -35,6 +37,7 @@ struct SettingsView: View {
                     case .reminders: RemindersTab()
                     case .preferences: PreferencesTab()
                     case .history: HistoryTab()
+                    case .about: AboutTab()
                     }
                 }
                 .tabItem { Label(tab.title, systemImage: tab.symbol) }
