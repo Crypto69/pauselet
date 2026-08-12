@@ -245,11 +245,6 @@ photograph a transient popover.
 
 Plain JSON — readable, editable, backup-able, and yours.
 
-The app was previously called Reminder. If you are upgrading from that, your
-reminders and history are copied across from
-`~/Library/Application Support/Reminder/` the first time Pauselet runs. The old
-folder is left where it is, as a safety net.
-
 ## Layout
 
 ```
