@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/logo.png" width="260" alt="Pauselet logo: a clock face made of a white ring that breaks into green, blue, orange and red segments, with a tick at its centre.">
+  <img src="docs/images/logo.png" width="260" alt="Pauselet logo: a clock face made of a white ring that breaks into green, blue, orange and red segments, with a tick at its centre, above the word Pauselet.">
 </p>
 
 <h1 align="center">Pauselet</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Crypto69/reminder/releases/latest"><img src="https://img.shields.io/github/v/release/Crypto69/reminder?color=2e8c93&label=download" alt="Latest release"></a>
+  <a href="https://github.com/Crypto69/pauselet/releases/latest"><img src="https://img.shields.io/github/v/release/Crypto69/pauselet?color=2e8c93&label=download" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-2e8c93" alt="macOS 13 or later">
   <img src="https://img.shields.io/badge/licence-MIT-2e8c93" alt="MIT licence">
 </p>
@@ -160,7 +160,7 @@ macOS 13 or later.
 
 ## Installing
 
-**[Download the latest release](https://github.com/Crypto69/reminder/releases/latest)**,
+**[Download the latest release](https://github.com/Crypto69/pauselet/releases/latest)**,
 unzip it, and drag `Pauselet.app` to your Applications folder. The released
 build is signed and notarized by Apple, so it opens without a Gatekeeper
 warning.
