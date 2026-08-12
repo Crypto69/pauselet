@@ -5,3 +5,13 @@ DerivedData/
 *.xcuserstate
 build/
 dist/
+
+# Agent tooling. Installed per-machine from upstream sources, so it is noise in
+# this repository rather than part of the app.
+.agents/
+.claude/
+skills-lock.json
+
+# Local debug output from tooling that has nothing to do with this app.
+firebase-debug.log
+*-debug.log
