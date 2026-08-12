@@ -34,7 +34,7 @@ struct AboutTab: View {
         Link(
             label: "YouTube",
             symbol: "play.rectangle",
-            url: URL(string: "https://www.youtube.com/@myacessibility")!
+            url: URL(string: "https://www.youtube.com/@myaccessibility")!
         ),
         Link(
             label: "Instagram",
