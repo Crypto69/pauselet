@@ -81,6 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             engine: engine, overlays: overlays, music: music
         )
 
+        // Clear the backlog *before* the first tick. Everything overdue at this
+        // point fell due while the app was closed, and replaying it on launch
+        // means overlays and music for reminders whose moment passed hours ago.
+        engine.absorbBacklogFromDowntime()
+
         startTicking()
         observeWake()
 

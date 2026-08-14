@@ -68,6 +68,14 @@ public final class ReminderEngine: ObservableObject {
     /// History is capped so the file cannot grow without bound over years of use.
     public static let maxStoredEvents = 2000
 
+    /// How recently a reminder must have fallen due to still be delivered by
+    /// `absorbBacklogFromDowntime()`.
+    ///
+    /// Long enough that quitting and relaunching — to install an update, say —
+    /// does not swallow a reminder that genuinely came due in the meantime, and
+    /// short enough that nothing from an earlier session survives it.
+    public static let downtimeGrace: TimeInterval = 120
+
     public init(
         store: DataStoring,
         dateProvider: DateProviding = SystemDateProvider(),
@@ -171,6 +179,76 @@ public final class ReminderEngine: ObservableObject {
     }
 
     // MARK: - Ticking
+
+    /// Consumes everything that fell due while the app was not running, without
+    /// presenting any of it. Call once at launch, before the first `tick()`.
+    ///
+    /// A reminder is a request to be interrupted *at a moment*, not a debt that
+    /// accrues while nobody is listening. Without this, opening the app after a
+    /// day away replays the backlog in one burst: every interval reminder is
+    /// overdue by design, and last night's wall-clock slot arrives at lunchtime
+    /// — complete with its overlay and its music. That is not a late reminder,
+    /// it is noise, and for a critical tier it is a full-screen takeover the
+    /// user did nothing to deserve.
+    ///
+    /// Anything that came due within `downtimeGrace` is left alone, so a quick
+    /// relaunch still delivers a reminder that is genuinely current.
+    ///
+    /// Sleep is deliberately not treated this way: the app *is* running, the
+    /// user may well be sitting at a Mac that idled out, and a pressure-relief
+    /// prompt still applies. See `tick()`'s catch-up path.
+    @discardableResult
+    public func absorbBacklogFromDowntime() -> [Reminder] {
+        let current = now
+        let cutoff = current.addingTimeInterval(-Self.downtimeGrace)
+        var absorbed: [Reminder] = []
+
+        for index in reminders.indices where reminders[index].isEnabled {
+            var didAbsorb = false
+
+            // A snooze belongs to the session that set it: "remind me in five
+            // minutes" said two days ago is not still owed.
+            if let snoozedUntil = reminders[index].snoozedUntil, snoozedUntil <= cutoff {
+                reminders[index].snoozedUntil = nil
+                didAbsorb = true
+            }
+
+            if reminders[index].snoozedUntil == nil {
+                switch reminders[index].schedule {
+                case .interval:
+                    // An interval measures time spent working, and nothing was
+                    // measuring it. Restart the clock from now, exactly as
+                    // `resume()` does after a pause.
+                    if let pending = Scheduler.pendingFireDate(
+                        for: reminders[index], calendar: calendar
+                    ), pending <= cutoff {
+                        reminders[index].lastFiredAt = current
+                        didAbsorb = true
+                    }
+
+                case .dailyAt, .weeklyAt:
+                    // Stamping the elapsed slot consumes the whole backlog at
+                    // once while keeping an "every N days" grid in phase. A
+                    // slot inside the grace window is left for `tick()`.
+                    if let slot = Scheduler.latestElapsedSlot(
+                        for: reminders[index], now: current, calendar: calendar
+                    ), slot <= cutoff {
+                        reminders[index].lastFiredAt = slot
+                        didAbsorb = true
+                    }
+                }
+            }
+
+            if didAbsorb {
+                record(.missed, for: reminders[index], at: current)
+                absorbed.append(reminders[index])
+            }
+        }
+
+        if !absorbed.isEmpty { persist() }
+        refreshNextUp()
+        return absorbed
+    }
 
     /// Advances the engine. Fires everything that is due and returns what fired.
     ///
