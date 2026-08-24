@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- The 19041 SDK surface is what the tray/toast packages need; the app
+         itself still runs down to Windows 10 1809. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Pauselet.App</RootNamespace>
+    <AssemblyName>Pauselet</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <!-- Only for System.Windows.Forms.Screen (monitor enumeration) and
+         Microsoft.Win32.SystemEvents (wake/unlock). No WinForms UI. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets/Pauselet.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- This is a WPF app; the WinForms/GDI implicit usings that
+         UseWindowsForms injects would make every Button/Brush/Color
+         ambiguous. The few WinForms types used (Screen) are fully
+         qualified at the call sites. -->
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Tray icon, tooltip, context menu. -->
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.1.3" />
+    <!-- Toast notifications with buttons + background activation for an
+         unpackaged desktop app. -->
+    <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Pauselet.Core/Pauselet.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Assets/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
