@@ -1,0 +1,4 @@
+# These fixtures are byte-exact captures of the Mac app's encoder output; the
+# golden-file tests compare against them byte-for-byte. A CRLF checkout on
+# Windows would corrupt the comparison, so git must never touch them.
+*.json -text
