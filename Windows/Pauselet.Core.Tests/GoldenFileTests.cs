@@ -103,6 +103,22 @@ public class GoldenFileTests
         Assert.Equal(original, reencoded);
     }
 
+    /// <summary>
+    /// A data file resaved by a BOM-writing Windows editor must still load —
+    /// the engine answers a decode failure by replacing the user's reminders
+    /// with the starter set, far too high a price for three invisible bytes.
+    /// (Found the hard way: Windows PowerShell's UTF8 encoding writes a BOM.)
+    /// </summary>
+    [Fact]
+    public void BomPrefixedFileStillDecodes()
+    {
+        var withBom = new byte[] { 0xEF, 0xBB, 0xBF }
+            .Concat(Fixture("golden-minimal.json"))
+            .ToArray();
+        var data = AppDataJson.Decode(withBom);
+        Assert.Equal("Drink Water", data.Reminders[0].Title);
+    }
+
     [Fact]
     public void MinimalFixtureReencodesByteIdentically()
     {

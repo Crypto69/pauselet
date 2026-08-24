@@ -1,9 +1,14 @@
 # Windows port — VM setup and test plan
 
-Everything in `Windows/` was written and compiled on the Mac; none of it has
-run on Windows yet. This is the complete plan for standing up the existing
-Windows 11 Parallels VM and verifying the port, in the order that retires the
-most risk first. Tick boxes as you go.
+The complete plan for verifying the port in the Windows 11 Parallels VM, in
+the order that retires the most risk first. Tick boxes as you go.
+
+> **Status 2026-08-24:** a headless session already drove the VM through much
+> of this (see HANDOFF.md → "VM verification session"): toolchain installed,
+> 169 tests green in the VM, and the critical overlay, subtle card, toast
+> round-trip, tray icon and flyout all verified from screenshots. Items below
+> marked ✅ have that evidence; everything else still wants human eyes. Parts
+> of setup Part 1 are already done in the VM.
 
 ---
 
@@ -52,7 +57,7 @@ git checkout windows-port
 ```powershell
 dotnet test Windows/Pauselet.Core.Tests
 ```
-- [ ] **Expected: 168 passed, 0 failed.** This runs the complete behavioural
+- [ ] **Expected: 169 passed, 0 failed.** ✅ verified in this VM already — This runs the complete behavioural
       spec (scheduler, engine, DST, persistence, golden files) on real
       Windows. If this is green, the port's logic is correct on this machine
       and everything after is about the shell.
@@ -78,7 +83,7 @@ reminders with 1-minute intervals.
 ### Group A — Tray surface
 - [ ] Hover the tray icon: tooltip reads "Pauselet — <title> in <countdown>"
       and the countdown updates between hovers (5 s tick).
-- [ ] Left-click: flyout opens near the tray showing Next up, the reminder
+- [x] ✅ *(headless)* Left-click: flyout opens near the tray showing Next up, the reminder
       list with countdowns, priority dots, schedule summaries.
 - [ ] Flyout closes when you click elsewhere (transient, like the Mac
       popover). Esc also closes it.
@@ -93,7 +98,7 @@ reminders with 1-minute intervals.
       Colors) — the tray glyph swaps variants and stays visible.
 
 ### Group B — Subtle card
-- [ ] Create a Subtle reminder, 1-minute interval. When it fires: a small card
+- [x] ✅ *(headless)* Create a Subtle reminder, 1-minute interval. When it fires: a small card
       fades in at the **top-right** of the primary display.
 - [ ] **Focus test (the whole point of the tier):** have Notepad focused and
       be typing when the card appears — focus must NOT leave Notepad, no
@@ -106,8 +111,8 @@ reminders with 1-minute intervals.
       appears after the first dismisses, not on top of it.
 
 ### Group C — Toasts (Normal / Important)
-- [ ] Normal tier fires → silent toast with Done and Snooze buttons.
-- [ ] Toast buttons work **without the app coming to the foreground**
+- [ ] Normal tier fires → silent toast with Done and Snooze buttons. *(Important-tier toast verified headless; Normal not yet)*
+- [x] ✅ *(headless — Done click → engine recorded completed)* Toast buttons work **without the app coming to the foreground**
       (background activation): Done completes, Snooze snoozes (check the
       flyout countdown afterwards).
 - [ ] Clicking the toast body completes (parity with the Mac's default
@@ -116,7 +121,7 @@ reminders with 1-minute intervals.
       Settings → History.
 - [ ] Important tier fires → toast **stays on screen** until acted on
       (Reminder scenario) and a chime plays.
-- [ ] First-run registration: check the toast's app name/icon reads
+- [x] ✅ *(headless — attributed "Pauselet")* First-run registration: check the toast's app name/icon reads
       "Pauselet" (the toolkit creates a Start-menu entry on first use).
 - [ ] **Fallback ladder:** Settings → System → Notifications → turn Pauselet
       notifications **off**. Fire an Important reminder → the in-app corner
@@ -129,9 +134,9 @@ reminders with 1-minute intervals.
       we document it or escalate the fallback.
 
 ### Group D — Critical overlay (the gating feature)
-- [ ] Critical reminder fires → full-screen dark teal takeover with icon,
+- [x] ✅ *(headless)* Critical reminder fires → full-screen dark teal takeover with icon,
       title, message, Snooze and Done, hint line. It covers the **taskbar**.
-- [ ] With a countdown (e.g. Tilt Back, 5 min activity): ring fills, M:SS
+- [x] ✅ *(headless — ring ticked 4:49→4:09; chime-at-zero not yet heard)* With a countdown (e.g. Tilt Back, 5 min activity): ring fills, M:SS
       counts down, button reads "Finish Early" until 0, a glass chime plays at
       0, label flips to "complete", button reads "Done".
 - [ ] **Z-order stress:** before it fires, open Task Manager with
@@ -182,7 +187,7 @@ reminders with 1-minute intervals.
       sounds resolve via the mapping tables.
 - [ ] Copy the Windows-written file back to the Mac (to a test location) and
       open the Mac app against it — reminders intact in the other direction.
-- [ ] Corrupt the file (delete a `{`) → app launches with the starter set and
+- [x] ✅ *(headless — a BOM'd file exercised exactly this path)* Corrupt the file (delete a `{`) → app launches with the starter set and
       `data.corrupt.json` preserves the damaged bytes.
 
 ### Group G — Settings, editor, system integration

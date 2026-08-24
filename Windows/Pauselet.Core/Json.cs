@@ -365,7 +365,14 @@ public static class AppDataJson
 
     public static AppData Decode(byte[] raw)
     {
-        using var document = JsonDocument.Parse(raw);
+        // Tolerate a UTF-8 BOM: strict Parse refuses one, and a data file
+        // resaved by a Windows editor (or written by Windows PowerShell)
+        // easily grows one. Rejecting it would send the engine down the
+        // corrupt-file fallback and replace the user's reminders with the
+        // starter set — far too high a price for three invisible bytes.
+        // Nothing here ever writes a BOM.
+        var payload = raw is [0xEF, 0xBB, 0xBF, ..] ? raw.AsMemory(3) : raw.AsMemory();
+        using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
         {

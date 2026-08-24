@@ -50,6 +50,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
 
     public void Present(Reminder reminder, Core.Settings settings)
     {
+        Log.Line($"present: {reminder.Title} ({reminder.Priority})");
         switch (reminder.Priority)
         {
             case Priority.Subtle:
@@ -159,6 +160,8 @@ internal sealed class OverlayPresenter : IReminderPresenting
             _criticalWindows.Add(window);
             window.Show();
         }
+
+        Log.Line($"critical takeover shown on {_criticalWindows.Count} display(s)");
 
         // A polite activation attempt so the advertised Return / S shortcuts
         // work without a click. Windows may refuse focus to a background

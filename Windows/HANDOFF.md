@@ -6,8 +6,11 @@ file.*
 
 Everything here was developed and compiled **on the Mac** (`dotnet` builds and
 runs the core tests on macOS; the WPF shell cross-compiles via
-`EnableWindowsTargeting` but cannot run). Nothing has executed on Windows yet
-— that is what `TESTING.md` is for.
+`EnableWindowsTargeting`). It has since been exercised on real Windows three
+ways: the CI job on `windows-latest`, and a headless session driving the
+actual Parallels Windows 11 VM over `prlctl` — see "VM verification session"
+below. The human pass in `TESTING.md` is still wanted, but the platform-risk
+questions are substantially answered.
 
 ## What is done
 
@@ -86,6 +89,56 @@ runs the core tests on macOS; the WPF shell cross-compiles via
    shows and that buttons activate the running process.
 5. UI polish generally: paddings, dark/light theming of the settings tabs,
    and the editor's layout were written blind and will need pixel adjustments.
+
+## VM verification session (2026-08-24, headless via prlctl)
+
+Ran in the actual Parallels Windows 11 (ARM64) VM, driving it from the Mac
+with `prlctl exec` and verifying visually from `prlctl capture` screenshots
+(kept in the session records; the artifact page shows the highlights).
+
+**Verified working:**
+- All **169 core tests pass in the VM** (`dotnet test`), as on macOS and CI.
+- App startup end-to-end: engine load → toast registration → tray icon →
+  backlog absorption → tick loop. Fire timing exact (a reminder due at
+  seed+10 s fired at seed+11 s).
+- **Critical overlay**: full-screen takeover that dims the desktop, covers
+  the taskbar, countdown ring ticking (4:49 → 4:09 across 40 s), Snooze /
+  Finish Early buttons; clicking Finish Early completed the reminder and
+  re-anchored the interval.
+- **Subtle card**: appeared top-right on schedule, dark-themed to match the
+  VM, correct glyph, checkmark button.
+- **Important toast**: attributed to "Pauselet" (unpackaged registration
+  worked), Done/Snooze buttons present; clicking **Done** activated the
+  background COM path → engine recorded `completed` and persisted. Toast
+  dismissal wiring in place.
+- **Tray + flyout**: icon present in the overflow; flyout showed "Next up ·
+  Weight Shift · 28 min", reminder rows with countdown/dot/summary/toggle,
+  Settings/Quit footer. The flyout's close-on-deactivate behaviour works
+  (it closed the moment another process took focus).
+- **Corrupt-file recovery**: a bad data.json produced `data.corrupt.json`
+  and a clean starter-set launch, exactly as designed.
+
+**Found and fixed:**
+- `AppDataJson.Decode` now tolerates a UTF-8 BOM (test #169). A BOM'd but
+  otherwise valid file — trivially produced by Windows tools — previously
+  went down the corrupt-file path and replaced the user's reminders with the
+  starter set.
+
+**Recorded for the human pass:**
+- Overlay keyboard shortcuts: with the app launched *by a background
+  process*, Windows refused focus and Return did nothing until a click —
+  the documented platform ceiling, and the click-first path works. Worth
+  re-testing from a normal user launch, which may well be granted focus.
+- `figure.seated.side` renders as a wrong (game-controller-ish) glyph —
+  first confirmed instance of the SymbolMap review the plan expects.
+
+**VM state left behind:** .NET 8 SDK at `C:\dotnet`, the .NET Desktop
+Runtime installed machine-wide (so `Pauselet.exe` runs by double-click), and
+a source snapshot at `C:\work\pauselet-windows-port` with the app built at
+`Windows\Pauselet.App\bin\Debug\net8.0-windows10.0.19041.0\Pauselet.exe`.
+For ongoing work, replace the snapshot with a real `git clone` (TESTING.md
+step 4). The app's data directory was cleaned, so the next launch is a fresh
+first run. The VM was left running.
 
 ## Working on this from Windows
 See `TESTING.md` for VM setup and the full manual test matrix. Short version:

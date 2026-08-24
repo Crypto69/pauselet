@@ -46,6 +46,19 @@ public static class Program
             // closing any of them must not end the process.
             ShutdownMode = ShutdownMode.OnExplicitShutdown,
         };
+        // A resident background app must leave a trace when it dies — there is
+        // no console and nobody watching.
+        app.DispatcherUnhandledException += (_, e) =>
+        {
+            Log.Error("DispatcherUnhandledException", e.Exception);
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception exception)
+            {
+                Log.Error("UnhandledException", exception);
+            }
+        };
         app.Startup += (_, _) => Start(args);
         app.Exit += (_, _) => Stop();
         app.Run();
@@ -53,6 +66,7 @@ public static class Program
 
     private static void Start(string[] args)
     {
+        Log.Line("startup: begin");
         Theme.StartWatching();
 
         var notifier = new ToastPresenter();
@@ -73,23 +87,28 @@ public static class Program
         }
 
         var engine = new ReminderEngine(store, presenter: overlays);
+        Log.Line($"startup: engine loaded ({engine.Reminders.Count} reminders)");
         notifier.Engine = engine;
         overlays.Engine = engine;
         notifier.Configure();
+        Log.Line("startup: toasts configured");
 
         _engine = engine;
         _overlays = overlays;
         _notifier = notifier;
         _tray = new TrayController(engine, overlays, Quit);
+        Log.Line("startup: tray created");
 
         // Clear the backlog *before* the first tick. Everything overdue at
         // this point fell due while the app was closed, and replaying it on
         // launch means overlays and toasts for reminders whose moment passed
         // hours ago.
-        engine.AbsorbBacklogFromDowntime();
+        var absorbed = engine.AbsorbBacklogFromDowntime();
+        Log.Line($"startup: backlog absorbed ({absorbed.Count})");
 
         StartTicking();
         ObserveSystemEvents();
+        Log.Line("startup: ticking");
 
         // `--open-settings` opens the settings window straight after launch —
         // handy for testing, since it is otherwise only reachable through the
