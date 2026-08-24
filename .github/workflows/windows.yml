@@ -1,0 +1,33 @@
+name: Windows
+
+# Protects the C# port the way the macOS job protects the original: the 168
+# core tests are the executable specification, and they must stay green on
+# real Windows. Kept as its own workflow so the Swift and .NET toolchains
+# never entangle.
+
+on:
+  push:
+    branches: [main, windows-port]
+    paths:
+      - "Windows/**"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "Windows/**"
+      - ".github/workflows/windows.yml"
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Test the core
+        run: dotnet test Windows/Pauselet.Core.Tests/Pauselet.Core.Tests.csproj --configuration Release
+
+      - name: Build everything
+        run: dotnet build Windows/Pauselet.sln --configuration Release

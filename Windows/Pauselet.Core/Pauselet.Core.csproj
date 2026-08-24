@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Pauselet.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Genuinely DST/timezone-correct calendar arithmetic. The scheduler's
+         wall-clock slots and the DST edge-case tests depend on it; raw
+         DateTime would fail them. -->
+    <PackageReference Include="NodaTime" Version="3.1.12" />
+    <!-- ObservableObject: the WPF-side stand-in for Combine's
+         ObservableObject/@Published on the engine. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+  </ItemGroup>
+
+</Project>

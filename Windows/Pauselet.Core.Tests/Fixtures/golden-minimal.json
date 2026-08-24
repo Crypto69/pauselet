@@ -1,0 +1,45 @@
+{
+  "events" : [
+
+  ],
+  "reminders" : [
+    {
+      "createdAt" : 1760000003,
+      "id" : "00000000-1111-2222-3333-444444444444",
+      "isEnabled" : true,
+      "message" : "Have a drink of water.",
+      "music" : {
+        "none" : {
+
+        }
+      },
+      "priority" : "normal",
+      "schedule" : {
+        "interval" : {
+          "minutes" : 60
+        }
+      },
+      "symbolName" : "bell",
+      "title" : "Drink Water"
+    }
+  ],
+  "schemaVersion" : 1,
+  "settings" : {
+    "isPaused" : false,
+    "launchAtLogin" : false,
+    "musicEnabled" : true,
+    "musicVolume" : 55,
+    "quietHours" : {
+      "allowsCritical" : true,
+      "endHour" : 7,
+      "endMinute" : 0,
+      "isEnabled" : false,
+      "startHour" : 22,
+      "startMinute" : 0
+    },
+    "showsNextReminderInMenuBar" : true,
+    "snoozeMinutes" : 5,
+    "soundEnabled" : true,
+    "subtleDisplaySeconds" : 8
+  }
+}
