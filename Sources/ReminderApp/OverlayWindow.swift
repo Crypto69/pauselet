@@ -47,11 +47,17 @@ final class OverlayPanel: NSPanel {
 /// dropped: after sleep or the end of quiet hours several reminders routinely
 /// become due on the same tick, and the second must not silently replace the
 /// first — for a pressure-relief prompt that would be a missed reminder.
+///
+/// The queue is only honoured while it is fresh, though. Entries that sat for
+/// hours behind an unacknowledged overlay are pruned when the user finally
+/// responds, so pressing Finish after falling asleep does not hand them the
+/// next takeover, and the next. See `advanceCritical`.
 @MainActor
 final class OverlayPresenter: NSObject, ReminderPresenting {
     /// Critical overlays, one per display so the prompt cannot be missed.
     private var criticalPanels: [OverlayPanel] = []
-    private var criticalQueue: [(reminder: Reminder, settings: ReminderCore.Settings)] = []
+    private var criticalQueue:
+        [(reminder: Reminder, settings: ReminderCore.Settings, queuedAt: Date)] = []
     /// Whether this app was active before the takeover activated it, so focus
     /// is only handed back when the takeover was the thing that took it.
     private var wasActiveBeforeCritical = false
@@ -146,8 +152,9 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             } else {
                 // Another critical reminder is already demanding attention.
                 // Queue this one; it appears the moment the current one is
-                // acknowledged, so neither is lost.
-                criticalQueue.append((reminder, settings))
+                // acknowledged — provided that moment comes soon enough for it
+                // to still be worth showing.
+                criticalQueue.append((reminder, settings, Date()))
                 return
             }
         } else {
@@ -184,13 +191,13 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
                     // (or is still starting it); the user's own listening is
                     // never touched.
                     self.music.stopReminderMusic()
-                    self.advanceCritical()
+                    self.advanceCritical(afterAcknowledging: reminder.id)
                 },
                 onSnooze: { [weak self] in
                     guard let self else { return }
                     if !isPreview { self.engine?.snooze(id: reminder.id) }
                     self.music.stopReminderMusic()
-                    self.advanceCritical()
+                    self.advanceCritical(afterAcknowledging: reminder.id)
                 }
             )
             panel.contentView = NSHostingView(rootView: view)
@@ -209,8 +216,32 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         keyPanel?.makeKeyAndOrderFront(nil)
     }
 
-    /// Closes the current takeover and shows the next queued one, if any.
-    private func advanceCritical() {
+    /// Closes the current takeover and shows the next queued one that is still
+    /// current, if any.
+    ///
+    /// Anything that queued behind an overlay nobody was looking at — the user
+    /// fell asleep, or left the desk for the afternoon — is dropped rather
+    /// than delivered in a burst, and recorded as missed so history shows what
+    /// became of it. `ReminderEngine.shouldPresentQueued` holds the policy.
+    private func advanceCritical(afterAcknowledging acknowledgedID: UUID) {
+        let now = Date()
+        var dropped: [Reminder] = []
+        criticalQueue.removeAll { entry in
+            let keep = ReminderEngine.shouldPresentQueued(
+                reminderID: entry.reminder.id,
+                queuedAt: entry.queuedAt,
+                acknowledgedID: acknowledgedID,
+                now: now
+            )
+            if !keep { dropped.append(entry.reminder) }
+            return !keep
+        }
+        engine?.recordMissedPresentations(dropped)
+
+        // Pruning happens before the panels close, so the focus hand-back
+        // decision inside `closeCriticalPanels` sees the queue it will
+        // actually drain — a queue of nothing but stale entries must hand
+        // focus back, not hold it for takeovers that will never appear.
         closeCriticalPanels()
         if let next = criticalQueue.first {
             criticalQueue.removeFirst()

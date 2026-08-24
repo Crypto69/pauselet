@@ -68,8 +68,10 @@ public final class ReminderEngine: ObservableObject {
     /// History is capped so the file cannot grow without bound over years of use.
     public static let maxStoredEvents = 2000
 
-    /// How recently a reminder must have fallen due to still be delivered by
-    /// `absorbBacklogFromDowntime()`.
+    /// How recently a reminder must have fallen due to still be delivered
+    /// late: by `absorbBacklogFromDowntime()` at launch, and by the
+    /// presenter's queue when an acknowledgment finally arrives (see
+    /// `shouldPresentQueued`).
     ///
     /// Long enough that quitting and relaunching — to install an update, say —
     /// does not swallow a reminder that genuinely came due in the meantime, and
@@ -248,6 +250,43 @@ public final class ReminderEngine: ObservableObject {
         if !absorbed.isEmpty { persist() }
         refreshNextUp()
         return absorbed
+    }
+
+    /// Whether a presentation that has been waiting off-screen since `queuedAt`
+    /// should still be shown once the user acknowledges reminder
+    /// `acknowledgedID` at `now`.
+    ///
+    /// While a critical takeover sits unacknowledged the engine keeps ticking,
+    /// so reminders that fall due fire into the presenter and queue behind the
+    /// occupied screen. When the user finally responds hours later — they fell
+    /// asleep, or walked away — replaying that queue means acknowledging one
+    /// overlay only to be handed the next, and the next. The same principle as
+    /// `absorbBacklogFromDowntime()` applies: a reminder is a request to be
+    /// interrupted at a moment, and the moment of anything queued more than
+    /// `downtimeGrace` ago has passed.
+    ///
+    /// A queued duplicate of the acknowledged reminder is dropped however
+    /// fresh: the user has just said "done" (or "not now") to that reminder,
+    /// and re-presenting it immediately would contradict them.
+    public static func shouldPresentQueued(
+        reminderID: UUID,
+        queuedAt: Date,
+        acknowledgedID: UUID,
+        now: Date
+    ) -> Bool {
+        guard reminderID != acknowledgedID else { return false }
+        return queuedAt > now.addingTimeInterval(-downtimeGrace)
+    }
+
+    /// Records queued presentations the presenter dropped unshown (see
+    /// `shouldPresentQueued`), so history still shows what happened to them.
+    public func recordMissedPresentations(_ dropped: [Reminder]) {
+        guard !dropped.isEmpty else { return }
+        let current = now
+        for reminder in dropped {
+            record(.missed, for: reminder, at: current)
+        }
+        persist()
     }
 
     /// Advances the engine. Fires everything that is due and returns what fired.

@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
 APP="dist/Pauselet.app"
 BUNDLE_ID="com.pauselet.pauselet"
-VERSION="1.2.3"
+VERSION="1.2.4"
 
 # Your Apple Team ID. Used when signing with a Developer ID certificate;
 # ignored for the default ad-hoc signature.
