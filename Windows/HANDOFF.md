@@ -79,9 +79,11 @@ questions are substantially answered.
 ## Known placeholders needing a human pass in the VM
 1. **Sounds are synthesized placeholders** — replace with designed CC0
    recordings before release; only the mapping table needs updating.
-2. **SF → Segoe Fluent glyph mapping** (`SymbolMap.cs`) — codepoints are
-   best-effort; review each rendered glyph, especially the figure/exercise
-   ones. Unmapped names fall back to the bell.
+2. ~~SF → Segoe Fluent glyph mapping~~ **Resolved 2026-08-25**: the icons now
+   come from a bundled 9 KB subset of Material Symbols (Apache 2.0), which
+   actually has the human-figure poses — `figure.seated.side` renders as a
+   person reclining. `SymbolMap.cs` carries the audited codepoint table; a
+   quick visual pass over the picker in the VM is still worthwhile.
 3. **Flyout positioning** assumes a bottom-docked taskbar; check against
    top/side docking.
 4. **First toast registration**: the Toolkit auto-creates a Start-menu

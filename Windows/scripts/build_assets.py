@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """Generates the Windows app's binary assets into Windows/Pauselet.App/Assets.
 
-Run from anywhere; paths are resolved relative to this file. Requires Pillow.
+Run from anywhere; paths are resolved relative to this file. Requires Pillow
+and fonttools (the font step downloads its ~10 MB source into scripts/cache/
+on first run).
 
 Produces:
 - Pauselet.ico        — app icon, from Resources/icon-master.png
 - TrayLight.ico       — tray glyph for a LIGHT taskbar (dark strokes)
 - TrayDark.ico        — tray glyph for a DARK taskbar (white strokes)
 - Sounds/*.wav        — synthesized placeholder chimes
+- Fonts/MaterialSymbolsSubset.ttf — the reminder-icon glyphs, subset from
+  Google's Material Symbols (Apache 2.0; licence copied alongside). The
+  built-in Segoe fonts have no human-figure glyphs, and SF Symbols cannot
+  ship on Windows — this is what lets "figure.seated.side" actually look
+  like someone reclining. The SF-name → codepoint table lives in
+  SymbolMap.cs and must stay in step with SUBSET_GLYPHS below.
 
 The tray glyphs are recolored from the Mac menu bar template image
 (Sources/ReminderApp/Resources/MenuBarIconTemplate@2x.png), which is a black
@@ -130,7 +138,101 @@ def build_sounds() -> None:
     )
 
 
+FONT_URL = (
+    "https://github.com/google/material-design-icons/raw/master/variablefont/"
+    "MaterialSymbolsOutlined%5BFILL%2CGRAD%2Copsz%2Cwght%5D.ttf"
+)
+LICENSE_URL = (
+    "https://raw.githubusercontent.com/google/material-design-icons/master/LICENSE"
+)
+
+# Material Symbols names and codepoints kept by the subset — everything
+# SymbolMap.cs maps to, plus a couple of spares for future mappings.
+SUBSET_GLYPHS = {
+    "accessibility_new": 0xE92C,
+    "airline_seat_recline_extra": 0xE636,
+    "alarm": 0xE855,
+    "auto_awesome": 0xE65F,
+    "bedtime": 0xF159,
+    "calendar_month": 0xEBCC,
+    "call": 0xF0D4,
+    "check_circle": 0xF0BE,
+    "clean_hands": 0xF21F,
+    "desktop_windows": 0xE30C,
+    "directions_walk": 0xE536,
+    "eco": 0xEA35,
+    "favorite": 0xE87E,
+    "home": 0xE9B2,
+    "keyboard": 0xE312,
+    "light_mode": 0xE518,
+    "local_cafe": 0xEB44,
+    "mail": 0xE159,
+    "medication": 0xF033,
+    "menu_book": 0xEA19,
+    "motion_photos_on": 0xE9C1,
+    "music_note": 0xE405,
+    "notification_important": 0xE004,
+    "notifications": 0xE7F5,
+    "notifications_off": 0xE7F6,
+    "notifications_unread": 0xF4FE,
+    "pause_circle": 0xE1A2,
+    "pets": 0xE91D,
+    "play_circle": 0xE1C4,
+    "psychology": 0xEA4A,
+    "pulmonology": 0xE124,
+    "radio_button_unchecked": 0xE836,
+    "restaurant": 0xE56C,
+    "schedule": 0xEFD6,
+    "self_improvement": 0xEA78,
+    "settings": 0xE8B8,
+    "sports_esports": 0xEA28,
+    "sports_gymnastics": 0xEBC4,
+    "swap_vertical_circle": 0xE8D6,
+    "timer": 0xE425,
+    "visibility": 0xE8F4,
+    "warning": 0xF083,
+    "water_drop": 0xE798,
+}
+
+
+def build_icon_font() -> None:
+    import urllib.request
+
+    from fontTools import subset
+    from fontTools.ttLib import TTFont
+    from fontTools.varLib.instancer import instantiateVariableFont
+
+    cache = Path(__file__).parent / "cache"
+    cache.mkdir(exist_ok=True)
+    source = cache / "MaterialSymbolsOutlined-variable.ttf"
+    if not source.exists():
+        print("downloading", FONT_URL)
+        urllib.request.urlretrieve(FONT_URL, source)
+
+    fonts_dir = ASSETS / "Fonts"
+    fonts_dir.mkdir(parents=True, exist_ok=True)
+    licence = fonts_dir / "LICENSE-MaterialSymbols.txt"
+    if not licence.exists():
+        urllib.request.urlretrieve(LICENSE_URL, licence)
+
+    font = TTFont(source)
+    # Pin the variable axes to the regular outlined style: a static font
+    # sidesteps any variable-font quirks in WPF's text stack.
+    instantiateVariableFont(
+        font, {"wght": 400, "FILL": 0, "GRAD": 0, "opsz": 24}, inplace=True
+    )
+
+    subsetter = subset.Subsetter()
+    subsetter.populate(unicodes=sorted(SUBSET_GLYPHS.values()))
+    subsetter.subset(font)
+
+    out = fonts_dir / "MaterialSymbolsSubset.ttf"
+    font.save(out)
+    print(f"wrote {out} ({out.stat().st_size} bytes, {len(SUBSET_GLYPHS)} glyphs)")
+
+
 if __name__ == "__main__":
     build_app_icon()
     build_tray_icons()
     build_sounds()
+    build_icon_font()
