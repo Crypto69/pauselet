@@ -23,6 +23,12 @@ internal static class NativeMethods
 
     public const int WM_DISPLAYCHANGE = 0x007E;
 
+    public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(
+        IntPtr hWnd, int attribute, ref int value, int size);
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetWindowPos(
         IntPtr hWnd, IntPtr hWndInsertAfter,

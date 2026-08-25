@@ -101,6 +101,32 @@ internal static class Ui
         return button;
     }
 
+    /// <summary>
+    /// Makes a titled window's non-client chrome follow the app theme: WPF
+    /// draws a light title bar regardless of Windows' dark mode unless the
+    /// window opts in via DWM. Call once from the constructor.
+    /// </summary>
+    public static void ApplyThemeChrome(Window window)
+    {
+        window.SourceInitialized += (_, _) =>
+        {
+            if (Theme.IsAppLight) return;
+            try
+            {
+                var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                var enabled = 1;
+                NativeMethods.DwmSetWindowAttribute(
+                    handle, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    ref enabled, sizeof(int)
+                );
+            }
+            catch
+            {
+                // A light title bar on a dark window is cosmetic, not fatal.
+            }
+        };
+    }
+
     /// <summary>An icon-only button with no chrome at all.</summary>
     public static Button IconButton(TextBlock glyph, string? tooltip = null)
     {

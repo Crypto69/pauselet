@@ -60,6 +60,10 @@ internal sealed class ReminderEditorWindow : Window
         ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Theme.Brush(Theme.Current.WindowBackground);
+        // See SettingsWindow: unstyled WPF text is black regardless of the
+        // Windows theme, so the dark palette needs an inherited foreground.
+        Foreground = Theme.Brush(Theme.Current.Foreground);
+        Ui.ApplyThemeChrome(this);
 
         Content = BuildForm();
         LoadFrom(existing);
@@ -116,6 +120,7 @@ internal sealed class ReminderEditorWindow : Window
                 Content = label,
                 Tag = value,
                 Margin = new Thickness(0, 0, 8, 0),
+                Foreground = Theme.Brush(Theme.Current.Foreground),
             };
             _weekdayBoxes.Add(box);
             dayRow.Children.Add(box);
@@ -140,6 +145,7 @@ internal sealed class ReminderEditorWindow : Window
                 GroupName = "priority",
                 Tag = priority,
                 Margin = new Thickness(0, 3, 0, 0),
+                Foreground = Theme.Brush(Theme.Current.Foreground),
                 Content = new StackPanel
                 {
                     Children =
@@ -148,6 +154,7 @@ internal sealed class ReminderEditorWindow : Window
                         {
                             Text = priority.DisplayName(),
                             FontWeight = FontWeights.Medium,
+                            Foreground = Theme.Brush(Theme.Current.Foreground),
                         },
                         new TextBlock
                         {
@@ -271,6 +278,7 @@ internal sealed class ReminderEditorWindow : Window
         Text = text,
         FontSize = 12,
         FontWeight = FontWeights.SemiBold,
+        Foreground = Theme.Brush(Theme.Current.Foreground),
         Margin = new Thickness(0, 12, 0, 3),
     };
 
@@ -278,6 +286,7 @@ internal sealed class ReminderEditorWindow : Window
     {
         Text = text,
         VerticalAlignment = VerticalAlignment.Center,
+        Foreground = Theme.Brush(Theme.Current.Foreground),
         Margin = new Thickness(4, 0, 4, 0),
     };
 

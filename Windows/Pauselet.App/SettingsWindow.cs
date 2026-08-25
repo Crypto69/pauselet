@@ -35,8 +35,17 @@ internal sealed class SettingsWindow : Window
         MinHeight = 460;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = Theme.Brush(Theme.Current.WindowBackground);
+        // Default WPF text is black whatever Windows' theme is; on the dark
+        // palette every unstyled label must inherit a readable foreground.
+        Foreground = Theme.Brush(Theme.Current.Foreground);
+        Ui.ApplyThemeChrome(this);
 
-        var tabs = new TabControl { Margin = new Thickness(8) };
+        var tabs = new TabControl
+        {
+            Margin = new Thickness(8),
+            Background = Theme.Brush(Theme.Current.WindowBackground),
+            BorderBrush = Theme.Brush(Theme.Current.Divider),
+        };
         tabs.Items.Add(new TabItem { Header = "Reminders", Content = BuildRemindersTab() });
         tabs.Items.Add(new TabItem { Header = "Preferences", Content = BuildPreferencesTab() });
         tabs.Items.Add(new TabItem { Header = "History", Content = BuildHistoryTab() });
@@ -225,6 +234,7 @@ internal sealed class SettingsWindow : Window
             Text = "From",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 6, 0),
+            Foreground = Theme.Brush(Theme.Current.Foreground),
         });
         quietTimes.Children.Add(TimeBox(
             settings.QuietHours.StartHour, settings.QuietHours.StartMinute,
@@ -238,6 +248,7 @@ internal sealed class SettingsWindow : Window
             Text = "to",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 0, 6, 0),
+            Foreground = Theme.Brush(Theme.Current.Foreground),
         });
         quietTimes.Children.Add(TimeBox(
             settings.QuietHours.EndHour, settings.QuietHours.EndMinute,
@@ -314,6 +325,7 @@ internal sealed class SettingsWindow : Window
         Text = text,
         FontSize = 13,
         FontWeight = FontWeights.SemiBold,
+        Foreground = Theme.Brush(Theme.Current.Foreground),
         Margin = new Thickness(0, 18, 0, 6),
     };
 
@@ -322,7 +334,13 @@ internal sealed class SettingsWindow : Window
         Background = Theme.Brush(Color.FromArgb(26, 46, 139, 131)),
         CornerRadius = new CornerRadius(8),
         Padding = new Thickness(12, 10, 12, 10),
-        Child = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12 },
+        Child = new TextBlock
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            Foreground = Theme.Brush(Theme.Current.Foreground),
+        },
     };
 
     private UIElement CheckRow(
@@ -330,7 +348,12 @@ internal sealed class SettingsWindow : Window
         double indent = 0, string? help = null)
     {
         var stack = new StackPanel { Margin = new Thickness(indent, 6, 0, 0) };
-        var box = new CheckBox { Content = label, IsChecked = initial };
+        var box = new CheckBox
+        {
+            Content = label,
+            IsChecked = initial,
+            Foreground = Theme.Brush(Theme.Current.Foreground),
+        };
         box.Click += (_, _) => onChange(box.IsChecked == true);
         stack.Children.Add(box);
         if (help is not null)
@@ -362,6 +385,7 @@ internal sealed class SettingsWindow : Window
             Text = label,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0),
+            Foreground = Theme.Brush(Theme.Current.Foreground),
         });
         var current = initial;
         var box = new TextBox
@@ -426,6 +450,7 @@ internal sealed class SettingsWindow : Window
             Text = ":",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(3, 0, 3, 0),
+            Foreground = Theme.Brush(Theme.Current.Foreground),
         });
         row.Children.Add(minuteBox);
         return row;
@@ -498,6 +523,7 @@ internal sealed class SettingsWindow : Window
             FontSize = 28,
             FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
+            Foreground = Theme.Brush(Theme.Current.Foreground),
         };
         stack.Children.Add(name);
 
@@ -519,6 +545,7 @@ internal sealed class SettingsWindow : Window
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
             HorizontalAlignment = HorizontalAlignment.Center,
+            Foreground = Theme.Brush(Theme.Current.Foreground),
         });
 
         var link = new Button
