@@ -302,6 +302,31 @@ internal sealed class SettingsWindow : Window
             value => UpdateSettings(s => s with { SoundEnabled = value })
         ));
 
+        stack.Children.Add(SectionHeader("Notifications"));
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Normal and Important reminders arrive as Windows notifications. " +
+                   "How long a banner stays on screen before moving to the " +
+                   "notification centre is a Windows setting — from 5 seconds up " +
+                   "to 5 minutes, and it applies to every app.",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            MaxWidth = 520,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+            Margin = new Thickness(0, 4, 0, 0),
+        });
+        var timingLink = new Button
+        {
+            Content = "Change how long notifications stay on screen…",
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(0, 8, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        timingLink.Click += (_, _) =>
+            OpenUri("ms-settings:easeofaccess-visualeffects");
+        stack.Children.Add(timingLink);
+
         // Spotify control is deferred on Windows (v2): the music sections of
         // the Mac settings are intentionally absent, while every music field
         // in the data file persists untouched.
@@ -318,6 +343,22 @@ internal sealed class SettingsWindow : Window
     {
         if (_loadingPreferences) return;
         _engine.UpdateSettings(transform(_engine.Settings));
+    }
+
+    /// <summary>
+    /// Opens a URI with the shell — ms-settings: pages, web links. The
+    /// Windows counterpart of the Mac app's x-apple.systempreferences links.
+    /// </summary>
+    private static void OpenUri(string uri)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
+        }
+        catch
+        {
+            // A missing handler association is not ours to fix.
+        }
     }
 
     private static TextBlock SectionHeader(string text) => new()
@@ -555,20 +596,7 @@ internal sealed class SettingsWindow : Window
             Padding = new Thickness(10, 4, 10, 4),
             HorizontalAlignment = HorizontalAlignment.Center,
         };
-        link.Click += (_, _) =>
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo("https://github.com/Crypto69/pauselet")
-                {
-                    UseShellExecute = true,
-                });
-            }
-            catch
-            {
-                // A missing browser association is not our problem to solve.
-            }
-        };
+        link.Click += (_, _) => OpenUri("https://github.com/Crypto69/pauselet");
         stack.Children.Add(link);
 
         return stack;
