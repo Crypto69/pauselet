@@ -46,11 +46,14 @@ public static class Program
             // closing any of them must not end the process.
             ShutdownMode = ShutdownMode.OnExplicitShutdown,
         };
-        // A resident background app must leave a trace when it dies — there is
-        // no console and nobody watching.
+        // A resident background app must not die because one window
+        // misbehaved — a crashed Pauselet delivers no reminders at all, which
+        // is the one failure this app cannot afford. Log the exception (there
+        // is no console and nobody watching) and keep the engine running.
         app.DispatcherUnhandledException += (_, e) =>
         {
             Log.Error("DispatcherUnhandledException", e.Exception);
+            e.Handled = true;
         };
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {

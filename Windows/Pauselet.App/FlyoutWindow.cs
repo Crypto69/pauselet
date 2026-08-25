@@ -50,10 +50,14 @@ internal sealed class FlyoutWindow : Window
         // taskbar's tray corner.
         Loaded += (_, _) => PositionNearTray();
 
-        Deactivated += (_, _) => Close();
+        // Transient, like the Mac popover — but deactivation also fires while
+        // the window is already closing (closing is what deactivates it), and
+        // WPF throws on Close-during-Close. Every close goes through the
+        // guarded path.
+        Deactivated += (_, _) => CloseSafely();
         KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Escape) Close();
+            if (e.Key == Key.Escape) CloseSafely();
         };
 
         // Drives the countdown text without the engine having to publish per
@@ -62,6 +66,22 @@ internal sealed class FlyoutWindow : Window
         _ticker.Tick += (_, _) => Rebuild();
         _ticker.Start();
         Closed += (_, _) => _ticker.Stop();
+    }
+
+    private bool _isClosing;
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        _isClosing = true;
+        base.OnClosing(e);
+    }
+
+    /// <summary>Closes unless a close is already underway; safe to call repeatedly.</summary>
+    public void CloseSafely()
+    {
+        if (_isClosing) return;
+        _isClosing = true;
+        Close();
     }
 
     private void PositionNearTray()
@@ -369,7 +389,7 @@ internal sealed class FlyoutWindow : Window
         settings.HorizontalAlignment = HorizontalAlignment.Left;
         settings.Click += (_, _) =>
         {
-            Close();
+            CloseSafely();
             _openSettings();
         };
         grid.Children.Add(settings);

@@ -101,7 +101,7 @@ internal sealed class TrayController : IDisposable
     {
         if (_flyout is { IsVisible: true })
         {
-            _flyout.Close();
+            _flyout.CloseSafely();
             _flyout = null;
             return;
         }
@@ -173,7 +173,7 @@ internal sealed class TrayController : IDisposable
 
     public void OpenSettings()
     {
-        _flyout?.Close();
+        _flyout?.CloseSafely();
 
         if (_settingsWindow is { IsVisible: true })
         {
