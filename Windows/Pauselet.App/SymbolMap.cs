@@ -80,6 +80,12 @@ internal static class SymbolMap
         ["gearshape"] = "\uE8B8",                      // settings
         ["pause.circle"] = "\uE1A2",                   // pause_circle
         ["play.circle.fill"] = "\uE1C4",               // play_circle
+
+        // About-tab links (same SF names the Mac AboutTab uses).
+        ["globe"] = "\uE80B",                          // public
+        ["play.rectangle"] = "\uF06A",                 // smart_display
+        ["camera"] = "\uE412",                         // photo_camera
+        ["person.crop.square"] = "\uE851",             // account_box
     };
 
     public static string Glyph(string sfSymbolName) =>

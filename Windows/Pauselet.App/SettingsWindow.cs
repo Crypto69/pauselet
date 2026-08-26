@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using NodaTime;
 using Pauselet.Core;
 
@@ -549,56 +550,199 @@ internal sealed class SettingsWindow : Window
 
     // MARK: - About tab
 
+    /// <summary>
+    /// What the app is, who made it, and where to find more — mirroring the
+    /// Mac AboutTab section for section, so someone who finds the app through
+    /// the repository and someone who opens Settings are told the same thing.
+    /// The one wording change: the Mac's sentence about Spotify/AppleScript
+    /// has no Windows counterpart (music is deferred here), so the local-only
+    /// paragraph ends earlier.
+    /// </summary>
     private UIElement BuildAboutTab()
     {
-        var stack = new StackPanel
-        {
-            Margin = new Thickness(16),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        var palette = Theme.Current;
+        var stack = new StackPanel { Margin = new Thickness(24) };
 
-        var name = new TextBlock
+        // Header: the real app icon beside the name, so this looks like the
+        // app rather than a generic panel.
+        var header = new StackPanel { Orientation = Orientation.Horizontal };
+        if (LoadAppIcon() is { } icon)
+        {
+            header.Children.Add(new Image
+            {
+                Source = icon,
+                Width = 72,
+                Height = 72,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 16, 0),
+            });
+        }
+        else
+        {
+            var fallback = Ui.Glyph("bell", 56, Theme.Brush(palette.Accent));
+            fallback.Width = 72;
+            fallback.Margin = new Thickness(0, 0, 16, 0);
+            header.Children.Add(fallback);
+        }
+
+        var titleStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        titleStack.Children.Add(new TextBlock
         {
             Text = "Pauselet",
-            FontSize = 28,
+            FontSize = 24,
             FontWeight = FontWeights.SemiBold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Foreground = Theme.Brush(Theme.Current.Foreground),
-        };
-        stack.Children.Add(name);
+            Foreground = Theme.Brush(palette.Foreground),
+        });
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "—";
+        titleStack.Children.Add(SecondaryText($"Version {version}"));
+        var tagline = SecondaryText(
+            "Recurring reminders for Windows, where you choose how loudly " +
+            "each one interrupts you."
+        );
+        tagline.Margin = new Thickness(0, 2, 0, 0);
+        tagline.MaxWidth = 440;
+        titleStack.Children.Add(tagline);
+        header.Children.Add(titleStack);
+        stack.Children.Add(header);
 
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "dev";
+        stack.Children.Add(AboutDivider(palette));
+
+        // Description — mirrors the README's opening, deliberately.
+        var whoFor = SecondaryText(
+            "It was built for a wheelchair user who needs regular pressure " +
+            "relief, so the central idea is that a medically important prompt " +
+            "and a nice-to-have nudge should not feel the same. It works just " +
+            "as well for anyone who wants to drink water, stretch, take " +
+            "medication, or call their mum every Sunday."
+        );
+        stack.Children.Add(whoFor);
+        var localOnly = SecondaryText(
+            "Everything is stored locally. There is no account, no sync, and " +
+            "no network code in the app at all."
+        );
+        localOnly.Margin = new Thickness(0, 10, 0, 0);
+        stack.Children.Add(localOnly);
+
+        stack.Children.Add(AboutDivider(palette));
+
         stack.Children.Add(new TextBlock
         {
-            Text = $"Version {version} for Windows",
+            Text = "More from MyAccessibility.ai",
             FontSize = 12,
-            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 4, 0, 16),
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Theme.Brush(palette.Foreground),
+            Margin = new Thickness(0, 0, 0, 8),
         });
+        stack.Children.Add(SecondaryText(
+            "A nonprofit making free accessibility software, 3D print files " +
+            "and resources for people with spinal cord injuries and disabilities."
+        ));
 
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Gentle, insistent activity reminders.\n" +
-                   "Everything stays on this PC — no account, no cloud, no tracking.",
-            FontSize = 13,
-            TextAlignment = TextAlignment.Center,
-            TextWrapping = TextWrapping.Wrap,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Foreground = Theme.Brush(Theme.Current.Foreground),
-        });
+        // Wraps, so a narrow window does not clip the last link.
+        var links = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
+        links.Children.Add(LinkButton("globe", "myaccessibility.ai", "https://myaccessibility.ai"));
+        links.Children.Add(LinkButton("play.rectangle", "YouTube", "https://www.youtube.com/@myaccessibility"));
+        links.Children.Add(LinkButton("camera", "Instagram", "https://www.instagram.com/myaccessibility"));
+        links.Children.Add(LinkButton("person.crop.square", "LinkedIn", "https://www.linkedin.com/in/chris-venter/"));
+        stack.Children.Add(links);
 
-        var link = new Button
+        stack.Children.Add(AboutDivider(palette));
+
+        const string email = "support@myaccessibility.ai";
+        var feedback = new StackPanel { Orientation = Orientation.Horizontal };
+        var prompt = SecondaryText("Questions or feedback:");
+        prompt.VerticalAlignment = VerticalAlignment.Center;
+        prompt.Margin = new Thickness(0, 0, 4, 0);
+        feedback.Children.Add(prompt);
+        var emailLink = Ui.RoundedButton(
+            email, Brushes.Transparent, Theme.Brush(palette.Accent),
+            cornerRadius: 4, padding: new Thickness(2, 0, 2, 0)
+        );
+        emailLink.FontSize = 12;
+        emailLink.Click += (_, _) => OpenUri($"mailto:{email}");
+        feedback.Children.Add(emailLink);
+        stack.Children.Add(feedback);
+
+        var licence = new TextBlock
         {
-            Content = "github.com/Crypto69/pauselet",
-            Margin = new Thickness(0, 16, 0, 0),
-            Padding = new Thickness(10, 4, 10, 4),
-            HorizontalAlignment = HorizontalAlignment.Center,
+            Text = "Free and open source, under the MIT licence.",
+            FontSize = 11,
+            Foreground = Theme.Brush(palette.TertiaryForeground),
+            Margin = new Thickness(0, 8, 0, 0),
         };
-        link.Click += (_, _) => OpenUri("https://github.com/Crypto69/pauselet");
-        stack.Children.Add(link);
+        stack.Children.Add(licence);
 
-        return stack;
+        return new ScrollViewer
+        {
+            Content = stack,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+    }
+
+    private static TextBlock SecondaryText(string text) => new()
+    {
+        Text = text,
+        FontSize = 12,
+        TextWrapping = TextWrapping.Wrap,
+        MaxWidth = 560,
+        HorizontalAlignment = HorizontalAlignment.Left,
+        Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+    };
+
+    private static Border AboutDivider(Theme.Palette palette) => new()
+    {
+        Height = 1,
+        Background = Theme.Brush(palette.Divider),
+        Margin = new Thickness(0, 18, 0, 18),
+    };
+
+    private Button LinkButton(string sfSymbol, string label, string url)
+    {
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        var glyph = Ui.Glyph(sfSymbol, 14, Theme.Brush(Theme.Current.Foreground));
+        glyph.Margin = new Thickness(0, 0, 5, 0);
+        content.Children.Add(glyph);
+        content.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 12,
+            Foreground = Theme.Brush(Theme.Current.Foreground),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        var button = Ui.RoundedButton(
+            content, Theme.Brush(Theme.Current.HoverBackground),
+            Theme.Brush(Theme.Current.Foreground),
+            Theme.Brush(Theme.Current.Divider),
+            cornerRadius: 6, padding: new Thickness(10, 5, 10, 5)
+        );
+        button.FontSize = 12;
+        button.Margin = new Thickness(0, 0, 8, 8);
+        button.ToolTip = url;
+        button.Click += (_, _) => OpenUri(url);
+        return button;
+    }
+
+    /// <summary>
+    /// The app icon's largest frame from the bundled .ico, or <c>null</c> if
+    /// the asset is missing — the caller falls back to a glyph, as the Mac
+    /// About tab does.
+    /// </summary>
+    private static ImageSource? LoadAppIcon()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(
+                AppContext.BaseDirectory, "Assets", "Pauselet.ico"
+            );
+            var decoder = BitmapDecoder.Create(
+                new Uri(path), BitmapCreateOptions.None, BitmapCacheOption.OnLoad
+            );
+            return decoder.Frames.OrderByDescending(frame => frame.PixelWidth).First();
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
