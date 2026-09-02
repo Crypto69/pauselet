@@ -67,7 +67,60 @@ internal static class Ui
             Cursor = System.Windows.Input.Cursors.Hand,
         };
         if (minWidth is { } width) button.MinWidth = width;
+        button.Template = RoundedTemplate(typeof(Button), cornerRadius);
+        return button;
+    }
 
+    /// <summary>
+    /// A ToggleButton with the same flat rounded look as
+    /// <see cref="RoundedButton"/>, for the overlay's exercise rows: a real
+    /// control (Tab reaches it, Space toggles it, UIA reports it) whose whole
+    /// face is the hit target. Return is left for the window so "Return =
+    /// Done" holds even while a row has focus.
+    /// </summary>
+    public static System.Windows.Controls.Primitives.ToggleButton RoundedToggle(
+        object content, Brush background, double cornerRadius, Thickness padding)
+    {
+        var toggle = new System.Windows.Controls.Primitives.ToggleButton
+        {
+            Content = content,
+            Background = background,
+            BorderBrush = Brushes.Transparent,
+            Padding = padding,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Cursor = System.Windows.Input.Cursors.Hand,
+        };
+        System.Windows.Input.KeyboardNavigation.SetAcceptsReturn(toggle, false);
+        toggle.Template = RoundedTemplate(
+            typeof(System.Windows.Controls.Primitives.ToggleButton), cornerRadius,
+            contentAlignment: HorizontalAlignment.Stretch
+        );
+        return toggle;
+    }
+
+    private static readonly Dictionary<(Type, double, HorizontalAlignment), ControlTemplate>
+        TemplateCache = new();
+
+    /// <summary>
+    /// One sealed template per (control type, radius, alignment): templates
+    /// are designed to be shared, and the overlay builds a row per exercise
+    /// per monitor at the moment a critical reminder fires.
+    /// </summary>
+    private static ControlTemplate RoundedTemplate(
+        Type controlType, double cornerRadius,
+        HorizontalAlignment contentAlignment = HorizontalAlignment.Center)
+    {
+        var key = (controlType, cornerRadius, contentAlignment);
+        if (TemplateCache.TryGetValue(key, out var cached)) return cached;
+        var template = BuildRoundedTemplate(controlType, cornerRadius, contentAlignment);
+        template.Seal();
+        TemplateCache[key] = template;
+        return template;
+    }
+
+    private static ControlTemplate BuildRoundedTemplate(
+        Type controlType, double cornerRadius, HorizontalAlignment contentAlignment)
+    {
         var borderFactory = new FrameworkElementFactory(typeof(Border));
         borderFactory.SetValue(Border.CornerRadiusProperty, new CornerRadius(cornerRadius));
         borderFactory.SetValue(
@@ -85,20 +138,21 @@ internal static class Ui
         );
 
         var contentFactory = new FrameworkElementFactory(typeof(ContentPresenter));
-        contentFactory.SetValue(
-            FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center
-        );
+        contentFactory.SetValue(FrameworkElement.HorizontalAlignmentProperty, contentAlignment);
         contentFactory.SetValue(
             FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center
         );
         borderFactory.AppendChild(contentFactory);
 
-        var template = new ControlTemplate(typeof(Button)) { VisualTree = borderFactory };
-        var pressed = new Trigger { Property = Button.IsPressedProperty, Value = true };
+        var template = new ControlTemplate(controlType) { VisualTree = borderFactory };
+        var pressed = new Trigger
+        {
+            Property = System.Windows.Controls.Primitives.ButtonBase.IsPressedProperty,
+            Value = true,
+        };
         pressed.Setters.Add(new Setter(UIElement.OpacityProperty, 0.75));
         template.Triggers.Add(pressed);
-        button.Template = template;
-        return button;
+        return template;
     }
 
     /// <summary>

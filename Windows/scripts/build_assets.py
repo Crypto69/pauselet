@@ -163,6 +163,7 @@ SUBSET_GLYPHS = {
     "directions_walk": 0xE536,
     "eco": 0xEA35,
     "favorite": 0xE87E,
+    "fitness_center": 0xEB43,
     "home": 0xE9B2,
     "keyboard": 0xE312,
     "light_mode": 0xE518,

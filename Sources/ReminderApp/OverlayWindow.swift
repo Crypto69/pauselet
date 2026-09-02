@@ -172,7 +172,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         settings: ReminderCore.Settings,
         isPreview: Bool
     ) {
-        if settings.soundEnabled {
+        if settings.playsSound(for: reminder.priority) {
             Sounds.play(named: reminder.soundName ?? "Submarine")
         }
 

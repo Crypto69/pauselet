@@ -304,9 +304,12 @@ internal sealed class FlyoutWindow : Window
             Margin = new Thickness(0, 0, 5, 0),
             ToolTip = reminder.Priority.DisplayName(),
         });
-        detail.Children.Add(Ui.Text(
-            reminder.Schedule.Summary, 11, Theme.Brush(palette.SecondaryForeground)
-        ));
+        var detailText = Ui.Text(
+            reminder.ScheduleLine, 11, Theme.Brush(palette.SecondaryForeground)
+        );
+        detailText.TextTrimming = TextTrimming.CharacterEllipsis;
+        detailText.TextWrapping = TextWrapping.NoWrap;
+        detail.Children.Add(detailText);
         textStack.Children.Add(detail);
         Grid.SetColumn(textStack, 1);
         grid.Children.Add(textStack);

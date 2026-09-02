@@ -157,9 +157,19 @@ final class ReminderEngineTests: XCTestCase {
         XCTAssertTrue(engine.tick().isEmpty, "Still paused")
 
         clock.advance(by: 15 * 60) // 35 min total, pause has expired
-        XCTAssertEqual(engine.tick().count, 1)
+        XCTAssertTrue(
+            engine.tick().isEmpty,
+            "The overdue fire is absorbed by the pause, as a manual resume would"
+        )
         XCTAssertFalse(engine.settings.isPaused, "Pause auto-clears on expiry")
         XCTAssertNil(engine.settings.pausedUntil)
+        XCTAssertEqual(
+            engine.reminders[0].lastFiredAt, start.addingTimeInterval(30 * 60),
+            "Intervals restart from the pause's end, matching resume() and the projection"
+        )
+
+        clock.set(start.addingTimeInterval(50 * 60 + 5)) // one interval after the pause
+        XCTAssertEqual(engine.tick().count, 1)
         XCTAssertEqual(presenter.presented.count, 1)
     }
 

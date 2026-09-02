@@ -1,0 +1,129 @@
+# Pauselet for iOS. The .xcodeproj is generated — edit this file and run
+# `xcodegen` in this directory rather than editing the project in Xcode.
+#
+# The app consumes the repository root as a local Swift package (ReminderCore);
+# the macOS app and its SwiftPM build are untouched.
+name: Pauselet
+options:
+  bundleIdPrefix: com.pauselet
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: 4R94388LH8
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0.0
+
+packages:
+  Reminder:
+    path: ..
+
+targets:
+  PauseletiOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: PauseletiOS
+      - path: Shared
+    dependencies:
+      - package: Reminder
+        product: ReminderCore
+      - package: Reminder
+        product: ReminderUI
+      - target: PauseletWidgets
+    info:
+      path: PauseletiOS/Info.plist
+      properties:
+        CFBundleDisplayName: Pauselet
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAlarmKitUsageDescription: >-
+          Pauselet schedules alarms so a critical reminder — like pressure
+          relief — can break through Silent mode and Focus and reach you.
+        NSSupportsLiveActivities: true
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.pauselet.pauselet.refresh
+        UIBackgroundModes:
+          - fetch
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pauselet.pauselet
+        # The module stays `Pauselet` (for `@testable import Pauselet`) while
+        # the product keeps the target name, which xcodegen's TEST_HOST needs.
+        PRODUCT_MODULE_NAME: Pauselet
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+
+  PauseletWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PauseletWidgets
+      - path: Shared
+    info:
+      path: PauseletWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Pauselet Widgets
+        # Versions come from the same build settings as the app: App Store
+        # Connect rejects an extension whose short version differs from its
+        # host's.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pauselet.pauselet.widgets
+        SKIP_INSTALL: true
+
+  PauseletTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PauseletTests
+      # The complete ReminderCore suite runs on the iOS destination too, so the
+      # shared engine is verified on the platform it now also ships on.
+      - path: ../Tests/ReminderCoreTests
+    dependencies:
+      - target: PauseletiOS
+      - package: Reminder
+        product: ReminderCore
+      - package: Reminder
+        product: ReminderUI
+
+  PauseletUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: PauseletUITests
+    dependencies:
+      - target: PauseletiOS
+
+schemes:
+  Pauselet:
+    build:
+      targets:
+        PauseletiOS: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - PauseletTests
+        - PauseletUITests

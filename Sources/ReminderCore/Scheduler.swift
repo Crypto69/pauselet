@@ -219,23 +219,129 @@ public enum Scheduler {
         }
     }
 
+    // MARK: - The advance step
+
+    /// The engine's next action on a reminder: the one decision that
+    /// `ReminderEngine.tick()` applies when its moment arrives and that the
+    /// projection (`projectedFires`) applies over and over to look ahead.
+    ///
+    /// Keeping this a single pure function is what stops the live engine and
+    /// pre-scheduled delivery (iOS) from disagreeing about when a reminder
+    /// reaches the user or what it is stamped with: there is one policy, and
+    /// both sides can only apply it.
+    public struct FireStep: Equatable, Sendable {
+        public enum Outcome: Equatable, Sendable {
+            /// The reminder reaches the user at `fireDate`.
+            case deliver
+            /// A wall-clock slot that passed inside quiet hours is consumed
+            /// unheard at `fireDate` and recorded as missed — "daily at
+            /// 23:00" must not arrive at 07:00.
+            case skip
+        }
+
+        /// When the engine acts: delivers the reminder, or notices the skip.
+        public let fireDate: Date
+        /// What `lastFiredAt` becomes: the wall-clock slot the fire honours
+        /// (so an "every 2 days" grid stays in phase), or the delivery moment
+        /// for interval and snoozed fires.
+        public let stampDate: Date
+        public let outcome: Outcome
+
+        public init(fireDate: Date, stampDate: Date, outcome: Outcome) {
+            self.fireDate = fireDate
+            self.stampDate = stampDate
+            self.outcome = outcome
+        }
+
+        /// Writes the step into `reminder`, exactly as the engine does the
+        /// moment it acts on it.
+        public func apply(to reminder: inout Reminder) {
+            reminder.lastFiredAt = stampDate
+            reminder.snoozedUntil = nil
+        }
+    }
+
+    /// The next thing the engine will do with `reminder` at or after `now`,
+    /// or `nil` if nothing will ever happen (disabled, paused indefinitely, a
+    /// weekly schedule with no days).
+    ///
+    /// The rules, in order:
+    /// - An indefinite pause schedules nothing. A timed pause schedules
+    ///   nothing before it ends, and re-anchors interval reminders to its end
+    ///   — the same thing the engine does when the pause expires — so a long
+    ///   pause never dumps an overdue fire the instant it lifts.
+    /// - A snooze is authoritative and fires exactly once, at its moment.
+    /// - A fire that falls due inside quiet hours waits for the window to
+    ///   end. Interval and snoozed fires are then delivered ("it has been an
+    ///   hour since water" is still true at 07:00); a wall-clock slot is
+    ///   judged *at the slot*: one that passed inside the window is skipped,
+    ///   one that passed outside it (the app was asleep from 17:00 until the
+    ///   window began) is delivered late, stamped with the slot.
+    /// - Overdue wall-clock slots collapse to the latest elapsed one, so a
+    ///   week away becomes a single catch-up rather than a cascade.
+    public static func nextStep(
+        for reminder: Reminder,
+        from now: Date,
+        settings: Settings,
+        calendar: Calendar = .current
+    ) -> FireStep? {
+        guard reminder.isEnabled else { return nil }
+        if settings.pausedUntil == nil, settings.isPaused { return nil }
+
+        var sim = reminder
+        var cursor = now
+        if let until = settings.pausedUntil, until > now {
+            cursor = until
+            if case .interval = sim.schedule, (sim.lastFiredAt ?? sim.createdAt) < until {
+                sim.lastFiredAt = until
+            }
+        }
+
+        guard let pending = pendingFireDate(for: sim, calendar: calendar) else { return nil }
+        let due = max(pending, cursor)
+        guard let fireAt = deliveryMoment(
+            for: due, priority: sim.priority, settings: settings, calendar: calendar
+        ) else { return nil }
+
+        if sim.snoozedUntil != nil || !sim.schedule.isWallClock {
+            return FireStep(fireDate: fireAt, stampDate: fireAt, outcome: .deliver)
+        }
+
+        let slot = latestElapsedSlot(for: sim, now: fireAt, calendar: calendar) ?? fireAt
+        let skipped = isSuppressedByQuietHours(
+            priority: sim.priority, settings: settings, now: slot, calendar: calendar
+        )
+        return FireStep(fireDate: fireAt, stampDate: slot, outcome: skipped ? .skip : .deliver)
+    }
+
+    /// When a fire that falls due at `due` is actually acted on: `due` itself,
+    /// or — if quiet hours cover it — the moment the window ends. `nil` only
+    /// when the window's end cannot be computed.
+    public static func deliveryMoment(
+        for due: Date,
+        priority: Priority,
+        settings: Settings,
+        calendar: Calendar = .current
+    ) -> Date? {
+        guard isSuppressedByQuietHours(
+            priority: priority, settings: settings, now: due, calendar: calendar
+        ) else { return due }
+        return settings.quietHours.nextEnd(after: due, calendar: calendar)
+    }
+
     /// Whether `reminder` is due to fire at `now`, accounting for global
-    /// settings such as pause and quiet hours.
+    /// settings such as pause and quiet hours. Defined through `nextStep` so
+    /// it cannot disagree with what the engine would actually do.
     public static func isDue(
         _ reminder: Reminder,
         now: Date,
         settings: Settings,
         calendar: Calendar = .current
     ) -> Bool {
-        guard reminder.isEnabled else { return false }
-        guard !isPaused(settings: settings, now: now) else { return false }
-        guard !isSuppressedByQuietHours(
-            priority: reminder.priority, settings: settings, now: now, calendar: calendar
+        guard let step = nextStep(
+            for: reminder, from: now, settings: settings, calendar: calendar
         ) else { return false }
-        guard let pending = pendingFireDate(for: reminder, calendar: calendar) else {
-            return false
-        }
-        return pending <= now
+        return step.fireDate <= now
     }
 
     /// True when the master pause is active. A timed pause expires on its own.
@@ -257,56 +363,6 @@ public enum Scheduler {
         guard quiet.contains(now, calendar: calendar) else { return false }
         if quiet.allowsCritical && priority == .critical { return false }
         return true
-    }
-
-    /// When `reminder` will actually reach the user, given that `date` — its
-    /// natural next fire — falls inside quiet hours.
-    ///
-    /// Interval (and snoozed) reminders stay pending through the window and
-    /// fire the moment it ends; wall-clock slots inside the window are skipped,
-    /// so the answer is the first subsequent slot that is not suppressed.
-    /// `nil` when no audible fire could be found within a sensible horizon.
-    static func nextAudibleFireDate(
-        for reminder: Reminder,
-        from date: Date,
-        settings: Settings,
-        calendar: Calendar
-    ) -> Date? {
-        if reminder.snoozedUntil != nil {
-            return settings.quietHours.nextEnd(after: date, calendar: calendar)
-        }
-        switch reminder.schedule {
-        case .interval:
-            return settings.quietHours.nextEnd(after: date, calendar: calendar)
-        case .dailyAt(let hour, let minute, let dayInterval):
-            var slot = date
-            for _ in 0..<32 {
-                guard let next = firstDailySlot(
-                    after: slot, hour: hour, minute: minute,
-                    dayInterval: max(1, dayInterval), calendar: calendar
-                ) else { return nil }
-                if !isSuppressedByQuietHours(
-                    priority: reminder.priority, settings: settings,
-                    now: next, calendar: calendar
-                ) { return next }
-                slot = next
-            }
-            return nil
-        case .weeklyAt(let hour, let minute, let weekdays):
-            var slot = date
-            for _ in 0..<32 {
-                guard let next = firstWeeklySlot(
-                    after: slot, hour: hour, minute: minute,
-                    weekdays: weekdays, calendar: calendar
-                ) else { return nil }
-                if !isSuppressedByQuietHours(
-                    priority: reminder.priority, settings: settings,
-                    now: next, calendar: calendar
-                ) { return next }
-                slot = next
-            }
-            return nil
-        }
     }
 
     /// The soonest upcoming reminder across `reminders`, used for the menu bar

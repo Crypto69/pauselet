@@ -42,6 +42,9 @@ public static class InstantExtensions
 /// - Swift enums with associated values as single-key objects
 ///   (<c>{"interval":{"minutes":60}}</c>), payload-free cases as empty
 ///   objects (<c>{"none":{}}</c>);
+/// - an optional <c>exercises</c> array of
+///   <c>{id, instructions, name, reps, sets}</c> objects on a reminder,
+///   present only when the Mac optional is non-nil;
 /// - no trailing newline.
 ///
 /// The one deliberate deviation: Swift encodes <c>Set</c> values (weekly
@@ -132,6 +135,15 @@ public static class AppDataJson
             obj.Members["displaySeconds"] = new JVal.Num(display);
         }
         obj.Members["music"] = EncodeMusic(reminder.Music);
+        // Present whenever the Swift optional is non-nil — including empty —
+        // so a Mac file re-encodes byte-identically. Empty lists are kept off
+        // disk by Exercise.Normalized in the editor, not here.
+        if (reminder.Exercises is { } exercises)
+        {
+            var array = new JVal.Arr();
+            foreach (var exercise in exercises) array.Items.Add(EncodeExercise(exercise));
+            obj.Members["exercises"] = array;
+        }
         if (reminder.LastFiredAt is { } fired)
         {
             obj.Members["lastFiredAt"] = EncodeDate(fired);
@@ -201,6 +213,17 @@ public static class AppDataJson
                 throw new InvalidOperationException();
         }
         return wrapper;
+    }
+
+    private static JVal EncodeExercise(Exercise exercise)
+    {
+        var obj = new JVal.Obj();
+        obj.Members["id"] = EncodeUuid(exercise.Id);
+        obj.Members["name"] = new JVal.Str(exercise.Name);
+        obj.Members["instructions"] = new JVal.Str(exercise.Instructions);
+        obj.Members["sets"] = new JVal.Num(exercise.Sets);
+        obj.Members["reps"] = new JVal.Num(exercise.Reps);
+        return obj;
     }
 
     private static JVal EncodeSettings(Settings settings)
@@ -420,6 +443,7 @@ public static class AppDataJson
         Music = element.TryGetProperty("music", out var music)
             ? DecodeMusic(music)
             : MusicChoice.None,
+        Exercises = OptionalExercises(element),
         LastFiredAt = OptionalDate(element, "lastFiredAt"),
         LastAcknowledgedAt = OptionalDate(element, "lastAcknowledgedAt"),
         SnoozedUntil = OptionalDate(element, "snoozedUntil"),
@@ -469,6 +493,36 @@ public static class AppDataJson
         }
         throw new FormatException("Unrecognised music kind");
     }
+
+    /// <summary>
+    /// Lenient at the reminder level (absent means "not an exercise reminder",
+    /// the same way absent music means "no music"); strict inside each
+    /// exercise, where both encoders always write every key.
+    /// </summary>
+    private static IReadOnlyList<Exercise>? OptionalExercises(JsonElement element)
+    {
+        if (!element.TryGetProperty("exercises", out var value)
+            || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            throw new FormatException("exercises is not an array");
+        }
+        return value.EnumerateArray().Select(DecodeExercise).ToList();
+    }
+
+    private static Exercise DecodeExercise(JsonElement element) => new()
+    {
+        Id = DecodeUuid(Require(element, "id")),
+        Name = Require(element, "name").GetString()
+            ?? throw new FormatException("name is not a string"),
+        Instructions = Require(element, "instructions").GetString()
+            ?? throw new FormatException("instructions is not a string"),
+        Sets = Require(element, "sets").GetInt32(),
+        Reps = Require(element, "reps").GetInt32(),
+    };
 
     private static Settings DecodeSettings(JsonElement element) => new()
     {

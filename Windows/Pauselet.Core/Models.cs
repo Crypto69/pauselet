@@ -192,6 +192,17 @@ public sealed record Reminder
     /// the whole file and losing every reminder the user configured.
     /// </summary>
     public MusicChoice Music { get; init; } = MusicChoice.None;
+    /// <summary>
+    /// The exercise list for an "Exercise" reminder; <c>null</c> for an
+    /// ordinary reminder.
+    ///
+    /// Decoded leniently for the same reason as <see cref="Music"/>: files
+    /// written before this existed have no <c>exercises</c> key. Never stored
+    /// empty — the editor collapses an empty list to <c>null</c> through
+    /// <see cref="Exercise.Normalized"/> — but an empty array read from disk
+    /// is kept as-is so the file re-encodes byte-identically.
+    /// </summary>
+    public IReadOnlyList<Exercise>? Exercises { get; init; }
     /// <summary>When the reminder last fired. Drives interval scheduling.</summary>
     public Instant? LastFiredAt { get; init; }
     /// <summary>When the reminder was last acknowledged (completed or dismissed).</summary>
@@ -199,6 +210,56 @@ public sealed record Reminder
     /// <summary>When set, the reminder is snoozed and must not fire before this date.</summary>
     public Instant? SnoozedUntil { get; init; }
     public Instant CreatedAt { get; init; } = SystemClock.Instance.GetCurrentInstant();
+
+    /// <summary>True when the reminder carries at least one exercise.</summary>
+    public bool IsExercise => Exercises is { Count: > 0 };
+
+    /// <summary>
+    /// <see cref="Exercise.SummaryOf"/> for this reminder's list; <c>null</c>
+    /// for an ordinary reminder.
+    /// </summary>
+    public string? ExerciseSummary => Exercise.SummaryOf(Exercises);
+
+    /// <summary>
+    /// The list-row subtitle: the schedule, plus the exercise summary for an
+    /// exercise reminder ("Every 2 hours · 3 exercises · 9 sets"). One place
+    /// composes it so every platform's rows read the same.
+    /// </summary>
+    public string ScheduleLine =>
+        ExerciseSummary is { } exercises ? $"{Schedule.Summary} · {exercises}" : Schedule.Summary;
+
+    // List-valued property: the synthesized record equality would compare the
+    // list by reference, and AppData.Equals (hence the store round-trip tests)
+    // relies on reminders comparing structurally. Same reason as WeeklyAt.
+    public bool Equals(Reminder? other) =>
+        other is not null
+        && Id == other.Id
+        && Title == other.Title
+        && Message == other.Message
+        && Schedule == other.Schedule
+        && Priority == other.Priority
+        && IsEnabled == other.IsEnabled
+        && SymbolName == other.SymbolName
+        && ActivityDurationSeconds == other.ActivityDurationSeconds
+        && SoundName == other.SoundName
+        && DisplaySeconds == other.DisplaySeconds
+        && Music == other.Music
+        && ExercisesEqual(other.Exercises)
+        && LastFiredAt == other.LastFiredAt
+        && LastAcknowledgedAt == other.LastAcknowledgedAt
+        && SnoozedUntil == other.SnoozedUntil
+        && CreatedAt == other.CreatedAt;
+
+    private bool ExercisesEqual(IReadOnlyList<Exercise>? other)
+    {
+        if (Exercises is null || other is null) return Exercises is null && other is null;
+        return Exercises.SequenceEqual(other);
+    }
+
+    public override int GetHashCode() =>
+        HashCode.Combine(
+            Id, Title, Schedule, Priority, CreatedAt, Music, Exercises?.Count ?? -1
+        );
 }
 
 /// <summary>Records that a reminder fired and what the user did about it.</summary>

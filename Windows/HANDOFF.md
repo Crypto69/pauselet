@@ -19,9 +19,10 @@ questions are substantially answered.
   (Models, Scheduler, Store, Engine, Projection, Music). NodaTime carries the
   calendar math; CommunityToolkit.Mvvm's `ObservableObject` stands in for
   Combine.
-- **168 xUnit tests pass** (`dotnet test Windows/Pauselet.Core.Tests`): the
+- **184 xUnit tests pass** (`dotnet test Windows/Pauselet.Core.Tests`): the
   entire Swift suite translated 1:1 (minus the two Mac-only legacy-directory
-  migration tests), plus new golden-file tests.
+  migration tests), plus new golden-file tests and the exercise-list tests
+  (`ExerciseTests`, whose inline fixture is the Swift encoder's output).
 - **Byte-compatible persistence is proven, not aspirational**: the fixtures in
   `Pauselet.Core.Tests/Fixtures/` were written by the real Swift encoder on
   macOS, and the tests decode them and re-encode them byte-for-byte
@@ -91,6 +92,11 @@ questions are substantially answered.
    shows and that buttons activate the running process.
 5. UI polish generally: paddings, dark/light theming of the settings tabs,
    and the editor's layout were written blind and will need pixel adjustments.
+6. **Exercise reminders** (editor rows, the overlay's exercise list and
+   tick rows, the flyout/Settings summary) were written blind on the Mac —
+   see the new items in TESTING.md Groups D and G. The model and JSON side
+   is covered by `ExerciseTests` and verified against the Swift encoder's
+   bytes.
 
 ## VM verification session (2026-08-24, headless via prlctl)
 
@@ -99,7 +105,7 @@ with `prlctl exec` and verifying visually from `prlctl capture` screenshots
 (kept in the session records; the artifact page shows the highlights).
 
 **Verified working:**
-- All **169 core tests pass in the VM** (`dotnet test`), as on macOS and CI.
+- All **184 core tests pass in the VM** (`dotnet test`), as on macOS and CI.
 - App startup end-to-end: engine load → toast registration → tray icon →
   backlog absorption → tick loop. Fire timing exact (a reminder due at
   seed+10 s fired at seed+11 s).
@@ -149,6 +155,6 @@ See `TESTING.md` for VM setup and the full manual test matrix. Short version:
 winget install Microsoft.DotNet.SDK.8 Git.Git
 git clone https://github.com/Crypto69/pauselet.git && cd pauselet
 git checkout windows-port
-dotnet test Windows/Pauselet.Core.Tests   # expect 168 green
+dotnet test Windows/Pauselet.Core.Tests   # expect 184 green
 dotnet run --project Windows/Pauselet.App -- --open-settings
 ```

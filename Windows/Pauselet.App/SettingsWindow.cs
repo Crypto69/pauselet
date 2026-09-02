@@ -170,7 +170,7 @@ internal sealed class SettingsWindow : Window
                 reminder,
                 SymbolMap.Glyph(reminder.SymbolName),
                 reminder.Title,
-                reminder.Schedule.Summary,
+                reminder.ScheduleLine,
                 reminder.Priority.DisplayName(),
                 reminder.IsEnabled))
             .ToList();

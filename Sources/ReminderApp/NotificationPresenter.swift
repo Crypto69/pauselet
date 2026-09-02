@@ -131,9 +131,7 @@ final class NotificationPresenter: NSObject {
         content.categoryIdentifier = Action.categoryPrefix
         content.userInfo = [Self.reminderIDKey: reminder.id.uuidString]
 
-        // Only the important tier makes noise; normal stays silent so a busy
-        // reminder set does not become a stream of chimes.
-        if settings.soundEnabled && reminder.priority >= .important {
+        if settings.playsSound(for: reminder.priority) {
             if let name = reminder.soundName {
                 // The editor offers system sounds (Glass, Submarine, ...) that
                 // live in /System/Library/Sounds, which UNNotificationSound

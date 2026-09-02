@@ -16,7 +16,9 @@ namespace Pauselet.App;
 /// Design intent carried over from the Mac: this interrupts someone who is
 /// concentrating, so it is calm rather than alarming — dark, soft, and
 /// unhurried. For a reminder with an activity duration it runs a countdown,
-/// which turns "stop working" into a concrete, finite thing to do.
+/// which turns "stop working" into a concrete, finite thing to do. An
+/// exercise reminder lists its exercises with a tick box each — working
+/// memory for the session, never persisted — above the same buttons.
 ///
 /// Two Windows-specific defences:
 /// - Topmost is re-asserted on a 2-second timer for as long as the takeover is
@@ -50,6 +52,8 @@ internal sealed class CriticalOverlayWindow : Window
     private TextBlock? _ringLabel;
     private TextBlock? _ringSubLabel;
     private Button? _doneButton;
+    private readonly List<System.Windows.Controls.Primitives.ToggleButton> _exerciseToggles = [];
+    private TextBlock? _exerciseProgress;
 
     private bool HasCountdown => (_reminder.ActivityDurationSeconds ?? 0) > 0;
 
@@ -67,6 +71,16 @@ internal sealed class CriticalOverlayWindow : Window
         Theme.Brush(Color.FromArgb(33, 255, 255, 255));
     private static readonly Brush SecondaryButtonBorderBrush =
         Theme.Brush(Color.FromArgb(46, 255, 255, 255));
+    private static readonly Brush RowBrush =
+        Theme.Brush(Color.FromArgb(20, 255, 255, 255));
+    private static readonly Brush RowDoneBrush =
+        Theme.Brush(Color.FromArgb(10, 255, 255, 255));
+    private static readonly Brush UntickedBrush =
+        Theme.Brush(Color.FromArgb(102, 255, 255, 255));
+    private static readonly Brush InstructionsBrush =
+        Theme.Brush(Color.FromArgb(160, 255, 255, 255));
+    private static readonly Brush BadgeBrush =
+        Theme.Brush(Color.FromArgb(90, 255, 255, 255));
 
     public CriticalOverlayWindow(
         Reminder reminder,
@@ -195,7 +209,21 @@ internal sealed class CriticalOverlayWindow : Window
                 e.Handled = true;
                 Acknowledge(_onSnooze);
                 break;
+            case >= Key.D1 and <= Key.D9:
+                e.Handled = ToggleExercise(e.Key - Key.D1);
+                break;
+            case >= Key.NumPad1 and <= Key.NumPad9:
+                e.Handled = ToggleExercise(e.Key - Key.NumPad1);
+                break;
         }
+    }
+
+    private bool ToggleExercise(int index)
+    {
+        if (index < 0 || index >= _exerciseToggles.Count) return false;
+        var toggle = _exerciseToggles[index];
+        toggle.IsChecked = toggle.IsChecked != true;
+        return true;
     }
 
     /// <summary>
@@ -213,68 +241,255 @@ internal sealed class CriticalOverlayWindow : Window
 
     private UIElement BuildContent()
     {
-        // A deep, soft backdrop rather than a harsh alert colour — near-opaque
-        // so it dims the desktop instead of blanking it.
-        var root = new Grid
-        {
-            Background = new LinearGradientBrush(
-                Color.FromArgb(247, 10, 23, 28),
-                Color.FromArgb(250, 5, 13, 18),
-                90
-            ),
-            Focusable = true,
-        };
+        var root = BuildBackdrop();
+        root.Children.Add(_reminder.IsExercise ? BuildExerciseLayout() : BuildPlainLayout());
+        return root;
+    }
 
+    /// <summary>
+    /// A deep, soft backdrop rather than a harsh alert colour — near-opaque
+    /// so it dims the desktop instead of blanking it.
+    /// </summary>
+    private static Grid BuildBackdrop() => new()
+    {
+        Background = new LinearGradientBrush(
+            Color.FromArgb(247, 10, 23, 28),
+            Color.FromArgb(250, 5, 13, 18),
+            90
+        ),
+        Focusable = true,
+    };
+
+    /// <summary>The ordinary reminder: one centred stack, header over footer.</summary>
+    private UIElement BuildPlainLayout()
+    {
         var stack = new StackPanel
         {
             Orientation = Orientation.Vertical,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        stack.Children.Add(BuildHeader(
+            iconSize: 72, iconGap: 34, titleSize: 46,
+            messageSize: 21, messageLineHeight: 30, messageGap: 14
+        ));
+        stack.Children.Add(BuildFooter(
+            ringGap: 34, buttonsGap: 38,
+            hint: "Press Return when you're done · S to snooze"
+        ));
+        return stack;
+    }
 
-        var icon = Ui.Glyph(_reminder.SymbolName, 72, IconBrush);
-        icon.Margin = new Thickness(0, 0, 0, 34);
-        stack.Children.Add(icon);
+    /// <summary>
+    /// The exercise reminder: a tighter header, the list in the middle taking
+    /// whatever height is left (scrolling when it runs out), and the footer
+    /// pinned beneath.
+    /// </summary>
+    private UIElement BuildExerciseLayout()
+    {
+        var layout = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MaxWidth = 760,
+            Margin = new Thickness(0, 48, 0, 40),
+        };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(
+            new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }
+        );
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var header = BuildHeader(
+            iconSize: 56, iconGap: 20, titleSize: 38,
+            messageSize: 18, messageLineHeight: 26, messageGap: 10
+        );
+        Grid.SetRow(header, 0);
+        layout.Children.Add(header);
+
+        var scroller = BuildExerciseList(_reminder.Exercises ?? []);
+        Grid.SetRow(scroller, 1);
+        layout.Children.Add(scroller);
+
+        var footer = BuildFooter(
+            ringGap: 20, buttonsGap: HasCountdown ? 28 : 8,
+            hint: "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
+        );
+        Grid.SetRow(footer, 2);
+        layout.Children.Add(footer);
+
+        return layout;
+    }
+
+    /// <summary>Icon, title and (if any) message, sized for the layout.</summary>
+    private StackPanel BuildHeader(
+        double iconSize, double iconGap, double titleSize,
+        double messageSize, double messageLineHeight, double messageGap)
+    {
+        var header = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+
+        var icon = Ui.Glyph(_reminder.SymbolName, iconSize, IconBrush);
+        icon.Margin = new Thickness(0, 0, 0, iconGap);
+        header.Children.Add(icon);
 
         var title = Ui.Text(
-            _reminder.Title, 46, Brushes.White,
+            _reminder.Title, titleSize, Brushes.White,
             FontWeights.SemiBold, TextAlignment.Center
         );
         title.HorizontalAlignment = HorizontalAlignment.Center;
-        stack.Children.Add(title);
+        header.Children.Add(title);
 
         if (_reminder.Message.Length > 0)
         {
             var message = Ui.Text(
-                _reminder.Message, 21,
+                _reminder.Message, messageSize,
                 Theme.Brush(Color.FromArgb(194, 255, 255, 255)),
                 alignment: TextAlignment.Center
             );
             message.MaxWidth = 620;
-            message.LineHeight = 30;
-            message.Margin = new Thickness(0, 14, 0, 0);
+            message.LineHeight = messageLineHeight;
+            message.Margin = new Thickness(0, messageGap, 0, 0);
             message.HorizontalAlignment = HorizontalAlignment.Center;
-            stack.Children.Add(message);
+            header.Children.Add(message);
         }
+        return header;
+    }
 
+    /// <summary>The countdown ring (if any), the buttons, and the key hint.</summary>
+    private StackPanel BuildFooter(double ringGap, double buttonsGap, string hint)
+    {
+        var footer = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         if (HasCountdown)
         {
-            stack.Children.Add(BuildCountdownRing());
+            var ring = (FrameworkElement)BuildCountdownRing();
+            ring.Margin = new Thickness(0, ringGap, 0, 0);
+            footer.Children.Add(ring);
         }
+        var buttons = (FrameworkElement)BuildButtons();
+        buttons.Margin = new Thickness(0, buttonsGap, 0, 0);
+        footer.Children.Add(buttons);
 
-        stack.Children.Add(BuildButtons());
-
-        var hint = Ui.Text(
-            "Press Return when you're done · S to snooze", 12,
+        var hintText = Ui.Text(
+            hint, 12,
             Theme.Brush(Color.FromArgb(97, 255, 255, 255)),
             alignment: TextAlignment.Center
         );
-        hint.Margin = new Thickness(0, 20, 0, 0);
-        hint.HorizontalAlignment = HorizontalAlignment.Center;
-        stack.Children.Add(hint);
+        hintText.Margin = new Thickness(0, 20, 0, 0);
+        hintText.HorizontalAlignment = HorizontalAlignment.Center;
+        footer.Children.Add(hintText);
+        return footer;
+    }
 
-        root.Children.Add(stack);
-        return root;
+    /// <summary>
+    /// The exercise rows with a progress caption, in a scroller that takes
+    /// whatever height its grid row has.
+    /// </summary>
+    private ScrollViewer BuildExerciseList(IReadOnlyList<Exercise> exercises)
+    {
+        var list = new StackPanel { Width = 700 };
+        _exerciseProgress = Ui.Text(
+            "", 13, Theme.Brush(Color.FromArgb(128, 255, 255, 255)),
+            alignment: TextAlignment.Center
+        );
+        _exerciseProgress.Margin = new Thickness(0, 0, 0, 14);
+        list.Children.Add(_exerciseProgress);
+        for (var i = 0; i < exercises.Count; i++)
+        {
+            list.Children.Add(BuildExerciseRow(exercises[i], i));
+        }
+        UpdateExerciseProgress();
+
+        // Wide enough for a scrollbar on either side of the rows. When the
+        // bar appears it takes its width from the right of the viewport,
+        // which would leave the rows off-centre from the title above; a
+        // matching left margin on the list cancels that, and comes off again
+        // when the list fits.
+        var scrollBarWidth = SystemParameters.VerticalScrollBarWidth;
+        var scroller = new ScrollViewer
+        {
+            Content = list,
+            Width = 700 + (2 * scrollBarWidth),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 28, 0, 0),
+            Focusable = false,
+        };
+        scroller.ScrollChanged += (_, _) =>
+        {
+            var barShown = scroller.ComputedVerticalScrollBarVisibility == Visibility.Visible;
+            list.Margin = new Thickness(barShown ? scrollBarWidth : 0, 0, 0, 0);
+        };
+        return scroller;
+    }
+
+    private UIElement BuildExerciseRow(Exercise exercise, int index)
+    {
+        var glyph = Ui.Glyph("circle", 26, UntickedBrush);
+        glyph.VerticalAlignment = VerticalAlignment.Top;
+        glyph.Margin = new Thickness(0, 1, 16, 0);
+
+        var text = new StackPanel();
+        var line = new StackPanel { Orientation = Orientation.Horizontal };
+        line.Children.Add(Ui.Text(exercise.Name, 21, Brushes.White, FontWeights.Medium));
+        var summary = Ui.Text(exercise.Summary, 16, IconBrush);
+        summary.Margin = new Thickness(12, 4, 0, 0);
+        line.Children.Add(summary);
+        text.Children.Add(line);
+        if (exercise.Instructions.Length > 0)
+        {
+            var instructions = Ui.Text(exercise.Instructions, 15, InstructionsBrush);
+            instructions.LineHeight = 22;
+            instructions.Margin = new Thickness(0, 4, 0, 0);
+            text.Children.Add(instructions);
+        }
+
+        var badge = Ui.Text((index + 1).ToString(), 12, BadgeBrush);
+        badge.VerticalAlignment = VerticalAlignment.Top;
+        badge.Margin = new Thickness(16, 4, 0, 0);
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(
+            new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+        );
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.Children.Add(glyph);
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(text);
+        Grid.SetColumn(badge, 2);
+        grid.Children.Add(badge);
+
+        var toggle = Ui.RoundedToggle(grid, RowBrush, 14, new Thickness(18, 12, 18, 12));
+        toggle.Margin = new Thickness(0, 0, 0, 10);
+        toggle.Checked += (_, _) =>
+        {
+            glyph.Text = SymbolMap.Glyph("checkmark.circle.fill");
+            glyph.Foreground = RingBrush;
+            text.Opacity = 0.5;
+            toggle.Background = RowDoneBrush;
+            UpdateExerciseProgress();
+        };
+        toggle.Unchecked += (_, _) =>
+        {
+            glyph.Text = SymbolMap.Glyph("circle");
+            glyph.Foreground = UntickedBrush;
+            text.Opacity = 1;
+            toggle.Background = RowBrush;
+            UpdateExerciseProgress();
+        };
+        System.Windows.Automation.AutomationProperties.SetName(
+            toggle, $"{exercise.Name}, {exercise.Sets} sets of {exercise.Reps}"
+        );
+        _exerciseToggles.Add(toggle);
+        return toggle;
+    }
+
+    private void UpdateExerciseProgress()
+    {
+        if (_exerciseProgress is null) return;
+        var done = _exerciseToggles.Count(toggle => toggle.IsChecked == true);
+        _exerciseProgress.Text = $"{done} of {_exerciseToggles.Count} done";
     }
 
     private UIElement BuildCountdownRing()

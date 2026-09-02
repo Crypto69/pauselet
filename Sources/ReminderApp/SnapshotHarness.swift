@@ -30,6 +30,27 @@ enum SnapshotHarness {
         return true
     }
 
+    /// A short physio programme with the kind of instructions a handout has,
+    /// including a multi-line one, so the rows show their real shape.
+    private static let sampleExercises: [Exercise] = [
+        Exercise(
+            name: "Shoulder external rotation",
+            instructions: "Elbow tucked at your side, band in hand.\n"
+                + "Rotate out slowly, pause, and return.",
+            sets: 3, reps: 10
+        ),
+        Exercise(
+            name: "Scapular retraction",
+            instructions: "Squeeze the shoulder blades together and hold for two seconds.",
+            sets: 3, reps: 12
+        ),
+        Exercise(
+            name: "Wrist extension stretch",
+            instructions: "Arm straight, palm down; ease the fingers back with the other hand.",
+            sets: 2, reps: 8
+        ),
+    ]
+
     /// A representative set of reminders, so snapshots show every priority tier
     /// and schedule kind rather than an empty app.
     private static func sampleEngine() -> ReminderEngine {
@@ -75,6 +96,16 @@ enum SnapshotHarness {
         )
         physio.isEnabled = false
 
+        let physioSet = Reminder(
+            title: "Physio Set",
+            message: "Three exercises from your physio programme.",
+            schedule: .dailyAt(hour: 11, minute: 0, dayInterval: 1),
+            priority: .critical,
+            symbolName: "dumbbell.fill",
+            exercises: Self.sampleExercises,
+            createdAt: now
+        )
+
         let call = Reminder(
             title: "Call Mum",
             schedule: .weeklyAt(hour: 18, minute: 30, weekdays: [1, 4]),
@@ -89,7 +120,7 @@ enum SnapshotHarness {
 
         let store = InMemoryDataStore(
             data: AppData(
-                reminders: [tilt, shift, water, physio, call],
+                reminders: [tilt, shift, water, physio, physioSet, call],
                 settings: Settings(
                     defaultPlaylistURI: "spotify:playlist:37i9dQZF1DX4sWSpwq3LiO"
                 )
@@ -144,6 +175,57 @@ enum SnapshotHarness {
                 CriticalOverlayView(reminder: tilt, onComplete: {}, onSnooze: {}),
                 size: NSSize(width: 1280, height: 800),
                 named: "overlay-critical",
+                into: directory
+            )
+        }
+
+        // The exercise takeover: one row already ticked, so both states show.
+        if let physioSet = engine.reminders.first(where: { $0.isExercise }) {
+            snapshot(
+                CriticalOverlayView(
+                    reminder: physioSet, onComplete: {}, onSnooze: {},
+                    completedExerciseIDs: [physioSet.exercises![0].id]
+                ),
+                size: NSSize(width: 1280, height: 800),
+                named: "overlay-exercise",
+                into: directory
+            )
+
+            // The worst case for the layout: a countdown ring *and* more
+            // exercises than fit, on a short screen — the list must scroll
+            // and the buttons must stay on screen.
+            var long = physioSet
+            long.activityDurationSeconds = 600
+            long.exercises = (0..<7).map { index in
+                var exercise = sampleExercises[index % sampleExercises.count]
+                exercise.id = UUID()
+                exercise.name = "\(exercise.name) \(index + 1)"
+                return exercise
+            }
+            snapshot(
+                CriticalOverlayView(reminder: long, onComplete: {}, onSnooze: {}),
+                size: NSSize(width: 1280, height: 800),
+                named: "overlay-exercise-countdown",
+                into: directory
+            )
+
+            snapshot(
+                ReminderEditor(reminder: physioSet) { _ in }
+                    .environmentObject(engine)
+                    .environmentObject(music),
+                size: NSSize(width: 470, height: 760),
+                named: "editor-exercise",
+                into: directory
+            )
+
+            // The exercise rows on their own, like editor-music below.
+            snapshot(
+                Form {
+                    ExerciseListSection(exercises: .constant(physioSet.exercises!))
+                }
+                .formStyle(.grouped),
+                size: NSSize(width: 470, height: 440),
+                named: "editor-exercise-section",
                 into: directory
             )
         }

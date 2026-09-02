@@ -205,12 +205,26 @@ public final class ReminderEngine: ObservableObject {
         let cutoff = current.addingTimeInterval(-Self.downtimeGrace)
         var absorbed: [Reminder] = []
 
+        // "Stale" means the running engine would have acted on it before the
+        // cutoff. That is judged through `Scheduler.deliveryMoment`, so a fire
+        // that merely fell due inside quiet hours — which the live engine
+        // holds until the window ends, and would still deliver — is left
+        // alone rather than being written off as missed.
+        func isStale(_ due: Date, priority: Priority) -> Bool {
+            guard let moment = Scheduler.deliveryMoment(
+                for: due, priority: priority, settings: settings, calendar: calendar
+            ) else { return due <= cutoff }
+            return moment <= cutoff
+        }
+
         for index in reminders.indices where reminders[index].isEnabled {
             var didAbsorb = false
+            let priority = reminders[index].priority
 
             // A snooze belongs to the session that set it: "remind me in five
             // minutes" said two days ago is not still owed.
-            if let snoozedUntil = reminders[index].snoozedUntil, snoozedUntil <= cutoff {
+            if let snoozedUntil = reminders[index].snoozedUntil,
+               isStale(snoozedUntil, priority: priority) {
                 reminders[index].snoozedUntil = nil
                 didAbsorb = true
             }
@@ -223,7 +237,7 @@ public final class ReminderEngine: ObservableObject {
                     // `resume()` does after a pause.
                     if let pending = Scheduler.pendingFireDate(
                         for: reminders[index], calendar: calendar
-                    ), pending <= cutoff {
+                    ), isStale(pending, priority: priority) {
                         reminders[index].lastFiredAt = current
                         didAbsorb = true
                     }
@@ -234,7 +248,7 @@ public final class ReminderEngine: ObservableObject {
                     // slot inside the grace window is left for `tick()`.
                     if let slot = Scheduler.latestElapsedSlot(
                         for: reminders[index], now: current, calendar: calendar
-                    ), slot <= cutoff {
+                    ), isStale(slot, priority: priority) {
                         reminders[index].lastFiredAt = slot
                         didAbsorb = true
                     }
@@ -278,6 +292,80 @@ public final class ReminderEngine: ObservableObject {
         return queuedAt > now.addingTimeInterval(-downtimeGrace)
     }
 
+    /// A reminder fire the system delivered while the app was not running: a
+    /// pre-scheduled notification or a system alarm (iOS).
+    public struct ExternalFire: Equatable, Sendable {
+        public let reminderID: UUID
+        /// The `stampDate` the fire was scheduled with (see `ProjectedFire`).
+        public let stampDate: Date
+        /// When it reached the user. Defaults to the stamp, which is the
+        /// delivery moment for every fire except a wall-clock catch-up.
+        public let deliveredAt: Date
+
+        public init(reminderID: UUID, stampDate: Date, deliveredAt: Date? = nil) {
+            self.reminderID = reminderID
+            self.stampDate = stampDate
+            self.deliveredAt = max(stampDate, deliveredAt ?? stampDate)
+        }
+    }
+
+    /// Records that `id` fired *outside* the running app. See
+    /// `recordExternalFires(_:)`; this is the single-fire convenience.
+    public func recordExternalFire(id: UUID, at stamp: Date, deliveredAt: Date? = nil) {
+        recordExternalFires([
+            ExternalFire(reminderID: id, stampDate: stamp, deliveredAt: deliveredAt)
+        ])
+    }
+
+    /// Folds fires the system delivered on the app's behalf into engine
+    /// state, so it matches what a live `tick()` would have produced: the
+    /// anchor moves to the fire's stamp, a snooze the fire honoured is
+    /// consumed, and history records the fire at the moment it reached the
+    /// user — the same moment `tick()` records its own fires at.
+    ///
+    /// Idempotent: reconciliation runs on every foreground pass and must not
+    /// duplicate history or move anchors backwards, so a fire that is already
+    /// accounted for — by a previous pass, or because the app was running and
+    /// ticked it — is left alone. A stamp at or before the reminder's anchor
+    /// is a fire the engine could never have produced (an alarm rule's
+    /// occurrence from before the reminder existed, say) and is ignored too.
+    ///
+    /// One persist for the whole batch: the first frame after days away can
+    /// have dozens of these.
+    public func recordExternalFires(_ fires: [ExternalFire]) {
+        var changed = false
+        for fire in fires.sorted(by: { $0.deliveredAt < $1.deliveredAt }) {
+            guard let index = reminders.firstIndex(where: { $0.id == fire.reminderID })
+            else { continue }
+            let stamp = fire.stampDate.roundedToSecond
+            let delivered = fire.deliveredAt.roundedToSecond
+            let anchor = reminders[index].lastFiredAt ?? reminders[index].createdAt
+            guard stamp > anchor else { continue }
+            // Defence in depth against a rewound anchor (an edit saved from a
+            // stale copy): the delivery moment is fixed for a given fire, so
+            // an event already dated there means this fire is on record.
+            if events.contains(where: {
+                $0.reminderID == fire.reminderID && $0.outcome == .fired
+                    && $0.date == delivered
+            }) {
+                continue
+            }
+            reminders[index].lastFiredAt = stamp
+            // The fire that honoured a snooze consumes it. Deliberately
+            // stricter than tick()'s unconditional clear: a snooze set *after*
+            // this fire was delivered is a promise about the future, and the
+            // past fire being reconciled must not eat it.
+            if let snoozed = reminders[index].snoozedUntil, snoozed <= stamp {
+                reminders[index].snoozedUntil = nil
+            }
+            record(.fired, for: reminders[index], at: delivered)
+            changed = true
+        }
+        guard changed else { return }
+        persist()
+        refreshNextUp()
+    }
+
     /// Records queued presentations the presenter dropped unshown (see
     /// `shouldPresentQueued`), so history still shows what happened to them.
     public func recordMissedPresentations(_ dropped: [Reminder]) {
@@ -306,40 +394,20 @@ public final class ReminderEngine: ObservableObject {
         var fired: [Reminder] = []
         var skippedAny = false
         for index in reminders.indices {
-            let reminder = reminders[index]
-            guard Scheduler.isDue(
-                reminder, now: current, settings: settings, calendar: calendar
-            ) else { continue }
+            // The whole firing policy — what the stamp is, whether a slot that
+            // passed inside quiet hours is skipped, how a snooze is consumed —
+            // lives in `Scheduler.nextStep`. The tick only asks whether the
+            // step's moment has arrived and then applies it.
+            guard let step = Scheduler.nextStep(
+                for: reminders[index], from: current, settings: settings, calendar: calendar
+            ), step.fireDate <= current else { continue }
 
-            // Wall-clock fires are stamped with the slot they honour, not the
-            // tick time, so an "every 2 days" grid stays in phase even when the
-            // fire itself lands a few seconds (or, after sleep, hours) late.
-            // Collapsing to the latest elapsed slot turns a week of missed
-            // slots into one catch-up fire. A snoozed fire keeps the tick time:
-            // the snooze, not the schedule, is what it honours.
-            var stamp = current
-            var skip = false
-            if reminder.snoozedUntil == nil, reminder.schedule.isWallClock {
-                let slot = Scheduler.latestElapsedSlot(
-                    for: reminder, now: current, calendar: calendar
-                ) ?? current
-                stamp = slot
-                // A slot that passed inside quiet hours is skipped, not
-                // delivered late: "daily at 23:00" arriving at 07:00 is noise.
-                // Interval reminders keep their catch-up delivery — "it has
-                // been an hour since water" is still true at 07:00.
-                skip = Scheduler.isSuppressedByQuietHours(
-                    priority: reminder.priority, settings: settings,
-                    now: slot, calendar: calendar
-                )
-            }
-
-            reminders[index].lastFiredAt = stamp
-            reminders[index].snoozedUntil = nil
-            if skip {
+            step.apply(to: &reminders[index])
+            switch step.outcome {
+            case .skip:
                 record(.missed, for: reminders[index], at: current)
                 skippedAny = true
-            } else {
+            case .deliver:
                 fired.append(reminders[index])
             }
         }
@@ -361,34 +429,37 @@ public final class ReminderEngine: ObservableObject {
         return fired
     }
 
+    /// A timed pause that has run out lifts itself, and re-anchors interval
+    /// reminders to the moment it ended — the same thing `resume()` does by
+    /// hand, and what the projection assumed while the pause was running —
+    /// so a long pause never dumps an overdue fire on the user the instant it
+    /// lifts. Anchors already past the pause's end are left alone.
     private func expireTimedPauseIfNeeded(at date: Date) {
-        if let until = settings.pausedUntil, date >= until {
-            settings.pausedUntil = nil
-            settings.isPaused = false
-            persist()
+        guard let until = settings.pausedUntil, date >= until else { return }
+        settings.pausedUntil = nil
+        settings.isPaused = false
+        for index in reminders.indices {
+            if case .interval = reminders[index].schedule,
+               (reminders[index].lastFiredAt ?? reminders[index].createdAt) < until {
+                reminders[index].lastFiredAt = until
+            }
         }
+        persist()
     }
 
     private func refreshNextUp() {
-        // The countdown shows when a reminder will actually reach the user, so
-        // suppression is judged at each candidate's fire time, not at "now":
-        // during quiet hours the true next fire is the 07:00 one, and outside
-        // them a slot that lands inside the window will not really fire then.
+        // The countdown shows when a reminder will actually reach the user:
+        // the projection's first delivery, which judges quiet hours at each
+        // candidate's fire time and looks past a timed pause. During quiet
+        // hours the true next fire is the 07:00 one, and a slot that lands
+        // inside the window will not really fire then.
         let current = now
         var best: (reminder: Reminder, date: Date)?
         for reminder in reminders where reminder.isEnabled {
-            guard var date = Scheduler.nextFireDate(
-                for: reminder, now: current, calendar: calendar
-            ) else { continue }
-            if Scheduler.isSuppressedByQuietHours(
-                priority: reminder.priority, settings: settings,
-                now: date, calendar: calendar
-            ) {
-                guard let audible = Scheduler.nextAudibleFireDate(
-                    for: reminder, from: date, settings: settings, calendar: calendar
-                ) else { continue }
-                date = audible
-            }
+            guard let date = Scheduler.projectedFires(
+                for: reminder, from: current, limit: 1,
+                settings: settings, calendar: calendar
+            ).first?.fireDate else { continue }
             if let currentBest = best {
                 if date < currentBest.date
                     || (date == currentBest.date
@@ -541,9 +612,32 @@ public final class ReminderEngine: ObservableObject {
     /// Returns `nil` when nothing fired in the window.
     public func adherence(for reminderID: UUID, since date: Date) -> Double? {
         let counts = stats(for: reminderID, since: date)
-        let fired = counts[.fired] ?? 0
+        return Self.adherence(fired: counts[.fired] ?? 0, completed: counts[.completed] ?? 0)
+    }
+
+    /// Adherence for every reminder that fired in the window, in one pass over
+    /// history — the history screen asks for all of them at once.
+    public func adherence(since date: Date) -> [UUID: Double] {
+        var fired: [UUID: Int] = [:]
+        var completed: [UUID: Int] = [:]
+        for event in events where event.date >= date {
+            switch event.outcome {
+            case .fired: fired[event.reminderID, default: 0] += 1
+            case .completed: completed[event.reminderID, default: 0] += 1
+            default: break
+            }
+        }
+        var result: [UUID: Double] = [:]
+        for (id, count) in fired {
+            if let value = Self.adherence(fired: count, completed: completed[id] ?? 0) {
+                result[id] = value
+            }
+        }
+        return result
+    }
+
+    private static func adherence(fired: Int, completed: Int) -> Double? {
         guard fired > 0 else { return nil }
-        let completed = counts[.completed] ?? 0
         return min(1.0, Double(completed) / Double(fired))
     }
 }

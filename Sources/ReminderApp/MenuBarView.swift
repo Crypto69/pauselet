@@ -1,5 +1,6 @@
 import SwiftUI
 import ReminderCore
+import ReminderUI
 
 /// The popover shown when the menu bar icon is clicked.
 ///
@@ -192,9 +193,10 @@ struct ReminderRow: View {
 
                 HStack(spacing: 5) {
                     PriorityDot(priority: reminder.priority)
-                    Text(reminder.schedule.summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                    Text(reminder.scheduleLine)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
             }
 
@@ -231,26 +233,5 @@ struct ReminderRow: View {
         .padding(.vertical, 9)
         .background(isHovering ? Color.primary.opacity(0.04) : .clear)
         .onHover { isHovering = $0 }
-    }
-}
-
-/// A small coloured dot conveying a reminder's priority at a glance.
-struct PriorityDot: View {
-    let priority: Priority
-
-    static func color(for priority: Priority) -> Color {
-        switch priority {
-        case .subtle: return Color.secondary
-        case .normal: return Color.blue
-        case .important: return Color.orange
-        case .critical: return Color.red
-        }
-    }
-
-    var body: some View {
-        Circle()
-            .fill(Self.color(for: priority))
-            .frame(width: 6, height: 6)
-            .help(priority.displayName)
     }
 }

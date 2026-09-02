@@ -5,7 +5,7 @@ the order that retires the most risk first. Tick boxes as you go.
 
 > **Status 2026-08-24:** a headless session already drove the VM through much
 > of this (see HANDOFF.md → "VM verification session"): toolchain installed,
-> 169 tests green in the VM, and the critical overlay, subtle card, toast
+> 184 tests green in the VM, and the critical overlay, subtle card, toast
 > round-trip, tray icon and flyout all verified from screenshots. Items below
 > marked ✅ have that evidence; everything else still wants human eyes. Parts
 > of setup Part 1 are already done in the VM.
@@ -57,7 +57,7 @@ git checkout windows-port
 ```powershell
 dotnet test Windows/Pauselet.Core.Tests
 ```
-- [ ] **Expected: 169 passed, 0 failed.** ✅ verified in this VM already — This runs the complete behavioural
+- [ ] **Expected: 184 passed, 0 failed.** ✅ verified in this VM already — This runs the complete behavioural
       spec (scheduler, engine, DST, persistence, golden files) on real
       Windows. If this is green, the port's logic is correct on this machine
       and everything after is about the shell.
@@ -167,6 +167,17 @@ reminders with 1-minute intervals.
 - [ ] **Lock screen:** lock (Win+L) while a critical is due; the overlay
       cannot draw there (platform boundary). On unlock, the reminder is
       present/fires promptly (unlock triggers a tick).
+- [ ] **Exercise takeover:** an exercise reminder fires → the overlay lists
+      each exercise (name, "3 × 10", instructions) with a tick circle each,
+      "0 of N done" above the list, Snooze/Done beneath. A long list (8+
+      exercises) scrolls without pushing the buttons off-screen; ticking dims
+      the row and updates the count; Done works with nothing ticked; nothing
+      is remembered on the next fire.
+- [ ] **Exercise keyboard:** 1–9 (and the numpad) toggle rows; Tab reaches
+      every row then Snooze/Done, Space toggles the focused row; Return still
+      completes and S still snoozes even while a row has focus.
+- [ ] **Exercise multi-monitor:** ticks are per display (expected — they are
+      not mirrored); acknowledging on either display closes both.
 
 ### Group E — Sleep, wake, downtime
 - [ ] Sleep the VM 10+ minutes past a 1-minute reminder's due time; on wake it
@@ -193,6 +204,23 @@ reminders with 1-minute intervals.
 ### Group G — Settings, editor, system integration
 - [ ] CRUD: add / edit / delete reminders; all three schedule kinds
       round-trip through the editor correctly.
+- [ ] **Exercise editor:** Type → Exercise hides "How it interrupts" and the
+      Subtle on-screen-time field, shows the Critical note, adds one blank
+      exercise, and switches the icon to the dumbbell (only if it was still
+      the bell). Add / Remove rows; headers renumber. Save refuses: no
+      exercises, a blank name, sets or reps of 0 or non-numeric — each with a
+      message naming the exercise and focus on the field. Edit → rows reload
+      in order; switching back to Standard and saving drops the list, with
+      the tier radios showing Critical (what was saved) for you to change.
+      Preview shows the exercise takeover.
+      The window stops growing at ~90% of the work area and the form scrolls
+      with Save still visible.
+- [ ] Flyout and Settings rows for an exercise reminder read
+      "Every 2 hours · 3 exercises · 9 sets"; the Priority column says
+      Critical.
+- [ ] Icon picker: `dumbbell.fill` renders as a dumbbell (new
+      `fitness_center` glyph in the rebuilt subset font), and the overlay's
+      tick circle / check glyphs render.
 - [ ] Quiet hours: set a window covering now; non-critical reminders go
       silent, critical still fires (with "allow critical" on); the flyout
       countdown points at the post-window fire, not the suppressed slot.

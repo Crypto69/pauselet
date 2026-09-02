@@ -1,5 +1,6 @@
 import SwiftUI
 import ReminderCore
+import ReminderUI
 
 /// Create or edit a reminder.
 ///
@@ -7,6 +8,10 @@ import ReminderCore
 /// free-form field, because "every N minutes" and "at 5pm every 2 days" are
 /// genuinely different mental models and mixing them into one control confuses
 /// both.
+///
+/// An exercise reminder carries a list of exercises typed in here and is
+/// always Critical: the list only makes sense on the full-screen overlay, so
+/// the Importance picker gives way to a note while that type is selected.
 struct ReminderEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.previewReminder) private var previewReminder
@@ -30,6 +35,20 @@ struct ReminderEditor: View {
     @State private var usesCustomDisplaySeconds: Bool
     @State private var displaySeconds: Int
     @State private var music: MusicChoice
+    @State private var type: ReminderType
+    @State private var exercises: [Exercise]
+
+    enum ReminderType: String, CaseIterable, Identifiable {
+        case standard, exercise
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .standard: return "Standard"
+            case .exercise: return "Exercise"
+            }
+        }
+    }
 
     enum ScheduleKind: String, CaseIterable, Identifiable {
         case interval, daily, weekly
@@ -56,50 +75,65 @@ struct ReminderEditor: View {
         _usesCustomDisplaySeconds = State(initialValue: reminder?.displaySeconds != nil)
         _displaySeconds = State(initialValue: reminder?.displaySeconds ?? 8)
         _music = State(initialValue: reminder?.music ?? .none)
+        _type = State(initialValue: reminder?.isExercise == true ? .exercise : .standard)
+        _exercises = State(initialValue: reminder?.exercises ?? [])
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
 
-        // Seed every schedule control from the existing reminder where it
-        // applies, and with sensible defaults elsewhere, so switching kinds in
-        // the picker never lands on an empty or nonsensical state.
+        // Seed every schedule control with a sensible default, then override
+        // the ones the existing reminder's schedule applies to, so switching
+        // kinds in the picker never lands on an empty or nonsensical state.
+        var scheduleKind = ScheduleKind.interval
+        var intervalMinutes = reminder == nil ? 30 : 60
+        var timeHour = 9
+        var timeMinute = 0
+        var dayInterval = 1
+        var weekdays: Set<Int> = [2, 3, 4, 5, 6]
+
         switch reminder?.schedule {
         case .interval(let minutes):
-            _scheduleKind = State(initialValue: .interval)
-            _intervalMinutes = State(initialValue: minutes)
-            _timeHour = State(initialValue: 9)
-            _timeMinute = State(initialValue: 0)
-            _dayInterval = State(initialValue: 1)
-            _weekdays = State(initialValue: [2, 3, 4, 5, 6])
+            intervalMinutes = minutes
         case .dailyAt(let hour, let minute, let interval):
-            _scheduleKind = State(initialValue: .daily)
-            _intervalMinutes = State(initialValue: 60)
-            _timeHour = State(initialValue: hour)
-            _timeMinute = State(initialValue: minute)
-            _dayInterval = State(initialValue: interval)
-            _weekdays = State(initialValue: [2, 3, 4, 5, 6])
+            scheduleKind = .daily
+            timeHour = hour
+            timeMinute = minute
+            dayInterval = interval
         case .weeklyAt(let hour, let minute, let days):
-            _scheduleKind = State(initialValue: .weekly)
-            _intervalMinutes = State(initialValue: 60)
-            _timeHour = State(initialValue: hour)
-            _timeMinute = State(initialValue: minute)
-            _dayInterval = State(initialValue: 1)
-            _weekdays = State(initialValue: days)
+            scheduleKind = .weekly
+            timeHour = hour
+            timeMinute = minute
+            weekdays = days
         case nil:
-            _scheduleKind = State(initialValue: .interval)
-            _intervalMinutes = State(initialValue: 30)
-            _timeHour = State(initialValue: 9)
-            _timeMinute = State(initialValue: 0)
-            _dayInterval = State(initialValue: 1)
-            _weekdays = State(initialValue: [2, 3, 4, 5, 6])
+            break
         }
+
+        _scheduleKind = State(initialValue: scheduleKind)
+        _intervalMinutes = State(initialValue: intervalMinutes)
+        _timeHour = State(initialValue: timeHour)
+        _timeMinute = State(initialValue: timeMinute)
+        _dayInterval = State(initialValue: dayInterval)
+        _weekdays = State(initialValue: weekdays)
     }
 
     private var isValid: Bool {
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         if scheduleKind == .weekly && weekdays.isEmpty { return false }
+        if type == .exercise && (exercises.isEmpty || !exercises.allSatisfy(\.isValid)) {
+            return false
+        }
         return true
+    }
+
+    /// The tier the reminder will actually have. The radio picker keeps the
+    /// user's choice while the Exercise type imposes Critical on top of it, so
+    /// switching to Exercise and back within one editing session leaves the
+    /// picked tier alone. (A saved exercise reminder is Critical on disk, so
+    /// reopening it and switching back shows Critical selected — visibly, in
+    /// the picker, where it can be changed.)
+    private var effectivePriority: Priority {
+        type == .exercise ? .critical : priority
     }
 
     private var composedSchedule: Schedule {
@@ -127,10 +161,20 @@ struct ReminderEditor: View {
             ScrollView {
                 Form {
                     Section {
+                        Picker("Type", selection: $type) {
+                            ForEach(ReminderType.allCases) { kind in
+                                Text(kind.title).tag(kind)
+                            }
+                        }
+                        .pickerStyle(.segmented)
                         TextField("Title", text: $title)
                         TextField("Message", text: $message, axis: .vertical)
                             .lineLimit(2...4)
                         SymbolPicker(selection: $symbolName)
+                    }
+
+                    if type == .exercise {
+                        ExerciseListSection(exercises: $exercises)
                     }
 
                     Section("Schedule") {
@@ -170,41 +214,42 @@ struct ReminderEditor: View {
                     }
 
                     Section("Importance") {
-                        Picker("Priority", selection: $priority) {
-                            ForEach(Priority.allCases, id: \.self) { level in
-                                HStack {
-                                    Image(systemName: level.symbolName)
-                                    Text(level.displayName)
-                                }
-                                .tag(level)
+                        if type == .exercise {
+                            HStack(spacing: 6) {
+                                Image(systemName: Priority.critical.symbolName)
+                                Text(Priority.critical.displayName)
                             }
-                        }
-                        .pickerStyle(.radioGroup)
-
-                        Text(priority.explanation)
+                            Text(
+                                "Exercise reminders always take over every display, "
+                                + "so the list is in front of you while you work "
+                                + "through it."
+                            )
                             .font(.caption)
                             .foregroundStyle(.secondary)
-
-                        if priority >= .important {
-                            Picker(
-                                "Sound",
-                                selection: Binding(
-                                    get: { soundName ?? "" },
-                                    set: { soundName = $0.isEmpty ? nil : $0 }
-                                )
-                            ) {
-                                Text("Default").tag("")
-                                ForEach(Sounds.available, id: \.self) { name in
-                                    Text(name).tag(name)
+                            .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Picker("Priority", selection: $priority) {
+                                ForEach(Priority.allCases, id: \.self) { level in
+                                    HStack {
+                                        Image(systemName: level.symbolName)
+                                        Text(level.displayName)
+                                    }
+                                    .tag(level)
                                 }
                             }
-                            .onChange(of: soundName) { newValue in
-                                if let newValue { Sounds.play(named: newValue) }
-                            }
+                            .pickerStyle(.radioGroup)
+
+                            Text(priority.explanation)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if effectivePriority >= .important {
+                            soundPicker
                         }
                     }
 
-                    if priority == .subtle {
+                    if effectivePriority == .subtle {
                         Section("On-screen Time") {
                             HelpRow(
                                 title: "Use a custom display time",
@@ -224,7 +269,7 @@ struct ReminderEditor: View {
                                 )
                             }
                         }
-                    } else if priority == .normal || priority == .important {
+                    } else if effectivePriority == .normal || effectivePriority == .important {
                         Section("On-screen Time") {
                             Text(
                                 "macOS controls how long a notification banner "
@@ -255,6 +300,18 @@ struct ReminderEditor: View {
                     }
                 }
                 .formStyle(.grouped)
+                .onChange(of: type) { newType in
+                    guard newType == .exercise else { return }
+                    // The shape of a row is the explanation, so never show an
+                    // empty list; and a reminder that is about exercise
+                    // should not keep the placeholder bell.
+                    if exercises.isEmpty {
+                        exercises.append(Exercise(name: ""))
+                    }
+                    if symbolName == "bell" {
+                        symbolName = "dumbbell.fill"
+                    }
+                }
             }
 
             Divider()
@@ -279,8 +336,28 @@ struct ReminderEditor: View {
         }
         // Tall enough that the whole form — including all four priority options,
         // which are the point of the app — is visible without scrolling on a
-        // typical display. The ScrollView still handles smaller screens.
+        // typical display. The ScrollView still handles smaller screens, and
+        // an exercise list of any length: the hidden tier picker roughly pays
+        // for the first few rows, and the rest scroll.
         .frame(width: 470, height: 760)
+    }
+
+    private var soundPicker: some View {
+        Picker(
+            "Sound",
+            selection: Binding(
+                get: { soundName ?? "" },
+                set: { soundName = $0.isEmpty ? nil : $0 }
+            )
+        ) {
+            Text("Default").tag("")
+            ForEach(Sounds.available, id: \.self) { name in
+                Text(name).tag(name)
+            }
+        }
+        .onChange(of: soundName) { newValue in
+            if let newValue { Sounds.play(named: newValue) }
+        }
     }
 
     /// The music choice as it should be stored.
@@ -297,19 +374,34 @@ struct ReminderEditor: View {
         return music
     }
 
+    /// The exercise list as it should be stored: `nil` unless this is an
+    /// exercise reminder, and tidied (trimmed, line endings unified, empty
+    /// collapsed to `nil`) so the same list serializes identically on every
+    /// platform.
+    private var normalizedExercises: [Exercise]? {
+        type == .exercise ? Exercise.normalized(exercises) : nil
+    }
+
     /// The reminder as currently configured, so Preview shows the unsaved edits
     /// rather than what is on disk.
     private var draft: Reminder {
+        compose(untitled: "Untitled reminder")
+    }
+
+    /// The single place the form's state becomes a `Reminder`, so Preview and
+    /// Save can never disagree about a field.
+    private func compose(untitled fallback: String) -> Reminder {
         var reminder = existing ?? Reminder(title: "", schedule: composedSchedule)
         let trimmed = title.trimmingCharacters(in: .whitespaces)
-        reminder.title = trimmed.isEmpty ? "Untitled reminder" : trimmed
+        reminder.title = trimmed.isEmpty ? fallback : trimmed
         reminder.message = message.trimmingCharacters(in: .whitespaces)
         reminder.schedule = composedSchedule
-        reminder.priority = priority
+        reminder.priority = effectivePriority
         reminder.symbolName = symbolName
         reminder.soundName = soundName
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
         reminder.music = normalizedMusic
+        reminder.exercises = normalizedExercises
         reminder.activityDurationSeconds = hasActivityDuration
             ? activityMinutes * 60
             : nil
@@ -317,45 +409,8 @@ struct ReminderEditor: View {
     }
 
     private func save() {
-        var reminder = existing ?? Reminder(title: "", schedule: composedSchedule)
-        reminder.title = title.trimmingCharacters(in: .whitespaces)
-        reminder.message = message.trimmingCharacters(in: .whitespaces)
-        reminder.schedule = composedSchedule
-        reminder.priority = priority
-        reminder.symbolName = symbolName
-        reminder.soundName = soundName
-        reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
-        reminder.music = normalizedMusic
-        reminder.activityDurationSeconds = hasActivityDuration
-            ? activityMinutes * 60
-            : nil
-        onSave(reminder)
+        onSave(compose(untitled: ""))
         dismiss()
-    }
-}
-
-/// Common intervals as presets, with a custom escape hatch.
-struct IntervalPicker: View {
-    @Binding var minutes: Int
-
-    private static let presets = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Every", selection: Binding(
-                get: { Self.presets.contains(minutes) ? minutes : -1 },
-                set: { if $0 != -1 { minutes = $0 } }
-            )) {
-                ForEach(Self.presets, id: \.self) { preset in
-                    Text(Schedule.humanDuration(minutes: preset)).tag(preset)
-                }
-                Text("Custom").tag(-1)
-            }
-
-            if !Self.presets.contains(minutes) {
-                Stepper("Every \(minutes) min", value: $minutes, in: 1...1440, step: 5)
-            }
-        }
     }
 }
 
@@ -363,14 +418,9 @@ struct IntervalPicker: View {
 struct WeekdayPicker: View {
     @Binding var selection: Set<Int>
 
-    // Calendar weekday numbering: 1 = Sunday ... 7 = Saturday.
-    private static let days: [(number: Int, label: String)] = [
-        (2, "M"), (3, "T"), (4, "W"), (5, "T"), (6, "F"), (7, "S"), (1, "S"),
-    ]
-
     var body: some View {
         HStack(spacing: 5) {
-            ForEach(Self.days, id: \.number) { day in
+            ForEach(EditorCatalog.weekdays, id: \.number) { day in
                 let isOn = selection.contains(day.number)
                 Button {
                     if isOn {
@@ -389,6 +439,8 @@ struct WeekdayPicker: View {
                         .foregroundStyle(isOn ? .white : .primary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(day.name)
+                .accessibilityAddTraits(isOn ? [.isSelected] : [])
             }
         }
     }
@@ -398,14 +450,6 @@ struct WeekdayPicker: View {
 struct SymbolPicker: View {
     @Binding var selection: String
 
-    private static let symbols = [
-        "bell", "figure.seated.side", "arrow.up.and.down.circle", "drop.fill",
-        "figure.flexibility", "figure.walk", "pills.fill", "heart.fill",
-        "lungs.fill", "eye.fill", "hand.raised.fill", "fork.knife",
-        "moon.fill", "sun.max.fill", "phone.fill", "book.fill",
-        "cross.case.fill", "dumbbell.fill", "timer", "wind",
-    ]
-
     private let columns = Array(repeating: GridItem(.fixed(34), spacing: 5), count: 10)
 
     var body: some View {
@@ -414,7 +458,7 @@ struct SymbolPicker: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             LazyVGrid(columns: columns, spacing: 5) {
-                ForEach(Self.symbols, id: \.self) { symbol in
+                ForEach(EditorCatalog.symbols, id: \.self) { symbol in
                     let isSelected = symbol == selection
                     Button {
                         selection = symbol

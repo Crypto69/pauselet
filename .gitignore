@@ -15,3 +15,11 @@ skills-lock.json
 # Local debug output from tooling that has nothing to do with this app.
 firebase-debug.log
 *-debug.log
+
+# Local planning documents, deliberately kept out of the repository.
+iOS Implementation Plan.md
+Windows Conversion Plan.md
+
+# The iOS Xcode project is generated from iOS/project.yml (run `xcodegen` in
+# iOS/); CI regenerates it too, so the generated tree stays out of the repo.
+iOS/Pauselet.xcodeproj/

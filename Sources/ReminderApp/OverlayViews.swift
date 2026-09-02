@@ -1,12 +1,15 @@
+import AppKit
 import SwiftUI
 import ReminderCore
+import ReminderUI
 
 /// The full-screen takeover shown for `.critical` reminders.
 ///
 /// Design intent: this interrupts someone who is concentrating, so it should be
 /// calm rather than alarming — dark, soft, and unhurried. For a reminder with an
 /// activity duration it runs a countdown, which turns "stop working" into a
-/// concrete, finite thing to do.
+/// concrete, finite thing to do. An exercise reminder lists its exercises with
+/// a tick box each, between the title and the buttons.
 struct CriticalOverlayView: View {
     let reminder: Reminder
     let onComplete: () -> Void
@@ -15,12 +18,23 @@ struct CriticalOverlayView: View {
     @State private var remaining: Int
     @State private var hasStarted = false
     @State private var appeared = false
+    /// Which exercises have been ticked. Working memory for this session only:
+    /// it is never stored, and — since every display hosts its own copy of
+    /// this view — it is per display. The user is in front of one of them,
+    /// and Done or Snooze closes them all together.
+    @State private var completedExerciseIDs: Set<UUID>
 
-    init(reminder: Reminder, onComplete: @escaping () -> Void, onSnooze: @escaping () -> Void) {
+    init(
+        reminder: Reminder,
+        onComplete: @escaping () -> Void,
+        onSnooze: @escaping () -> Void,
+        completedExerciseIDs: Set<UUID> = []
+    ) {
         self.reminder = reminder
         self.onComplete = onComplete
         self.onSnooze = onSnooze
         _remaining = State(initialValue: reminder.activityDurationSeconds ?? 0)
+        _completedExerciseIDs = State(initialValue: completedExerciseIDs)
     }
 
     private var hasCountdown: Bool { (reminder.activityDurationSeconds ?? 0) > 0 }
@@ -43,9 +57,9 @@ struct CriticalOverlayView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 34) {
+            VStack(spacing: reminder.isExercise ? 22 : 34) {
                 Image(systemName: reminder.symbolName)
-                    .font(.system(size: 72, weight: .light))
+                    .font(.system(size: reminder.isExercise ? 52 : 72, weight: .light))
                     .foregroundStyle(Color(red: 0.62, green: 0.89, blue: 0.85))
                     .symbolRenderingMode(.hierarchical)
 
@@ -62,6 +76,10 @@ struct CriticalOverlayView: View {
                             .frame(maxWidth: 620)
                             .lineSpacing(4)
                     }
+                }
+
+                if let exercises = reminder.exercises, !exercises.isEmpty {
+                    exerciseList(exercises)
                 }
 
                 if hasCountdown {
@@ -87,9 +105,13 @@ struct CriticalOverlayView: View {
                 }
                 .padding(.top, 4)
 
-                Text("Press Return when you're done · S to snooze")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.38))
+                Text(
+                    reminder.isExercise
+                        ? "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
+                        : "Press Return when you're done · S to snooze"
+                )
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.38))
             }
             .padding(60)
             .opacity(appeared ? 1 : 0)
@@ -109,6 +131,94 @@ struct CriticalOverlayView: View {
         }
     }
 
+    /// The exercises, with a tick each. Takes its natural height when the
+    /// screen has room and scrolls otherwise — the siblings above and below
+    /// are fixed-size, so whatever is left over is the list's. The scrolling
+    /// form fades its last visible row and says so in the caption, since a
+    /// cut that happens to land on a row boundary would otherwise look like
+    /// the end of the list.
+    private func exerciseList(_ exercises: [Exercise]) -> some View {
+        ViewThatFits(in: .vertical) {
+            VStack(spacing: 10) {
+                exerciseRows(exercises)
+                    .frame(width: 620)
+                exerciseCaption(exercises, scrolls: false)
+            }
+
+            VStack(spacing: 10) {
+                ScrollView(.vertical) {
+                    exerciseRows(exercises)
+                        .frame(width: 620)
+                        // A legacy ("always show") scroller takes its width
+                        // from the viewport on the right, which would leave
+                        // the rows off-centre from the title above; nudging
+                        // the content by the same amount cancels it. Overlay
+                        // scrollers reserve nothing, and get no nudge.
+                        .padding(.leading, Self.reservedScrollerWidth)
+                }
+                .scrollIndicators(.visible)
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.85),
+                            .init(color: .black.opacity(0.15), location: 1),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                exerciseCaption(exercises, scrolls: true)
+            }
+        }
+        .frame(width: 660)
+    }
+
+    private static var reservedScrollerWidth: CGFloat {
+        NSScroller.preferredScrollerStyle == .legacy
+            ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+            : 0
+    }
+
+    private func exerciseCaption(_ exercises: [Exercise], scrolls: Bool) -> some View {
+        Text(
+            "\(completedExerciseIDs.count) of \(exercises.count) done"
+                + (scrolls ? " · scroll for the rest" : "")
+        )
+        .font(.system(size: 12))
+        .foregroundStyle(.white.opacity(0.5))
+    }
+
+    private func exerciseRows(_ exercises: [Exercise]) -> some View {
+        VStack(spacing: 10) {
+            ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
+                let row = ExerciseOverlayRow(
+                    exercise: exercise,
+                    index: index,
+                    isDone: completedExerciseIDs.contains(exercise.id),
+                    showsIndex: index < 9
+                ) {
+                    toggle(exercise.id)
+                }
+                if index < 9 {
+                    row.keyboardShortcut(
+                        KeyEquivalent(Character(String(index + 1))), modifiers: []
+                    )
+                } else {
+                    row
+                }
+            }
+        }
+    }
+
+    private func toggle(_ id: UUID) {
+        if completedExerciseIDs.contains(id) {
+            completedExerciseIDs.remove(id)
+        } else {
+            completedExerciseIDs.insert(id)
+        }
+    }
+
     private var countdown: some View {
         VStack(spacing: 16) {
             ZStack {
@@ -117,7 +227,7 @@ struct CriticalOverlayView: View {
                 Circle()
                     .trim(from: 0, to: progress)
                     .stroke(
-                        Color(red: 0.42, green: 0.85, blue: 0.78),
+                        ExerciseOverlayRow.doneColor,
                         style: StrokeStyle(lineWidth: 8, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))

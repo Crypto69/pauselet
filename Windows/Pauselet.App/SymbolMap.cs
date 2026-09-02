@@ -48,6 +48,7 @@ internal static class SymbolMap
         ["bell.slash"] = "\uE7F6",                     // notifications_off
         ["figure.walk"] = "\uE536",                    // directions_walk
         ["figure.stand"] = "\uE92C",                   // accessibility_new
+        ["dumbbell.fill"] = "\uEB43",                  // fitness_center
         ["eye"] = "\uE8F4",                            // visibility
         ["cup.and.saucer.fill"] = "\uEB44",            // local_cafe
         ["fork.knife"] = "\uE56C",                     // restaurant
@@ -77,6 +78,7 @@ internal static class SymbolMap
         // UI glyphs used by the app's own surfaces.
         ["checkmark.circle"] = "\uF0BE",               // check_circle
         ["checkmark.circle.fill"] = "\uF0BE",          // check_circle
+        ["circle"] = "\uE836",                         // radio_button_unchecked
         ["gearshape"] = "\uE8B8",                      // settings
         ["pause.circle"] = "\uE1A2",                   // pause_circle
         ["play.circle.fill"] = "\uE1C4",               // play_circle
@@ -99,7 +101,8 @@ internal static class SymbolMap
     [
         "bell", "figure.seated.side", "arrow.up.and.down.circle", "drop.fill",
         "figure.flexibility", "figure.mind.and.body", "figure.walk",
-        "figure.stand", "eye", "cup.and.saucer.fill", "fork.knife",
+        "figure.stand", "dumbbell.fill", "eye", "cup.and.saucer.fill",
+        "fork.knife",
         "pills.fill", "heart.fill", "lungs.fill", "brain.head.profile",
         "moon.fill", "sun.max.fill", "alarm", "clock", "timer", "calendar",
         "book.fill", "phone.fill", "envelope.fill", "gamecontroller.fill",

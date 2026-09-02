@@ -1,5 +1,6 @@
 import SwiftUI
 import ReminderCore
+import ReminderUI
 
 /// The main window: manage reminders, global preferences, and history.
 struct SettingsView: View {
@@ -179,9 +180,14 @@ struct ReminderEditRow: View {
                         PriorityDot(priority: reminder.priority)
                         Text(reminder.priority.displayName)
                     }
+                    if let exercises = reminder.exerciseSummary {
+                        Text("·")
+                        Text(exercises)
+                    }
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
             Spacer()

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ReminderCore
+import ReminderUI
 
 /// The Preferences section for Spotify playback: the default playlist, the
 /// volume reminders fade up to, and the Automation permission.

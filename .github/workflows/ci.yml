@@ -11,10 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pin the toolchain: the default Xcode on the runner has lagged behind
-      # what this package needs for its concurrency annotations.
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      # The default Xcode on the runner has lagged behind what this package
+      # needs for its concurrency annotations. Rather than pinning a version
+      # that disappears the next time the runner image rotates, pick the
+      # newest release Xcode the image provides.
+      - name: Select the newest Xcode on the image
+        run: sudo xcode-select -s "$(./scripts/newest-xcode.sh)"
 
       - name: Show Swift version
         run: swift --version
@@ -24,3 +26,37 @@ jobs:
 
       - name: Test
         run: swift test
+
+  # The iOS app needs an Xcode 26 toolchain (AlarmKit, iOS 26 SDK), which the
+  # macOS 15 runner above predates.
+  test-ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode on the image
+        run: sudo xcode-select -s "$(./scripts/newest-xcode.sh)"
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen
+        working-directory: iOS
+
+      # Simulator names rotate with the image too; take whichever iPhone the
+      # selected Xcode ships rather than naming one.
+      - name: Pick a simulator
+        run: |
+          device="$(xcrun simctl list devices available | grep -m1 -o 'iPhone [^(]*' | sed 's/ *$//')"
+          test -n "$device"
+          echo "Using $device"
+          echo "SIMULATOR_NAME=$device" >> "$GITHUB_ENV"
+
+      - name: Build and test on the iOS simulator
+        run: |
+          xcodebuild -project Pauselet.xcodeproj -scheme Pauselet \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME" \
+            -only-testing:PauseletTests \
+            CODE_SIGNING_ALLOWED=NO test
+        working-directory: iOS

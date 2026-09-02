@@ -145,6 +145,15 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// key at all, and must load as "no music" rather than failing the whole
     /// file and losing every reminder the user configured.
     public var music: MusicChoice
+    /// The exercise list for an "Exercise" reminder; `nil` for an ordinary
+    /// reminder.
+    ///
+    /// Decoded leniently for the same reason as `music`: files written before
+    /// this existed have no `exercises` key. Never stored empty — the editor
+    /// collapses an empty list to `nil` through `Exercise.normalized` — but an
+    /// empty array read from disk is kept as-is so the file re-encodes
+    /// byte-identically.
+    public var exercises: [Exercise]?
     /// When the reminder last fired. Drives interval scheduling.
     public var lastFiredAt: Date?
     /// When the reminder was last acknowledged (completed or dismissed).
@@ -165,6 +174,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         soundName: String? = nil,
         displaySeconds: Int? = nil,
         music: MusicChoice = .none,
+        exercises: [Exercise]? = nil,
         lastFiredAt: Date? = nil,
         lastAcknowledgedAt: Date? = nil,
         snoozedUntil: Date? = nil,
@@ -181,15 +191,16 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.soundName = soundName
         self.displaySeconds = displaySeconds
         self.music = music
+        self.exercises = exercises
         self.lastFiredAt = lastFiredAt
         self.lastAcknowledgedAt = lastAcknowledgedAt
         self.snoozedUntil = snoozedUntil
         self.createdAt = createdAt
     }
 
-    /// Decodes `music` as optional so a data file written before the music
-    /// feature existed still loads. Every other field keeps the synthesized
-    /// behaviour.
+    /// Decodes `music` and `exercises` as optional so a data file written
+    /// before those features existed still loads. Every other field keeps the
+    /// synthesized behaviour.
     ///
     /// Without this, adding the field would make `JSONDecoder` throw on an
     /// existing install, which `ReminderEngine.loadFromStore` handles by
@@ -209,6 +220,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
         displaySeconds = try container.decodeIfPresent(Int.self, forKey: .displaySeconds)
         music = try container.decodeIfPresent(MusicChoice.self, forKey: .music) ?? .none
+        exercises = try container.decodeIfPresent([Exercise].self, forKey: .exercises)
         lastFiredAt = try container.decodeIfPresent(Date.self, forKey: .lastFiredAt)
         lastAcknowledgedAt = try container.decodeIfPresent(
             Date.self, forKey: .lastAcknowledgedAt
@@ -383,6 +395,18 @@ public struct Settings: Codable, Equatable, Sendable {
         )
         musicEnabled = try container.decodeIfPresent(Bool.self, forKey: .musicEnabled) ?? true
         musicVolume = try container.decodeIfPresent(Int.self, forKey: .musicVolume) ?? 55
+    }
+
+    /// Whether a reminder of `priority` makes a sound when it fires: only the
+    /// important and critical tiers, and only while the master switch is on.
+    /// Subtle and normal stay silent so a busy reminder set does not become a
+    /// stream of chimes.
+    ///
+    /// One place decides this for every surface on every platform — the
+    /// notification, the overlay, the in-app takeover — so the policy cannot
+    /// drift between them.
+    public func playsSound(for priority: Priority) -> Bool {
+        soundEnabled && priority >= .important
     }
 
     /// The playlist `reminder` should start when it fires, or `nil` for silence.
