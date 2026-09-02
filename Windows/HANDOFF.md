@@ -19,10 +19,17 @@ questions are substantially answered.
   (Models, Scheduler, Store, Engine, Projection, Music). NodaTime carries the
   calendar math; CommunityToolkit.Mvvm's `ObservableObject` stands in for
   Combine.
-- **184 xUnit tests pass** (`dotnet test Windows/Pauselet.Core.Tests`): the
+- **195 xUnit tests pass** (`dotnet test Windows/Pauselet.Core.Tests`): the
   entire Swift suite translated 1:1 (minus the two Mac-only legacy-directory
   migration tests), plus new golden-file tests and the exercise-list tests
   (`ExerciseTests`, whose inline fixture is the Swift encoder's output).
+- **One firing decision, same as the Mac**: `Scheduler.NextStep` is what
+  `Tick()`, `Projection.ProjectedFires`, `IsDue` and `RefreshNextUp` are all
+  defined through (the Swift `nextStep` refactor of 2026-09-02, ported the
+  same day). `AdvanceStepTests` runs the live engine against the projection
+  for three simulated days and pins the timed-pause and quiet-hours cases
+  that used to drift. External fires are batched (`RecordExternalFires`)
+  and dated at delivery, as on the Mac.
 - **Byte-compatible persistence is proven, not aspirational**: the fixtures in
   `Pauselet.Core.Tests/Fixtures/` were written by the real Swift encoder on
   macOS, and the tests decode them and re-encode them byte-for-byte
@@ -105,7 +112,7 @@ with `prlctl exec` and verifying visually from `prlctl capture` screenshots
 (kept in the session records; the artifact page shows the highlights).
 
 **Verified working:**
-- All **184 core tests pass in the VM** (`dotnet test`), as on macOS and CI.
+- All **195 core tests pass in the VM** (`dotnet test`), as on macOS and CI.
 - App startup end-to-end: engine load → toast registration → tray icon →
   backlog absorption → tick loop. Fire timing exact (a reminder due at
   seed+10 s fired at seed+11 s).
@@ -155,6 +162,6 @@ See `TESTING.md` for VM setup and the full manual test matrix. Short version:
 winget install Microsoft.DotNet.SDK.8 Git.Git
 git clone https://github.com/Crypto69/pauselet.git && cd pauselet
 git checkout windows-port
-dotnet test Windows/Pauselet.Core.Tests   # expect 184 green
+dotnet test Windows/Pauselet.Core.Tests   # expect 195 green
 dotnet run --project Windows/Pauselet.App -- --open-settings
 ```

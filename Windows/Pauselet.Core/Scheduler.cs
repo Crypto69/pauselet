@@ -258,19 +258,108 @@ public static class Scheduler
     }
 
     /// <summary>
-    /// Whether <paramref name="reminder"/> is due to fire at
-    /// <paramref name="now"/>, accounting for global settings such as pause and
-    /// quiet hours.
+    /// One decision of the firing policy: when the engine next acts on a
+    /// reminder, what it stamps, and whether the user hears it. Produced by
+    /// <see cref="NextStep"/>, applied once by <c>Tick()</c> and repeatedly by
+    /// the projection, so the two cannot hold different opinions.
     /// </summary>
-    public static bool IsDue(
+    public sealed record FireStep(Instant FireDate, Instant StampDate, FireStep.Outcome StepOutcome)
+    {
+        public enum Outcome
+        {
+            /// <summary>The reminder reaches the user at <c>FireDate</c>.</summary>
+            Deliver,
+            /// <summary>
+            /// A wall-clock slot that passed inside quiet hours is consumed
+            /// unheard at <c>FireDate</c> and recorded as missed — "daily at
+            /// 23:00" must not arrive at 07:00.
+            /// </summary>
+            Skip,
+        }
+
+        /// <summary>
+        /// The reminder as the engine leaves it the moment it acts on this
+        /// step: anchored at the stamp, any snooze consumed.
+        /// </summary>
+        public Reminder Apply(Reminder reminder) =>
+            reminder with { LastFiredAt = StampDate, SnoozedUntil = null };
+    }
+
+    /// <summary>
+    /// The next thing the engine will do with <paramref name="reminder"/> at
+    /// or after <paramref name="now"/>, or <c>null</c> if nothing will ever
+    /// happen (disabled, paused indefinitely, a weekly schedule with no days).
+    ///
+    /// The rules, in order (mirrors <c>Scheduler.nextStep</c> in Swift):
+    /// - An indefinite pause schedules nothing. A timed pause schedules
+    ///   nothing before it ends, and re-anchors interval reminders to its end
+    ///   — the same thing the engine does when the pause expires — so a long
+    ///   pause never dumps an overdue fire the instant it lifts.
+    /// - A snooze is authoritative and fires exactly once, at its moment.
+    /// - A fire that falls due inside quiet hours waits for the window to
+    ///   end. Interval and snoozed fires are then delivered ("it has been an
+    ///   hour since water" is still true at 07:00); a wall-clock slot is
+    ///   judged *at the slot*: one that passed inside the window is skipped,
+    ///   one that passed outside it (the app was asleep from 17:00 until the
+    ///   window began) is delivered late, stamped with the slot.
+    /// - Overdue wall-clock slots collapse to the latest elapsed one, so a
+    ///   week away becomes a single catch-up rather than a cascade.
+    /// </summary>
+    public static FireStep? NextStep(
         Reminder reminder, Instant now, Settings settings, DateTimeZone zone)
     {
-        if (!reminder.IsEnabled) return false;
-        if (IsPaused(settings, now)) return false;
-        if (IsSuppressedByQuietHours(reminder.Priority, settings, now, zone)) return false;
-        if (PendingFireDate(reminder, zone) is not { } pending) return false;
-        return pending <= now;
+        if (!reminder.IsEnabled) return null;
+        if (settings.PausedUntil is null && settings.IsPaused) return null;
+
+        var sim = reminder;
+        var cursor = now;
+        if (settings.PausedUntil is { } until && until > now)
+        {
+            cursor = until;
+            if (sim.Schedule is Schedule.Interval && (sim.LastFiredAt ?? sim.CreatedAt) < until)
+            {
+                sim = sim with { LastFiredAt = until };
+            }
+        }
+
+        if (PendingFireDate(sim, zone) is not { } pending) return null;
+        var due = Instant.Max(pending, cursor);
+        if (DeliveryMoment(due, sim.Priority, settings, zone) is not { } fireAt) return null;
+
+        if (sim.SnoozedUntil is not null || !sim.Schedule.IsWallClock)
+        {
+            return new FireStep(fireAt, fireAt, FireStep.Outcome.Deliver);
+        }
+
+        var slot = LatestElapsedSlot(sim, fireAt, zone) ?? fireAt;
+        var skipped = IsSuppressedByQuietHours(sim.Priority, settings, slot, zone);
+        return new FireStep(
+            fireAt, slot, skipped ? FireStep.Outcome.Skip : FireStep.Outcome.Deliver
+        );
     }
+
+    /// <summary>
+    /// When a fire that falls due at <paramref name="due"/> is actually acted
+    /// on: <paramref name="due"/> itself, or — if quiet hours cover it — the
+    /// moment the window ends. <c>null</c> only when the window's end cannot
+    /// be computed.
+    /// </summary>
+    public static Instant? DeliveryMoment(
+        Instant due, Priority priority, Settings settings, DateTimeZone zone)
+    {
+        if (!IsSuppressedByQuietHours(priority, settings, due, zone)) return due;
+        return settings.QuietHours.NextEnd(due, zone);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="reminder"/> is due to fire at
+    /// <paramref name="now"/>, accounting for global settings such as pause and
+    /// quiet hours. Defined through <see cref="NextStep"/> so it cannot
+    /// disagree with what the engine would actually do.
+    /// </summary>
+    public static bool IsDue(
+        Reminder reminder, Instant now, Settings settings, DateTimeZone zone) =>
+        NextStep(reminder, now, settings, zone) is { } step && step.FireDate <= now;
 
     /// <summary>True when the master pause is active. A timed pause expires on its own.</summary>
     public static bool IsPaused(Settings settings, Instant now)
@@ -290,69 +379,6 @@ public static class Scheduler
         if (!quiet.Contains(now, zone)) return false;
         if (quiet.AllowsCritical && priority == Priority.Critical) return false;
         return true;
-    }
-
-    /// <summary>
-    /// When <paramref name="reminder"/> will actually reach the user, given
-    /// that <paramref name="date"/> — its natural next fire — falls inside
-    /// quiet hours.
-    ///
-    /// Interval (and snoozed) reminders stay pending through the window and
-    /// fire the moment it ends; wall-clock slots inside the window are skipped,
-    /// so the answer is the first subsequent slot that is not suppressed.
-    /// <c>null</c> when no audible fire could be found within a sensible
-    /// horizon.
-    /// </summary>
-    internal static Instant? NextAudibleFireDate(
-        Reminder reminder, Instant date, Settings settings, DateTimeZone zone)
-    {
-        if (reminder.SnoozedUntil is not null)
-        {
-            return settings.QuietHours.NextEnd(date, zone);
-        }
-        switch (reminder.Schedule)
-        {
-            case Schedule.Interval:
-                return settings.QuietHours.NextEnd(date, zone);
-
-            case Schedule.DailyAt daily:
-            {
-                var slot = date;
-                for (var i = 0; i < 32; i++)
-                {
-                    if (FirstDailySlot(
-                            slot, daily.Hour, daily.Minute,
-                            Math.Max(1, daily.DayInterval), zone
-                        ) is not { } next) return null;
-                    if (!IsSuppressedByQuietHours(reminder.Priority, settings, next, zone))
-                    {
-                        return next;
-                    }
-                    slot = next;
-                }
-                return null;
-            }
-
-            case Schedule.WeeklyAt weekly:
-            {
-                var slot = date;
-                for (var i = 0; i < 32; i++)
-                {
-                    if (FirstWeeklySlot(
-                            slot, weekly.Hour, weekly.Minute, weekly.Weekdays, zone
-                        ) is not { } next) return null;
-                    if (!IsSuppressedByQuietHours(reminder.Priority, settings, next, zone))
-                    {
-                        return next;
-                    }
-                    slot = next;
-                }
-                return null;
-            }
-
-            default:
-                throw new InvalidOperationException();
-        }
     }
 
     /// <summary>

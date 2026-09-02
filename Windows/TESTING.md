@@ -5,7 +5,7 @@ the order that retires the most risk first. Tick boxes as you go.
 
 > **Status 2026-08-24:** a headless session already drove the VM through much
 > of this (see HANDOFF.md → "VM verification session"): toolchain installed,
-> 184 tests green in the VM, and the critical overlay, subtle card, toast
+> 195 tests green in the VM, and the critical overlay, subtle card, toast
 > round-trip, tray icon and flyout all verified from screenshots. Items below
 > marked ✅ have that evidence; everything else still wants human eyes. Parts
 > of setup Part 1 are already done in the VM.
@@ -57,7 +57,7 @@ git checkout windows-port
 ```powershell
 dotnet test Windows/Pauselet.Core.Tests
 ```
-- [ ] **Expected: 184 passed, 0 failed.** ✅ verified in this VM already — This runs the complete behavioural
+- [ ] **Expected: 195 passed, 0 failed.** ✅ verified in this VM already — This runs the complete behavioural
       spec (scheduler, engine, DST, persistence, golden files) on real
       Windows. If this is green, the port's logic is correct on this machine
       and everything after is about the shell.

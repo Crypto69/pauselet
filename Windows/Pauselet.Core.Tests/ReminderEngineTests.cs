@@ -146,9 +146,16 @@ public class ReminderEngineTests
         Assert.Empty(engine.Tick()); // Still paused
 
         clock.AdvanceSeconds(15 * 60); // 35 min total, pause has expired
-        Assert.Single(engine.Tick());
+        // The overdue fire is absorbed by the pause, as a manual resume would.
+        Assert.Empty(engine.Tick());
         Assert.False(engine.Settings.IsPaused); // Pause auto-clears on expiry
         Assert.Null(engine.Settings.PausedUntil);
+        // Intervals restart from the pause's end, matching Resume() and the
+        // projection.
+        Assert.Equal(start.Plus(Duration.FromMinutes(30)), engine.Reminders[0].LastFiredAt);
+
+        clock.Set(start.Plus(Duration.FromMinutes(50)).Plus(Duration.FromSeconds(5)));
+        Assert.Single(engine.Tick()); // one interval after the pause
         Assert.Single(presenter.Presented);
     }
 
