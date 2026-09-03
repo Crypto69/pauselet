@@ -348,6 +348,17 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Applied as a gentle ramp so a relaxation prompt does not blast whatever
     /// volume Spotify was last left at.
     public var musicVolume: Int
+    /// Speak the coach's cues ("Set 1, rep 1. Hold for 5 seconds.") on the
+    /// exercise takeover. Off by default: a talking computer is a choice.
+    public var voiceCoachEnabled: Bool
+    /// The system voice the coach speaks with, as a platform voice identifier
+    /// (`AVSpeechSynthesisVoice.identifier` on Apple platforms). `nil` means
+    /// the best installed voice for the user's language.
+    public var voiceCoachVoiceIdentifier: String?
+    /// How fast the coach talks, as a percentage of the platform's normal
+    /// speaking rate (50 = normal on Apple platforms). A little under normal
+    /// by default: instructions to move to are easier to follow unhurried.
+    public var voiceCoachRate: Int
 
     public init(
         quietHours: QuietHours = QuietHours(),
@@ -360,7 +371,10 @@ public struct Settings: Codable, Equatable, Sendable {
         soundEnabled: Bool = true,
         defaultPlaylistURI: String? = nil,
         musicEnabled: Bool = true,
-        musicVolume: Int = 55
+        musicVolume: Int = 55,
+        voiceCoachEnabled: Bool = false,
+        voiceCoachVoiceIdentifier: String? = nil,
+        voiceCoachRate: Int = 45
     ) {
         self.quietHours = quietHours
         self.isPaused = isPaused
@@ -373,6 +387,9 @@ public struct Settings: Codable, Equatable, Sendable {
         self.defaultPlaylistURI = defaultPlaylistURI
         self.musicEnabled = musicEnabled
         self.musicVolume = musicVolume
+        self.voiceCoachEnabled = voiceCoachEnabled
+        self.voiceCoachVoiceIdentifier = voiceCoachVoiceIdentifier
+        self.voiceCoachRate = voiceCoachRate
     }
 
     /// Decodes the music fields as optional, so settings written before the
@@ -395,6 +412,12 @@ public struct Settings: Codable, Equatable, Sendable {
         )
         musicEnabled = try container.decodeIfPresent(Bool.self, forKey: .musicEnabled) ?? true
         musicVolume = try container.decodeIfPresent(Int.self, forKey: .musicVolume) ?? 55
+        voiceCoachEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .voiceCoachEnabled) ?? false
+        voiceCoachVoiceIdentifier = try container.decodeIfPresent(
+            String.self, forKey: .voiceCoachVoiceIdentifier
+        )
+        voiceCoachRate = try container.decodeIfPresent(Int.self, forKey: .voiceCoachRate) ?? 45
     }
 
     /// Whether a reminder of `priority` makes a sound when it fires: only the

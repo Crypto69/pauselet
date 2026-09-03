@@ -10,6 +10,10 @@ final class ExerciseTests: XCTestCase {
 
     func testSummaryFormatsSetsAndReps() {
         XCTAssertEqual(Exercise(name: "Squats", sets: 3, reps: 10).summary, "3 × 10")
+        XCTAssertEqual(
+            Exercise(name: "Chin tucks", sets: 3, reps: 10, holdSeconds: 5).summary,
+            "3 × 10 · hold 5 s"
+        )
     }
 
     func testValidationRequiresANameAndPositiveCounts() {
@@ -17,6 +21,32 @@ final class ExerciseTests: XCTestCase {
         XCTAssertFalse(Exercise(name: "   ").isValid)
         XCTAssertFalse(Exercise(name: "Squats", sets: 0).isValid)
         XCTAssertFalse(Exercise(name: "Squats", reps: 0).isValid)
+    }
+
+    func testValidationRejectsNegativeTiming() {
+        XCTAssertTrue(Exercise(name: "Squats", holdSeconds: 0).isValid)
+        XCTAssertFalse(Exercise(name: "Squats", holdSeconds: -1).isValid)
+        XCTAssertFalse(Exercise(name: "Squats", restBetweenRepsSeconds: -1).isValid)
+        XCTAssertFalse(Exercise(name: "Squats", restBetweenSetsSeconds: -1).isValid)
+    }
+
+    func testIsGuidedMeansAHoldTime() {
+        XCTAssertFalse(Exercise(name: "Squats").isGuided)
+        XCTAssertFalse(Exercise(name: "Squats", restBetweenRepsSeconds: 10).isGuided)
+        XCTAssertTrue(Exercise(name: "Chin tucks", holdSeconds: 5).isGuided)
+    }
+
+    func testNormalizationClampsTimingIntoRange() throws {
+        let kept = try XCTUnwrap(Exercise.normalized([
+            Exercise(
+                name: "Squats", holdSeconds: -5,
+                restBetweenRepsSeconds: 10_000, restBetweenSetsSeconds: 30
+            ),
+        ]))
+
+        XCTAssertEqual(kept[0].holdSeconds, 0, "A negative hold is untimed, not dropped")
+        XCTAssertEqual(kept[0].restBetweenRepsSeconds, Exercise.restRange.upperBound)
+        XCTAssertEqual(kept[0].restBetweenSetsSeconds, 30)
     }
 
     func testNormalizationCollapsesAnEmptyListToNil() {
@@ -166,6 +196,11 @@ final class ExerciseTests: XCTestCase {
         XCTAssertEqual(exercises[0].reps, 10)
         XCTAssertEqual(exercises[1].name, "Bridge")
         XCTAssertEqual(exercises[1].reps, 12)
+        // Written before the timing fields existed: untimed, not a decode error.
+        XCTAssertEqual(exercises[0].holdSeconds, 0)
+        XCTAssertEqual(exercises[0].restBetweenRepsSeconds, 0)
+        XCTAssertEqual(exercises[0].restBetweenSetsSeconds, 0)
+        XCTAssertFalse(exercises[0].isGuided)
     }
 
     func testExercisesRoundTripThroughTheStore() throws {
@@ -183,7 +218,8 @@ final class ExerciseTests: XCTestCase {
                         Exercise(
                             name: "Squats",
                             instructions: "Feet apart.\nLower slowly, 2/3 depth.",
-                            sets: 3, reps: 10
+                            sets: 3, reps: 10,
+                            holdSeconds: 5, restBetweenRepsSeconds: 3, restBetweenSetsSeconds: 30
                         ),
                         Exercise(name: "Bridge", sets: 2, reps: 12),
                     ],
@@ -235,17 +271,23 @@ final class ExerciseTests: XCTestCase {
           "createdAt" : 1760000004,
           "exercises" : [
             {
+              "holdSeconds" : 5,
               "id" : "11111111-AAAA-BBBB-CCCC-DDDDDDDDDDDD",
               "instructions" : "Feet shoulder-width apart.\nLower slowly, 2\/3 depth.",
               "name" : "Squats",
               "reps" : 10,
+              "restBetweenRepsSeconds" : 3,
+              "restBetweenSetsSeconds" : 30,
               "sets" : 3
             },
             {
+              "holdSeconds" : 0,
               "id" : "22222222-AAAA-BBBB-CCCC-DDDDDDDDDDDD",
               "instructions" : "",
               "name" : "Wall Push-ups",
               "reps" : 15,
+              "restBetweenRepsSeconds" : 0,
+              "restBetweenSetsSeconds" : 0,
               "sets" : 2
             }
           ],
@@ -284,7 +326,9 @@ final class ExerciseTests: XCTestCase {
         "showsNextReminderInMenuBar" : true,
         "snoozeMinutes" : 5,
         "soundEnabled" : true,
-        "subtleDisplaySeconds" : 8
+        "subtleDisplaySeconds" : 8,
+        "voiceCoachEnabled" : false,
+        "voiceCoachRate" : 45
       }
     }
     """#
@@ -304,7 +348,8 @@ final class ExerciseTests: XCTestCase {
                             id: UUID(uuidString: "11111111-AAAA-BBBB-CCCC-DDDDDDDDDDDD")!,
                             name: "Squats",
                             instructions: "Feet shoulder-width apart.\nLower slowly, 2/3 depth.",
-                            sets: 3, reps: 10
+                            sets: 3, reps: 10,
+                            holdSeconds: 5, restBetweenRepsSeconds: 3, restBetweenSetsSeconds: 30
                         ),
                         Exercise(
                             id: UUID(uuidString: "22222222-AAAA-BBBB-CCCC-DDDDDDDDDDDD")!,

@@ -1,8 +1,9 @@
 import SwiftUI
 import ReminderCore
 
-/// The fields for one exercise — name, instructions, sets, reps — shared by
-/// the Mac and iOS editors so the two cannot drift on what an exercise is.
+/// The fields for one exercise — name, instructions, sets, reps, and the
+/// hold and rest times that make it a guided one — shared by the Mac and iOS
+/// editors so the two cannot drift on what an exercise is.
 /// Each platform wraps rows in its own section (the Mac adds a remove button,
 /// iOS uses swipe-to-delete and reordering).
 public struct ExerciseRowEditor: View {
@@ -31,12 +32,56 @@ public struct ExerciseRowEditor: View {
                     .frame(width: 132)
                 Spacer(minLength: 0)
             }
+            // The timing row: three fields do not fit beside each other in
+            // the sheet, so hold and the rep rest share a row and the set
+            // rest gets the caption for company.
+            HStack(spacing: 18) {
+                CountField(label: "Hold", value: $exercise.holdSeconds, range: Exercise.holdRange)
+                    .frame(width: 128)
+                CountField(
+                    label: "Rest", value: $exercise.restBetweenRepsSeconds,
+                    range: Exercise.restRange
+                )
+                .frame(width: 132)
+                .disabled(!exercise.isGuided)
+                Spacer(minLength: 0)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 18) {
+                CountField(
+                    label: "Set rest", value: $exercise.restBetweenSetsSeconds,
+                    range: Exercise.restRange
+                )
+                .frame(width: 150)
+                .disabled(!exercise.isGuided)
+                Text(timingCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
             #else
             // Stacked: two full-width steppers do not fit an iPhone row.
             CountField(label: "Sets", value: $exercise.sets, range: 1...20)
             CountField(label: "Reps", value: $exercise.reps, range: 1...100)
+            CountField(label: "Hold (s)", value: $exercise.holdSeconds, range: Exercise.holdRange)
+            CountField(
+                label: "Rest between reps (s)", value: $exercise.restBetweenRepsSeconds,
+                range: Exercise.restRange
+            )
+            CountField(
+                label: "Rest between sets (s)", value: $exercise.restBetweenSetsSeconds,
+                range: Exercise.restRange
+            )
+            Text(timingCaption)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             #endif
         }
+    }
+
+    private var timingCaption: String {
+        exercise.isGuided
+            ? "Seconds per rep, between reps, and between sets."
+            : "Seconds. Hold 0 leaves this exercise untimed."
     }
 }
 

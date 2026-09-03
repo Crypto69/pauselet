@@ -118,6 +118,20 @@ they work with head-pointer, switch and keyboard input.
 
 Reminders with a set duration show a countdown while you do the activity.
 
+## Exercise reminders
+
+A reminder can carry a list of exercises — name, instructions, sets and reps —
+and is then always delivered as the full-screen takeover, with a tick box per
+exercise so the programme is in front of you while you work through it.
+
+Give an exercise a hold time and the takeover can coach it: press Start (or
+Space) and it counts down each rep's hold, rests between reps and between sets
+for as long as you set, ticks the exercise off when the last set is done, and
+lines up the next one. Pause, Skip and Stop are on screen and on the keyboard.
+Switch on **Speak exercise cues** in Preferences → Voice Coach and it also talks
+you through it — "Set 1, rep 1. Hold for 5 seconds." — in whichever system
+voice you choose. Exercises without a hold time keep their plain tick box.
+
 ## What ships by default
 
 | Reminder | Schedule | Tier |
@@ -248,9 +262,10 @@ Plain JSON — readable, editable, backup-able, and yours.
 ## Layout
 
 ```
-Sources/ReminderCore/   Models, scheduler, storage, engine (no UI, fully tested)
-Sources/ReminderApp/    Menu bar, overlays, notifications, settings
-Tests/                  116 tests against the core
+Sources/ReminderCore/   Models, scheduler, storage, engine, exercise coach session (no UI, fully tested)
+Sources/ReminderUI/     SwiftUI shared with the iOS app: exercise rows and editor fields, help badges
+Sources/ReminderApp/    Menu bar, overlays, notifications, settings, speech
+Tests/                  215 tests against the core
 scripts/                Build, notarize, icon generation, rasterizer
 ```
 

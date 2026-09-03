@@ -30,6 +30,32 @@ public class ExerciseTests
     }
 
     [Fact]
+    public void GuidedExerciseSummaryAndValidation()
+    {
+        var chinTucks = new Exercise { Name = "Chin tucks", Sets = 3, Reps = 10, HoldSeconds = 5 };
+        Assert.True(chinTucks.IsGuided);
+        Assert.Equal("3 × 10 · hold 5 s", chinTucks.Summary);
+        Assert.False(new Exercise { Name = "Squats" }.IsGuided);
+        Assert.False(new Exercise { Name = "Squats", HoldSeconds = -1 }.IsValid);
+        Assert.False(new Exercise { Name = "Squats", RestBetweenRepsSeconds = -1 }.IsValid);
+        Assert.False(new Exercise { Name = "Squats", RestBetweenSetsSeconds = -1 }.IsValid);
+    }
+
+    [Fact]
+    public void NormalizationClampsTimingIntoRange()
+    {
+        var kept = Exercise.Normalized([
+            new Exercise { Name = "Squats", HoldSeconds = -5, RestBetweenRepsSeconds = 10_000, RestBetweenSetsSeconds = 30 },
+        ]);
+
+        Assert.NotNull(kept);
+        var exercise = Assert.Single(kept);
+        Assert.Equal(0, exercise.HoldSeconds);
+        Assert.Equal(Exercise.MaxRestSeconds, exercise.RestBetweenRepsSeconds);
+        Assert.Equal(30, exercise.RestBetweenSetsSeconds);
+    }
+
+    [Fact]
     public void NormalizationCollapsesAnEmptyListToNull()
     {
         Assert.Null(Exercise.Normalized([]));
@@ -297,17 +323,23 @@ public class ExerciseTests
               "createdAt" : 1760000004,
               "exercises" : [
                 {
+                  "holdSeconds" : 5,
                   "id" : "11111111-AAAA-BBBB-CCCC-DDDDDDDDDDDD",
                   "instructions" : "Feet shoulder-width apart.\nLower slowly, 2\/3 depth.",
                   "name" : "Squats",
                   "reps" : 10,
+                  "restBetweenRepsSeconds" : 3,
+                  "restBetweenSetsSeconds" : 30,
                   "sets" : 3
                 },
                 {
+                  "holdSeconds" : 0,
                   "id" : "22222222-AAAA-BBBB-CCCC-DDDDDDDDDDDD",
                   "instructions" : "",
                   "name" : "Wall Push-ups",
                   "reps" : 15,
+                  "restBetweenRepsSeconds" : 0,
+                  "restBetweenSetsSeconds" : 0,
                   "sets" : 2
                 }
               ],
@@ -346,7 +378,9 @@ public class ExerciseTests
             "showsNextReminderInMenuBar" : true,
             "snoozeMinutes" : 5,
             "soundEnabled" : true,
-            "subtleDisplaySeconds" : 8
+            "subtleDisplaySeconds" : 8,
+            "voiceCoachEnabled" : false,
+            "voiceCoachRate" : 45
           }
         }
         """;
@@ -375,6 +409,9 @@ public class ExerciseTests
                         Instructions = "Feet shoulder-width apart.\nLower slowly, 2/3 depth.",
                         Sets = 3,
                         Reps = 10,
+                        HoldSeconds = 5,
+                        RestBetweenRepsSeconds = 3,
+                        RestBetweenSetsSeconds = 30,
                     },
                     new Exercise
                     {
@@ -428,17 +465,23 @@ public class ExerciseTests
             .Replace("""
               "exercises" : [
                 {
+                  "holdSeconds" : 5,
                   "id" : "11111111-AAAA-BBBB-CCCC-DDDDDDDDDDDD",
                   "instructions" : "Feet shoulder-width apart.\nLower slowly, 2\/3 depth.",
                   "name" : "Squats",
                   "reps" : 10,
+                  "restBetweenRepsSeconds" : 3,
+                  "restBetweenSetsSeconds" : 30,
                   "sets" : 3
                 },
                 {
+                  "holdSeconds" : 0,
                   "id" : "22222222-AAAA-BBBB-CCCC-DDDDDDDDDDDD",
                   "instructions" : "",
                   "name" : "Wall Push-ups",
                   "reps" : 15,
+                  "restBetweenRepsSeconds" : 0,
+                  "restBetweenSetsSeconds" : 0,
                   "sets" : 2
                 }
               ],

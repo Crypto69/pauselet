@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notifier: NotificationPresenter?
     private var overlays: OverlayPresenter?
     private var music: MusicPlayer?
+    private var speech: SpeechCoach?
     private var tickTimer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var activityToken: NSObjectProtocol?
@@ -45,7 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let notifier = NotificationPresenter()
         let music = MusicPlayer()
-        let overlays = OverlayPresenter(notifier: notifier, music: music)
+        let speech = SpeechCoach()
+        let overlays = OverlayPresenter(notifier: notifier, music: music, speech: speech)
 
         let store: DataStoring
         do {
@@ -77,8 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.overlays = overlays
         self.engine = engine
         self.music = music
+        self.speech = speech
         self.statusController = StatusBarController(
-            engine: engine, overlays: overlays, music: music
+            engine: engine, overlays: overlays, music: music, speech: speech
         )
 
         // Clear the backlog *before* the first tick. Everything overdue at this

@@ -223,6 +223,9 @@ public static class AppDataJson
         obj.Members["instructions"] = new JVal.Str(exercise.Instructions);
         obj.Members["sets"] = new JVal.Num(exercise.Sets);
         obj.Members["reps"] = new JVal.Num(exercise.Reps);
+        obj.Members["holdSeconds"] = new JVal.Num(exercise.HoldSeconds);
+        obj.Members["restBetweenRepsSeconds"] = new JVal.Num(exercise.RestBetweenRepsSeconds);
+        obj.Members["restBetweenSetsSeconds"] = new JVal.Num(exercise.RestBetweenSetsSeconds);
         return obj;
     }
 
@@ -255,6 +258,12 @@ public static class AppDataJson
         }
         obj.Members["musicEnabled"] = new JVal.Bool(settings.MusicEnabled);
         obj.Members["musicVolume"] = new JVal.Num(settings.MusicVolume);
+        obj.Members["voiceCoachEnabled"] = new JVal.Bool(settings.VoiceCoachEnabled);
+        if (settings.VoiceCoachVoiceIdentifier is { } voice)
+        {
+            obj.Members["voiceCoachVoiceIdentifier"] = new JVal.Str(voice);
+        }
+        obj.Members["voiceCoachRate"] = new JVal.Num(settings.VoiceCoachRate);
         return obj;
     }
 
@@ -497,7 +506,8 @@ public static class AppDataJson
     /// <summary>
     /// Lenient at the reminder level (absent means "not an exercise reminder",
     /// the same way absent music means "no music"); strict inside each
-    /// exercise, where both encoders always write every key.
+    /// exercise for the original keys, which both encoders always write, and
+    /// lenient for the timing keys added later (absent means untimed).
     /// </summary>
     private static IReadOnlyList<Exercise>? OptionalExercises(JsonElement element)
     {
@@ -522,6 +532,9 @@ public static class AppDataJson
             ?? throw new FormatException("instructions is not a string"),
         Sets = Require(element, "sets").GetInt32(),
         Reps = Require(element, "reps").GetInt32(),
+        HoldSeconds = OptionalInt(element, "holdSeconds") ?? 0,
+        RestBetweenRepsSeconds = OptionalInt(element, "restBetweenRepsSeconds") ?? 0,
+        RestBetweenSetsSeconds = OptionalInt(element, "restBetweenSetsSeconds") ?? 0,
     };
 
     private static Settings DecodeSettings(JsonElement element) => new()
@@ -547,6 +560,11 @@ public static class AppDataJson
             && musicVolume.ValueKind != JsonValueKind.Null
             ? musicVolume.GetInt32()
             : 55,
+        VoiceCoachEnabled = element.TryGetProperty("voiceCoachEnabled", out var voiceCoach)
+            && voiceCoach.ValueKind != JsonValueKind.Null
+            && voiceCoach.GetBoolean(),
+        VoiceCoachVoiceIdentifier = OptionalString(element, "voiceCoachVoiceIdentifier"),
+        VoiceCoachRate = OptionalInt(element, "voiceCoachRate") ?? 45,
     };
 
     private static QuietHours DecodeQuietHours(JsonElement element) => new()

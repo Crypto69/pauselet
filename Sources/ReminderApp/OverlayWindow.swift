@@ -72,10 +72,15 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
     weak var engine: ReminderEngine?
     private let notifier: NotificationPresenter
     private let music: MusicPlayer
+    private let speech: SpeechCoach
+    /// The guided-exercise driver for the takeover on screen: one for all of
+    /// its panels, so cues are spoken once and ticks are shared.
+    private var criticalCoach: ExerciseCoach?
 
-    init(notifier: NotificationPresenter, music: MusicPlayer) {
+    init(notifier: NotificationPresenter, music: MusicPlayer, speech: SpeechCoach) {
         self.notifier = notifier
         self.music = music
+        self.speech = speech
         super.init()
         // When the system will not deliver a notification, show the reminder in
         // the app's own window instead so it is never silently dropped. An
@@ -176,6 +181,15 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             Sounds.play(named: reminder.soundName ?? "Submarine")
         }
 
+        speech.voiceIdentifier = settings.voiceCoachVoiceIdentifier
+        speech.rate = settings.voiceCoachRate
+        let coach = ExerciseCoach(
+            exercises: reminder.exercises ?? [],
+            settings: settings,
+            speech: settings.voiceCoachEnabled ? speech : nil
+        )
+        criticalCoach = coach
+
         // One panel per screen: on a multi-display desk the user may not be
         // looking at the main display.
         for screen in NSScreen.screens {
@@ -184,6 +198,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             )
             let view = CriticalOverlayView(
                 reminder: reminder,
+                coach: coach,
                 onComplete: { [weak self] in
                     guard let self else { return }
                     if !isPreview { self.engine?.complete(id: reminder.id) }
@@ -251,6 +266,10 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
     private func closeCriticalPanels() {
         guard !criticalPanels.isEmpty else { return }
+        // Silence the coach before the panels go: a half-spoken cue outliving
+        // the takeover would be the app talking to an empty screen.
+        criticalCoach?.shutDown()
+        criticalCoach = nil
         for panel in criticalPanels {
             panel.orderOut(nil)
         }

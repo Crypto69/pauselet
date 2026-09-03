@@ -104,6 +104,16 @@ questions are substantially answered.
    see the new items in TESTING.md Groups D and G. The model and JSON side
    is covered by `ExerciseTests` and verified against the Swift encoder's
    bytes.
+7. **Guided exercise coach (2026-09-03): core fields only.** The Mac added
+   per-exercise `holdSeconds` / `restBetweenRepsSeconds` /
+   `restBetweenSetsSeconds` and the `voiceCoachEnabled` /
+   `voiceCoachVoiceIdentifier` settings; `Exercise.cs`, `Models.cs` and
+   `Json.cs` mirror them and the golden fixtures carry the new keys, so files
+   round-trip. Nothing on Windows edits or uses them yet: the editor rows
+   need three more fields (hold 0 = untimed), and the overlay needs a port of
+   `Sources/ReminderCore/ExerciseSession.swift` (pure timeline + cursor, with
+   `ExerciseSessionTests.swift` as the spec) plus a `System.Speech` /
+   WinRT `SpeechSynthesizer` coach behind the same settings.
 
 ## VM verification session (2026-08-24, headless via prlctl)
 

@@ -370,6 +370,21 @@ public sealed record Settings
     /// volume the player was last left at.
     /// </summary>
     public int MusicVolume { get; init; } = 55;
+    /// <summary>
+    /// Speak the coach's cues ("Set 1, rep 1. Hold for 5 seconds.") on the
+    /// exercise takeover. Off by default: a talking computer is a choice.
+    /// </summary>
+    public bool VoiceCoachEnabled { get; init; }
+    /// <summary>
+    /// The system voice the coach speaks with, as a platform voice identifier.
+    /// <c>null</c> means the best installed voice for the user's language.
+    /// </summary>
+    public string? VoiceCoachVoiceIdentifier { get; init; }
+    /// <summary>
+    /// How fast the coach talks, as a percentage of the platform's normal
+    /// speaking rate (50 = normal). A little under normal by default.
+    /// </summary>
+    public int VoiceCoachRate { get; init; } = 45;
 
     /// <summary>
     /// The playlist <paramref name="reminder"/> should start when it fires, or

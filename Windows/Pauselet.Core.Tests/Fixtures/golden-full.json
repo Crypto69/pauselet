@@ -112,6 +112,8 @@
     "showsNextReminderInMenuBar" : false,
     "snoozeMinutes" : 12,
     "soundEnabled" : true,
-    "subtleDisplaySeconds" : 8
+    "subtleDisplaySeconds" : 8,
+    "voiceCoachEnabled" : false,
+    "voiceCoachRate" : 45
   }
 }

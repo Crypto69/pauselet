@@ -14,17 +14,20 @@ final class StatusBarController: NSObject {
     /// Shared with the fire path so the settings UI reports the same Spotify
     /// state — a permission error raised by a real reminder shows up there too.
     private let music: MusicPlayer
+    private let speech: SpeechCoach
     private var settingsWindow: NSWindow?
     private var eventMonitor: Any?
 
     init(
         engine: ReminderEngine,
         overlays: OverlayPresenter? = nil,
-        music: MusicPlayer
+        music: MusicPlayer,
+        speech: SpeechCoach
     ) {
         self.engine = engine
         self.overlays = overlays
         self.music = music
+        self.speech = speech
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -225,6 +228,7 @@ final class StatusBarController: NSObject {
             rootView: SettingsView()
                 .environmentObject(engine)
                 .environmentObject(music)
+                .environmentObject(speech)
                 .onPreviewReminder { [weak self] reminder in
                     guard let self else { return }
                     self.overlays?.preview(reminder, settings: self.engine.settings)

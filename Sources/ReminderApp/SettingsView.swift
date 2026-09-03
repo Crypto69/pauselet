@@ -311,6 +311,8 @@ struct PreferencesTab: View {
 
             MusicSettingsSection()
 
+            VoiceCoachSection()
+
             Section("Startup") {
                 HelpRow(
                     title: "Launch at login",

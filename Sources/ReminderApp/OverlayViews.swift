@@ -9,32 +9,33 @@ import ReminderUI
 /// calm rather than alarming — dark, soft, and unhurried. For a reminder with an
 /// activity duration it runs a countdown, which turns "stop working" into a
 /// concrete, finite thing to do. An exercise reminder lists its exercises with
-/// a tick box each, between the title and the buttons.
+/// a tick box each, between the title and the buttons; a guided exercise can
+/// be coached set by set from there, with the countdown in a panel where the
+/// activity ring would be.
 struct CriticalOverlayView: View {
     let reminder: Reminder
+    /// Shared by every display's copy of this view: ticks, the running
+    /// session and its clock live there, so the displays agree and the cues
+    /// are spoken once.
+    @ObservedObject var coach: ExerciseCoach
     let onComplete: () -> Void
     let onSnooze: () -> Void
 
     @State private var remaining: Int
     @State private var hasStarted = false
     @State private var appeared = false
-    /// Which exercises have been ticked. Working memory for this session only:
-    /// it is never stored, and — since every display hosts its own copy of
-    /// this view — it is per display. The user is in front of one of them,
-    /// and Done or Snooze closes them all together.
-    @State private var completedExerciseIDs: Set<UUID>
 
     init(
         reminder: Reminder,
+        coach: ExerciseCoach,
         onComplete: @escaping () -> Void,
-        onSnooze: @escaping () -> Void,
-        completedExerciseIDs: Set<UUID> = []
+        onSnooze: @escaping () -> Void
     ) {
         self.reminder = reminder
+        self.coach = coach
         self.onComplete = onComplete
         self.onSnooze = onSnooze
         _remaining = State(initialValue: reminder.activityDurationSeconds ?? 0)
-        _completedExerciseIDs = State(initialValue: completedExerciseIDs)
     }
 
     private var hasCountdown: Bool { (reminder.activityDurationSeconds ?? 0) > 0 }
@@ -82,8 +83,29 @@ struct CriticalOverlayView: View {
                     exerciseList(exercises)
                 }
 
-                if hasCountdown {
+                if let session = coach.session {
+                    coachPanel(session)
+                    if hasCountdown {
+                        // The activity timer keeps running behind the coach;
+                        // one line keeps it honest without two rings.
+                        Text("Timer · \(timeString(remaining)) \(remaining > 0 ? "remaining" : "complete")")
+                            .font(.system(size: 12))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                } else if hasCountdown {
                     countdown
+                }
+
+                if coach.session == nil, coach.suggestedExerciseID != nil {
+                    // Space starts the suggested exercise. A zero-size button
+                    // is how a bare key gets a role in SwiftUI without a
+                    // control on screen for it.
+                    Button("Start", action: coach.startSuggested)
+                        .keyboardShortcut(.space, modifiers: [])
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
                 }
 
                 HStack(spacing: 14) {
@@ -105,11 +127,7 @@ struct CriticalOverlayView: View {
                 }
                 .padding(.top, 4)
 
-                Text(
-                    reminder.isExercise
-                        ? "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
-                        : "Press Return when you're done · S to snooze"
-                )
+                Text(keyboardHint)
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.38))
             }
@@ -180,9 +198,21 @@ struct CriticalOverlayView: View {
             : 0
     }
 
+    private var keyboardHint: String {
+        if coach.hasGuidedExercises {
+            return "Return when you're done · S to snooze · 1–9 to start or tick a row · "
+                + "Space to start or pause the coach · N next · X stop"
+        }
+        return reminder.isExercise
+            ? "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
+            : "Press Return when you're done · S to snooze"
+    }
+
     private func exerciseCaption(_ exercises: [Exercise], scrolls: Bool) -> some View {
-        Text(
-            "\(completedExerciseIDs.count) of \(exercises.count) done"
+        let cancelled = coach.cancelledExerciseIDs.count
+        return Text(
+            "\(coach.completedExerciseIDs.count) of \(exercises.count) done"
+                + (cancelled > 0 ? " · \(cancelled) cancelled" : "")
                 + (scrolls ? " · scroll for the rest" : "")
         )
         .font(.system(size: 12))
@@ -195,10 +225,13 @@ struct CriticalOverlayView: View {
                 let row = ExerciseOverlayRow(
                     exercise: exercise,
                     index: index,
-                    isDone: completedExerciseIDs.contains(exercise.id),
-                    showsIndex: index < 9
+                    isDone: coach.completedExerciseIDs.contains(exercise.id),
+                    showsIndex: index < 9,
+                    coachState: coach.rowState(for: exercise.id),
+                    onStart: { coach.start(exercise.id) },
+                    onCancel: { coach.cancel(exercise.id) }
                 ) {
-                    toggle(exercise.id)
+                    coach.toggle(exercise.id)
                 }
                 if index < 9 {
                     row.keyboardShortcut(
@@ -211,12 +244,97 @@ struct CriticalOverlayView: View {
         }
     }
 
-    private func toggle(_ id: UUID) {
-        if completedExerciseIDs.contains(id) {
-            completedExerciseIDs.remove(id)
-        } else {
-            completedExerciseIDs.insert(id)
+    // MARK: - Coach panel
+
+    /// The running session: a ring counting down the current hold or rest,
+    /// which set and rep it is, and the controls. Takes the activity ring's
+    /// slot so the eye has one place to look.
+    private func coachPanel(_ session: ExerciseSession) -> some View {
+        let phase = session.phase(at: coach.now)
+        let isPaused = session.state == .paused
+        let isComplete = session.state == .completed
+        let (remainingSeconds, progress): (Int, Double) = {
+            if case let .phase(_, remaining, progress) = session.position(at: coach.now) {
+                return (Int(remaining.rounded(.up)), progress)
+            }
+            return (0, 1)
+        }()
+
+        return HStack(spacing: 26) {
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.12), lineWidth: 7)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        ExerciseOverlayRow.doneColor,
+                        style: StrokeStyle(lineWidth: 7, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.2), value: progress)
+
+                VStack(spacing: 1) {
+                    if isComplete {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 34, weight: .medium))
+                            .foregroundStyle(ExerciseOverlayRow.doneColor)
+                    } else {
+                        Text("\(remainingSeconds)")
+                            .font(.system(size: 40, weight: .medium, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                    }
+                    Text(isComplete ? "done" : (isPaused ? "paused" : (phase?.label.lowercased() ?? "")))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+            .frame(width: 132, height: 132)
+            .opacity(isPaused ? 0.55 : 1)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(isComplete ? "Exercise complete" : (phase?.title ?? ""))
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(session.timeline.exerciseName)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
+
+                HStack(spacing: 10) {
+                    if isComplete {
+                        if coach.suggestedExerciseID != nil {
+                            Button("Start Next", action: coach.startSuggested)
+                                .buttonStyle(OverlayButtonStyle(kind: .secondary))
+                                .keyboardShortcut(.space, modifiers: [])
+                        }
+                    } else {
+                        Button(isPaused ? "Resume" : "Pause", action: coach.togglePause)
+                            .buttonStyle(OverlayButtonStyle(kind: .secondary))
+                            .keyboardShortcut(.space, modifiers: [])
+                        Button("Skip", action: coach.skip)
+                            .buttonStyle(OverlayButtonStyle(kind: .secondary))
+                            .keyboardShortcut("n", modifiers: [])
+                        Button("Stop", action: coach.stop)
+                            .buttonStyle(OverlayButtonStyle(kind: .secondary))
+                            .keyboardShortcut("x", modifiers: [])
+                    }
+                }
+                .padding(.top, 6)
+            }
+
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 26)
+        .padding(.vertical, 20)
+        .frame(width: 620)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private var countdown: some View {
