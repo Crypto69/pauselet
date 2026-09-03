@@ -250,10 +250,14 @@ enum SnapshotHarness {
                 into: directory
             )
 
-            // Paused during the rest after set 1 (12 holds and 11 rests in,
-            // then 7 s into the 20 s set rest), with the first exercise
-            // cancelled so that state shows too.
-            let setRestOffset: TimeInterval = 3 + 12 * 10 + 11 * 5 + 7
+            // Paused 7 s into the 20 s rest after set 1, with the first
+            // exercise cancelled so that state shows too. The offset is
+            // written out rather than computed: mixing + and * over integer
+            // literals in a TimeInterval is exactly the kind of expression
+            // the type checker gives up on.
+            //
+            //   3 lead-in + (12 holds x 10 s) + (11 rests x 5 s) + 7 = 185
+            let setRestOffset: TimeInterval = 185
             let setRestCoach = ExerciseCoach.previewing(
                 exercises: exercises, settings: engine.settings,
                 completed: [], cancelled: [exercises[0].id], active: exercises[1].id,
