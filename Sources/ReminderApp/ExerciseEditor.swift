@@ -11,7 +11,10 @@ import ReminderUI
 /// reordering here; the order exercises are added is the order they appear.
 struct ExerciseListSection: View {
     @Binding var exercises: [Exercise]
+    @EnvironmentObject private var engine: ReminderEngine
+    @EnvironmentObject private var ai: AIImportController
     @FocusState private var focusedName: UUID?
+    @State private var isImporting = false
 
     var body: some View {
         Section("Exercises") {
@@ -42,11 +45,34 @@ struct ExerciseListSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            Button {
-                add()
-            } label: {
-                Label("Add Exercise", systemImage: "plus")
+            HStack(spacing: 12) {
+                Button {
+                    add()
+                } label: {
+                    Label("Add Exercise", systemImage: "plus")
+                }
+
+                Button {
+                    isImporting = true
+                } label: {
+                    Label("Import from Text\u{2026}", systemImage: "doc.on.clipboard")
+                }
+                .help("Paste what your physiotherapist wrote and turn it into exercises")
             }
+        }
+        .sheet(isPresented: $isImporting) {
+            ExerciseImportSheet { imported in
+                // Switching the type to Exercise seeds one blank row for
+                // typing into. Importing is the alternative to typing, so that
+                // untouched placeholder is replaced rather than left above the
+                // imported rows. Anything the person actually filled in stays.
+                exercises.removeAll { $0.name.trimmingCharacters(in: .whitespaces).isEmpty }
+                exercises.append(contentsOf: imported)
+            }
+            // A sheet gets a fresh environment; the engine and the import
+            // controller have to be handed to it explicitly.
+            .environmentObject(engine)
+            .environmentObject(ai)
         }
     }
 

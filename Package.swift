@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(name: "ReminderCore", targets: ["ReminderCore"]),
         .library(name: "ReminderUI", targets: ["ReminderUI"]),
+        .library(name: "ReminderAI", targets: ["ReminderAI"]),
         .executable(name: "ReminderApp", targets: ["ReminderApp"]),
     ],
     targets: [
@@ -25,9 +26,19 @@ let package = Package(
             dependencies: ["ReminderCore"],
             path: "Sources/ReminderUI"
         ),
+        // The one place with a network path out of the app, kept out of
+        // ReminderCore so Store.swift's "nothing leaves this machine"
+        // invariant stays literally true and this boundary stays auditable.
+        // Also holds the platform secret store, so Security.framework never
+        // reaches the shared core.
+        .target(
+            name: "ReminderAI",
+            dependencies: ["ReminderCore"],
+            path: "Sources/ReminderAI"
+        ),
         .executableTarget(
             name: "ReminderApp",
-            dependencies: ["ReminderCore", "ReminderUI"],
+            dependencies: ["ReminderCore", "ReminderUI", "ReminderAI"],
             path: "Sources/ReminderApp",
             resources: [.process("Resources")]
         ),
@@ -35,6 +46,11 @@ let package = Package(
             name: "ReminderCoreTests",
             dependencies: ["ReminderCore"],
             path: "Tests/ReminderCoreTests"
+        ),
+        .testTarget(
+            name: "ReminderAITests",
+            dependencies: ["ReminderAI"],
+            path: "Tests/ReminderAITests"
         ),
     ],
     // The code predates Swift 6 strict concurrency; keep the language mode it

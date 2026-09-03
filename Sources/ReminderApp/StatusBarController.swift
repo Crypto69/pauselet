@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 import ReminderCore
+import ReminderAI
 
 /// Owns the menu bar item, its popover, and the settings window.
 @MainActor
@@ -15,6 +16,7 @@ final class StatusBarController: NSObject {
     /// state — a permission error raised by a real reminder shows up there too.
     private let music: MusicPlayer
     private let speech: SpeechCoach
+    private let ai: AIImportController
     private var settingsWindow: NSWindow?
     private var eventMonitor: Any?
 
@@ -22,12 +24,14 @@ final class StatusBarController: NSObject {
         engine: ReminderEngine,
         overlays: OverlayPresenter? = nil,
         music: MusicPlayer,
-        speech: SpeechCoach
+        speech: SpeechCoach,
+        ai: AIImportController
     ) {
         self.engine = engine
         self.overlays = overlays
         self.music = music
         self.speech = speech
+        self.ai = ai
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -229,6 +233,7 @@ final class StatusBarController: NSObject {
                 .environmentObject(engine)
                 .environmentObject(music)
                 .environmentObject(speech)
+                .environmentObject(ai)
                 .onPreviewReminder { [weak self] reminder in
                     guard let self else { return }
                     self.overlays?.preview(reminder, settings: self.engine.settings)

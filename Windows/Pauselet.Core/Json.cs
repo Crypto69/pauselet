@@ -264,6 +264,11 @@ public static class AppDataJson
             obj.Members["voiceCoachVoiceIdentifier"] = new JVal.Str(voice);
         }
         obj.Members["voiceCoachRate"] = new JVal.Num(settings.VoiceCoachRate);
+        obj.Members["aiImportEnabled"] = new JVal.Bool(settings.AiImportEnabled);
+        if (settings.AiImportModel is { } aiModel)
+        {
+            obj.Members["aiImportModel"] = new JVal.Str(aiModel);
+        }
         return obj;
     }
 
@@ -565,6 +570,10 @@ public static class AppDataJson
             && voiceCoach.GetBoolean(),
         VoiceCoachVoiceIdentifier = OptionalString(element, "voiceCoachVoiceIdentifier"),
         VoiceCoachRate = OptionalInt(element, "voiceCoachRate") ?? 45,
+        AiImportEnabled = element.TryGetProperty("aiImportEnabled", out var aiImport)
+            && aiImport.ValueKind != JsonValueKind.Null
+            && aiImport.GetBoolean(),
+        AiImportModel = OptionalString(element, "aiImportModel"),
     };
 
     private static QuietHours DecodeQuietHours(JsonElement element) => new()

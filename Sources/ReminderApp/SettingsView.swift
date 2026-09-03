@@ -1,5 +1,6 @@
 import SwiftUI
 import ReminderCore
+import ReminderAI
 import ReminderUI
 
 /// The main window: manage reminders, global preferences, and history.
@@ -55,6 +56,7 @@ struct SettingsView: View {
 struct RemindersTab: View {
     @EnvironmentObject private var engine: ReminderEngine
     @EnvironmentObject private var music: MusicPlayer
+    @EnvironmentObject private var ai: AIImportController
     @State private var editing: Reminder?
     @State private var isCreating = false
     @State private var pendingDeletion: Reminder?
@@ -107,6 +109,7 @@ struct RemindersTab: View {
             }
             .environmentObject(engine)
             .environmentObject(music)
+            .environmentObject(ai)
         }
         .sheet(isPresented: $isCreating) {
             ReminderEditor(reminder: nil) { created in
@@ -114,6 +117,7 @@ struct RemindersTab: View {
             }
             .environmentObject(engine)
             .environmentObject(music)
+            .environmentObject(ai)
         }
         // A confirmation step, because deleting a reminder silently loses its
         // history as well as the reminder itself.
@@ -313,6 +317,8 @@ struct PreferencesTab: View {
 
             VoiceCoachSection()
 
+            AIImportSection()
+
             Section("Startup") {
                 HelpRow(
                     title: "Launch at login",
@@ -331,7 +337,10 @@ struct PreferencesTab: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
-                Text("All reminders and history stay on this Mac.")
+                Text(
+                    "All reminders and history stay on this Mac. Only exercise text you "
+                        + "choose to interpret with AI is sent to OpenAI."
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

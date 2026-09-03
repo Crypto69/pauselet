@@ -359,6 +359,19 @@ public struct Settings: Codable, Equatable, Sendable {
     /// speaking rate (50 = normal on Apple platforms). A little under normal
     /// by default: instructions to move to are easier to follow unhurried.
     public var voiceCoachRate: Int
+    /// Send pasted exercise text to an AI provider to interpret, instead of
+    /// only using the built-in parser. Off by default, and inert without a
+    /// key: the importer works offline, and nothing leaves the machine unless
+    /// the user turns this on.
+    public var aiImportEnabled: Bool
+    /// The model used to interpret pasted text. `nil` means the cheapest model
+    /// that does the job, so a user who never opens this setting is not paying
+    /// for a larger one.
+    ///
+    /// The API key is deliberately *not* here: this file is plaintext JSON at
+    /// a path shown in the UI, and is copied verbatim to `data.corrupt.json`
+    /// when it fails to decode. The key lives in the platform's secret store.
+    public var aiImportModel: String?
 
     public init(
         quietHours: QuietHours = QuietHours(),
@@ -374,7 +387,9 @@ public struct Settings: Codable, Equatable, Sendable {
         musicVolume: Int = 55,
         voiceCoachEnabled: Bool = false,
         voiceCoachVoiceIdentifier: String? = nil,
-        voiceCoachRate: Int = 45
+        voiceCoachRate: Int = 45,
+        aiImportEnabled: Bool = false,
+        aiImportModel: String? = nil
     ) {
         self.quietHours = quietHours
         self.isPaused = isPaused
@@ -390,6 +405,8 @@ public struct Settings: Codable, Equatable, Sendable {
         self.voiceCoachEnabled = voiceCoachEnabled
         self.voiceCoachVoiceIdentifier = voiceCoachVoiceIdentifier
         self.voiceCoachRate = voiceCoachRate
+        self.aiImportEnabled = aiImportEnabled
+        self.aiImportModel = aiImportModel
     }
 
     /// Decodes the music fields as optional, so settings written before the
@@ -418,6 +435,9 @@ public struct Settings: Codable, Equatable, Sendable {
             String.self, forKey: .voiceCoachVoiceIdentifier
         )
         voiceCoachRate = try container.decodeIfPresent(Int.self, forKey: .voiceCoachRate) ?? 45
+        aiImportEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .aiImportEnabled) ?? false
+        aiImportModel = try container.decodeIfPresent(String.self, forKey: .aiImportModel)
     }
 
     /// Whether a reminder of `priority` makes a sound when it fires: only the

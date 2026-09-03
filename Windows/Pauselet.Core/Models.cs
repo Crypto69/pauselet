@@ -371,6 +371,22 @@ public sealed record Settings
     /// </summary>
     public int MusicVolume { get; init; } = 55;
     /// <summary>
+    /// Send pasted exercise text to an AI provider to interpret, instead of
+    /// only using the built-in parser. Off by default, and inert without a
+    /// key: nothing leaves the machine unless the user turns this on.
+    /// </summary>
+    public bool AiImportEnabled { get; init; }
+    /// <summary>
+    /// The model used to interpret pasted text. <c>null</c> means the cheapest
+    /// model that does the job.
+    /// <para>
+    /// The API key is deliberately not here: this file is plaintext JSON, and
+    /// is copied verbatim when it fails to decode. The key belongs in the
+    /// platform's secret store (PasswordVault or DPAPI on Windows).
+    /// </para>
+    /// </summary>
+    public string? AiImportModel { get; init; }
+    /// <summary>
     /// Speak the coach's cues ("Set 1, rep 1. Hold for 5 seconds.") on the
     /// exercise takeover. Off by default: a talking computer is a choice.
     /// </summary>

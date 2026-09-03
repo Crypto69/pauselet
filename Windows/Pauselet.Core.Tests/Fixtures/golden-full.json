@@ -95,6 +95,7 @@
   ],
   "schemaVersion" : 1,
   "settings" : {
+    "aiImportEnabled" : false,
     "defaultPlaylistURI" : "spotify:playlist:37i9dQZF1DX4sWSpwq3LiO",
     "isPaused" : true,
     "launchAtLogin" : true,

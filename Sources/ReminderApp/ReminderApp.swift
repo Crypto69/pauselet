@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ReminderCore
+import ReminderAI
 
 @main
 struct ReminderApp: App {
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlays: OverlayPresenter?
     private var music: MusicPlayer?
     private var speech: SpeechCoach?
+    private var ai: AIImportController?
     private var tickTimer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var activityToken: NSObjectProtocol?
@@ -47,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let notifier = NotificationPresenter()
         let music = MusicPlayer()
         let speech = SpeechCoach()
+        let ai = AIImportController()
         let overlays = OverlayPresenter(notifier: notifier, music: music, speech: speech)
 
         let store: DataStoring
@@ -80,8 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.engine = engine
         self.music = music
         self.speech = speech
+        self.ai = ai
+        ai.model = AIImportModel.resolve(engine.settings.aiImportModel)
         self.statusController = StatusBarController(
-            engine: engine, overlays: overlays, music: music, speech: speech
+            engine: engine, overlays: overlays, music: music, speech: speech, ai: ai
         )
 
         // Clear the backlog *before* the first tick. Everything overdue at this

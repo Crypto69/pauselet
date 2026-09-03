@@ -311,6 +311,7 @@ final class ExerciseTests: XCTestCase {
       ],
       "schemaVersion" : 1,
       "settings" : {
+        "aiImportEnabled" : false,
         "isPaused" : false,
         "launchAtLogin" : false,
         "musicEnabled" : true,

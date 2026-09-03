@@ -114,6 +114,23 @@ questions are substantially answered.
    `Sources/ReminderCore/ExerciseSession.swift` (pure timeline + cursor, with
    `ExerciseSessionTests.swift` as the spec) plus a `System.Speech` /
    WinRT `SpeechSynthesizer` coach behind the same settings.
+8. **Exercise import from text (2026-09-03): settings fields only.** The Mac
+   added an importer that turns a physiotherapist's pasted text into exercise
+   rows, with an optional OpenAI path behind a user-supplied API key. The two
+   non-secret settings (`aiImportEnabled`, `aiImportModel`) are mirrored in
+   `Models.cs` / `Json.cs` and the golden fixtures carry `aiImportEnabled`, so
+   files round-trip. Nothing on Windows imports yet. Three pieces are needed:
+   - a port of `Sources/ReminderCore/ExerciseImporter.swift` — pure text →
+     exercises, deliberately written with `NSRegularExpression` patterns that
+     re-express in .NET `Regex`, with
+     `Tests/ReminderCoreTests/ExerciseImporterTests.swift` as the spec;
+   - an import dialog (paste box → preview rows the user can correct → add),
+     mirroring `Sources/ReminderApp/ExerciseImportSheet.swift`;
+   - **the API key must not go in `data.json`** — it is plaintext and is copied
+     to `data.corrupt.json` on a decode failure. Implement `SecretStoring`
+     (see `Sources/ReminderAI/SecretStore.swift`, which macOS and iOS share
+     verbatim) over `Windows.Security.Credentials.PasswordVault` or DPAPI
+     `ProtectedData` at user scope.
 
 ## VM verification session (2026-08-24, headless via prlctl)
 

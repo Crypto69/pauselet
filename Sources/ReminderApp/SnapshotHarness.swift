@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import ReminderCore
+import ReminderAI
 
 /// Renders each UI surface to a PNG and exits.
 ///
@@ -139,6 +140,12 @@ enum SnapshotHarness {
         // nothing is spoken while rendering snapshots.
         let music = MusicPlayer()
         let speech = SpeechCoach()
+        // Backed by an in-memory store so snapshots never touch the real
+        // keychain; seeded with a key so the AI affordances are visible.
+        let ai = AIImportController(
+            secrets: InMemorySecretStore([aiImportKeyAccount: "sk-snapshot"]),
+            makeInterpreter: { _, _ in PreviewExerciseInterpreter() }
+        )
         /// An idle coach for the takeover snapshots: nothing running, ticks
         /// seeded as each snapshot needs.
         func idleCoach(for reminder: Reminder, completed: Set<UUID> = []) -> ExerciseCoach {
@@ -159,7 +166,8 @@ enum SnapshotHarness {
             SettingsView()
                 .environmentObject(engine)
                 .environmentObject(music)
-                .environmentObject(speech),
+                .environmentObject(speech)
+                .environmentObject(ai),
             size: NSSize(width: 760, height: 560),
             named: "settings",
             into: directory
@@ -172,8 +180,9 @@ enum SnapshotHarness {
             PreferencesTab()
                 .environmentObject(engine)
                 .environmentObject(music)
-                .environmentObject(speech),
-            size: NSSize(width: 700, height: 820),
+                .environmentObject(speech)
+                .environmentObject(ai),
+            size: NSSize(width: 700, height: 900),
             named: "preferences",
             into: directory
         )
@@ -191,6 +200,19 @@ enum SnapshotHarness {
                 .environmentObject(speech),
             size: NSSize(width: 700, height: 220),
             named: "preferences-voice",
+            into: directory
+        )
+
+        // The exercise-import section with a key stored, so the model picker
+        // and the Test button are in frame rather than hidden behind the
+        // unconfigured state.
+        snapshot(
+            Form { AIImportSection() }
+                .formStyle(.grouped)
+                .environmentObject(engine)
+                .environmentObject(ai),
+            size: NSSize(width: 700, height: 320),
+            named: "preferences-ai-import",
             into: directory
         )
 
@@ -308,7 +330,9 @@ enum SnapshotHarness {
                 Form {
                     ExerciseListSection(exercises: .constant(physioSet.exercises!))
                 }
-                .formStyle(.grouped),
+                .formStyle(.grouped)
+                .environmentObject(engine)
+                .environmentObject(ai),
                 size: NSSize(width: 470, height: 640),
                 named: "editor-exercise-section",
                 into: directory
@@ -331,7 +355,8 @@ enum SnapshotHarness {
         snapshot(
             ReminderEditor(reminder: engine.reminders.first) { _ in }
                 .environmentObject(engine)
-                .environmentObject(music),
+                .environmentObject(music)
+                .environmentObject(ai),
             size: NSSize(width: 470, height: 760),
             named: "editor",
             into: directory
@@ -349,7 +374,8 @@ enum SnapshotHarness {
             }
             .formStyle(.grouped)
             .environmentObject(engine)
-            .environmentObject(music),
+            .environmentObject(music)
+            .environmentObject(ai),
             size: NSSize(width: 470, height: 250),
             named: "editor-music",
             into: directory
@@ -359,7 +385,8 @@ enum SnapshotHarness {
         snapshot(
             ReminderEditor(reminder: nil) { _ in }
                 .environmentObject(engine)
-                .environmentObject(music),
+                .environmentObject(music)
+                .environmentObject(ai),
             size: NSSize(width: 470, height: 760),
             named: "editor-new",
             into: directory

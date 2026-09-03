@@ -363,6 +363,7 @@ public class ExerciseTests
           ],
           "schemaVersion" : 1,
           "settings" : {
+            "aiImportEnabled" : false,
             "isPaused" : false,
             "launchAtLogin" : false,
             "musicEnabled" : true,
