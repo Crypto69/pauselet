@@ -1,278 +1,137 @@
-<p align="center">
-  <img src="docs/images/logo.png" width="260" alt="Pauselet logo: a clock face made of a white ring that breaks into green, blue, orange and red segments, with a tick at its centre, above the word Pauselet.">
-</p>
+# Pauselet
 
-<h1 align="center">Pauselet</h1>
+A menu bar app for macOS that reminds you to move, stretch, drink water, and
+work through the exercises a physiotherapist gave you — with as little
+ceremony as the reminder deserves.
 
-<p align="center">
-  <em>Recurring reminders for macOS, where you choose how loudly each one interrupts you.</em>
-</p>
+Everything stays on your Mac. There is no account, no sync, and no telemetry.
+The one exception is opt-in and explicit: if you choose to interpret pasted
+exercise text with AI, that text is sent to OpenAI using a key you supply.
 
-<p align="center">
-  <a href="https://github.com/Crypto69/pauselet/releases/latest"><img src="https://img.shields.io/github/v/release/Crypto69/pauselet?color=2e8c93&label=download" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/macOS-13%2B-2e8c93" alt="macOS 13 or later">
-  <img src="https://img.shields.io/badge/licence-MIT-2e8c93" alt="MIT licence">
-</p>
+## Reminders
 
----
+Each reminder carries a priority, and the priority decides how loudly it
+interrupts you:
 
-A macOS menu bar app for recurring activity reminders, where how *loudly* a
-reminder interrupts you is something you choose per reminder.
-
-It was built for a wheelchair user who needs regular pressure relief, so the
-central idea is that a medically important prompt and a nice-to-have nudge
-should not feel the same. It works just as well for anyone who wants to drink
-water, stretch, take medication, or call their mum every Sunday.
-
-Everything is stored locally. There is no account, no sync, and no network code
-in the app at all — the optional Spotify playback drives the Spotify app on your
-own Mac through AppleScript, not through any web service.
-
----
-
-## Critical reminders take over the screen
-
-The hourly tilt reminder is the reason this app exists. It dims every display
-and stays there until you acknowledge it, with a countdown so "stop working for
-five minutes" is a finite thing rather than an open-ended instruction.
-
-<p align="center">
-  <img src="docs/images/overlay-critical.png" width="760" alt="Full-screen dark overlay reading Tilt Back, with the message 'Tilt your chair back for 5 minutes. Stop working and listen to calming music.', a 5:00 countdown ring, and Snooze and Finish Early buttons.">
-</p>
-
-## Subtle reminders stay out of the way
-
-The 20-minute weight shift nudge is the opposite: a small card in the corner
-that never steals focus and fades away on its own. Frequent reminders have to
-be quiet, or you learn to ignore them.
-
-<p align="center">
-  <img src="docs/images/overlay-subtle.png" width="420" alt="A small card in the corner of the screen reading Weight Shift, 'Activate your glutes and redistribute your weight', with a tick button.">
-</p>
-
-## Everything at a glance
-
-Clicking the menu bar icon shows what is coming and when. You can tick something
-off, flick a reminder on or off, or pause everything.
-
-<p align="center">
-  <img src="docs/images/popover.png" width="340" alt="Menu bar popover showing 'Next up: Weight Shift, 19 min', then a list of reminders with their schedules, countdowns and toggles.">
-</p>
-
-## Managing your reminders
-
-<p align="center">
-  <img src="docs/images/settings.png" width="620" alt="Settings window with Reminders, Preferences and History tabs, listing four reminders with their schedule, priority and an on/off switch.">
-</p>
-
-## Adding your own
-
-Give it a name, pick an icon, choose how often it repeats and how much it should
-interrupt you. Each priority explains what it will actually do, so the choice is
-not a guess.
-
-<p align="center">
-  <img src="docs/images/editor-new.png" width="440" alt="New Reminder sheet with fields for title and message, a grid of icons, a Repeating/Daily/Weekly schedule picker, and Subtle/Normal/Important/Critical priority options.">
-</p>
-
-## Reminders can start your music
-
-A reminder that tells you to stop working and relax is more convincing when the
-music starts by itself. Paste a Spotify playlist link into Preferences and any
-reminder can play it — launching Spotify first if it is not already running, and
-fading the volume up rather than starting at whatever it was last left at.
-
-Each reminder chooses for itself: no music, the default playlist, or one of its
-own. Calm piano for the tilt-back reminder, something with a pulse for a
-movement prompt.
-
-<p align="center">
-  <img src="docs/images/editor-music.png" width="440" alt="The Music section of a reminder, with No music / Default playlist / Its own playlist options, a field holding a Spotify playlist URI, Save and Test buttons, and a green 'Saved' confirmation.">
-</p>
-
-## Every setting explains itself
-
-Each preference has an (i) button. They open on a click rather than a hover, so
-they work with head-pointer, switch and keyboard input.
-
-<p align="center">
-  <img src="docs/images/preferences.png" width="620" alt="Preferences tab showing Quiet Hours, Behaviour and Music settings, each row with a small circled i help button beside its label.">
-</p>
-
----
-
-## Priority tiers
-
-| Tier | Presentation |
+| Tier | How it arrives |
 |---|---|
-| **Subtle** | A small silent card in the corner that fades away by itself |
-| **Normal** | A standard notification |
-| **Important** | A notification with sound, marked time-sensitive |
-| **Critical** | A full-screen overlay on *every* display, until you acknowledge it |
+| **Subtle** | A small hint near the menu bar that fades on its own |
+| **Normal** | A standard system notification |
+| **Important** | A system notification with a sound |
+| **Critical** | A full-screen takeover you have to acknowledge |
 
-## Schedules
-
-- **Repeating** — every N minutes, measured from the last time it fired
-- **Daily** — at a set time, every N days (so "every second day" stays in phase)
-- **Weekly** — at a set time on chosen weekdays
-
-Reminders with a set duration show a countdown while you do the activity.
+Reminders repeat on an interval, daily at a time, or on chosen weekdays. Quiet
+hours silence them overnight, with an option to let critical ones through
+anyway. Reminders can also start a Spotify playlist when they fire.
 
 ## Exercise reminders
 
-A reminder can carry a list of exercises — name, instructions, sets and reps —
-and is then always delivered as the full-screen takeover, with a tick box per
-exercise so the programme is in front of you while you work through it.
+An exercise reminder carries a list of exercises rather than a single message.
+When it fires it takes over the screen and lists the programme with a tick box
+for each exercise, so the whole thing is in front of you while you work
+through it.
 
-Give an exercise a hold time and the takeover can coach it: press Start (or
-Space) and it counts down each rep's hold, rests between reps and between sets
-for as long as you set, ticks the exercise off when the last set is done, and
-lines up the next one. Pause, Skip and Stop are on screen and on the keyboard.
-Switch on **Speak exercise cues** in Preferences → Voice Coach and it also talks
-you through it — "Set 1, rep 1. Hold for 5 seconds." — in whichever system
-voice you choose. Exercises without a hold time keep their plain tick box.
+Each exercise has a name, optional instructions, sets and reps, and — when the
+movement is held rather than repeated — a hold time and rest periods between
+reps and between sets.
 
-## What ships by default
+### Adding exercises by pasting text
 
-| Reminder | Schedule | Tier |
-|---|---|---|
-| Tilt Back | Every hour, 5-minute countdown | Critical |
-| Weight Shift | Every 20 minutes | Subtle |
-| Drink Water | Every hour | Normal |
-| Stretch & Range of Motion | Every 2 days at 17:00 | Important (off by default) |
+Typing six fields per exercise is the slowest part of setting up a programme,
+so you can paste what your physiotherapist wrote instead. In the editor,
+choose **Import from Text…** and paste something like:
 
-All of them can be edited or deleted, and you can add your own.
+```
+3 sets of 10 chin tucks, holding for 5 seconds, then resting 30 seconds
+between sets. Then perform wall slides 3 times for 15 seconds, followed by
+30 seconds of rest. Finally, bicep curls: 3 sets of 10 reps, with 30 seconds
+of rest between each rep.
+```
 
-## Other behaviour
+There are two ways to read it:
 
-- **Quiet hours** — set them in Preferences → Quiet Hours. Switching them on
-  reveals the time range and a "Still show critical reminders" option, which is
-  on by default so pressure-relief prompts are not silenced overnight
-- **Pause** for 30/60/120 minutes or indefinitely; resuming re-anchors the
-  intervals so you do not get a backlog dumped on you at once
-- **Snooze**, which is authoritative: it will bring a reminder back even if the
-  natural next slot is further away, and it fires late rather than vanishing if
-  your Mac was asleep at the moment it was due
-- **Preview**, in the reminder editor, so you can see exactly how a reminder
-  will appear before you commit to it
-- **Per-reminder on-screen time** for subtle cards, so a longer message can be
-  given longer to read. Normal and Important use macOS notifications, whose
-  timing macOS controls
-- **Help buttons** on every preference, explaining what it does — as a click
-  rather than a hover, so they work with assistive input
-- **Music**, per reminder — no music, a default Spotify playlist set once in
-  Preferences, or a playlist chosen for that one reminder. Spotify is launched
-  if it is not running, and the volume fades up rather than starting wherever it
-  was left
-- **History and adherence**, showing how often each reminder was completed
-- **Launch at login**, since a reminder app you have to remember to start is not
-  much of a reminder app
+**Read Text** parses it on your Mac. No key, no network, no cost. It
+understands the phrasings that turn up on a real handout — `3 sets of 10`,
+`3 x 10`, spelled-out numbers, `hold 5 seconds`, `rest 30 seconds between
+sets`, minutes converted to seconds — across bulleted lists, numbered lists,
+and continuous prose that runs one exercise into the next.
+
+**Interpret with AI** sends the text to OpenAI instead, which handles unusual
+wording and messy formatting better. It appears only once you have added an
+API key.
+
+Either way you get editable rows showing exactly what was understood, and
+nothing is added until you confirm. A mis-read costs you an edit, not a wrong
+reminder — which matters when the numbers are someone's rehabilitation.
+
+To set up the AI option, go to **Settings → Preferences → Exercise Import** and
+paste an OpenAI API key. The key is stored in your macOS keychain, never in the
+app's data file.
+
+Three models are offered:
+
+| Model | Notes |
+|---|---|
+| **GPT-5.6 Luna** | The default. Reads flowing prose well and answers in a few seconds |
+| GPT-5 nano | Cheapest per token, but often takes 30 seconds or more to answer |
+| GPT-5 mini | Better with unusual wording or long programmes |
+
+Luna is the default rather than the cheapest option on purpose: measured on a
+three-exercise paragraph, nano took 31 seconds against Luna's 6, and a
+half-minute wait defeats the point of pasting instead of typing. An import
+costs well under a tenth of a cent either way.
+
+### The voice coach
+
+An exercise with a hold time can be coached rather than just listed. Press
+start on the takeover and Pauselet walks you through the programme set by set
+and rep by rep, speaking each cue aloud so you can keep your eyes off the
+screen and your form intact:
+
+> "Set 1, rep 1. Hold for 5 seconds." … "Three. Two. One." … "Rest." …
+> "Exercise complete."
+
+There is a short lead-in before the first rep, a spoken countdown inside holds
+long enough to warrant one, and rests announced between reps and between sets.
+You can pause, resume, or skip an exercise at any point. The clock follows
+real time rather than counting ticks, so a hold is not shortened if the machine
+stalls, and the timer freezes while a cue is spoken so speech never eats into a
+hold.
+
+The coach is off by default — a talking computer should be a choice. Turn it on
+in **Settings → Preferences → Voice Coach**, where you can pick any installed
+system voice and set the speaking pace. The **Test** button reads a sample cue
+so you can hear a voice before committing to it.
 
 ## Requirements
 
-macOS 13 or later.
+macOS 13 or later. Notifications need to be allowed for the Normal and
+Important tiers to post real system notifications.
 
-## Installing
-
-**[Download the latest release](https://github.com/Crypto69/pauselet/releases/latest)**,
-unzip it, and drag `Pauselet.app` to your Applications folder. The released
-build is signed and notarized by Apple, so it opens without a Gatekeeper
-warning.
-
-macOS will ask for notification permission the first time it runs. If you
-decline, or the prompt never appears, the Normal and Important tiers fall back
-to the app's own on-screen card — nothing is silently dropped either way. You
-can change your mind later in System Settings → Notifications → Pauselet.
-
-If you set up a playlist, macOS also asks for permission to control Spotify.
-That prompt appears while you are saving the playlist, rather than an hour later
-in the middle of a reminder. If you decline, reminders still fire — just without
-music — and you can grant it later in System Settings → Privacy & Security →
-Automation.
-
-## Building from source
+## Building
 
 ```sh
-./scripts/build_app.sh      # builds dist/Pauselet.app, ad-hoc signed
-open dist/Pauselet.app
+swift build                 # build the package
+swift test                  # run the test suite
+./scripts/build_app.sh      # assemble and sign dist/Pauselet.app
+./scripts/notarize.sh       # sign, notarize and staple for distribution
 ```
 
-To sign with your own Developer ID:
-
-```sh
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/build_app.sh
-```
-
-### Notarization
-
-macOS will not grant notification authorization to an app it does not fully
-trust, so a build for other people needs notarizing:
-
-```sh
-xcrun notarytool store-credentials "reminder-notary" \
-  --apple-id "you@example.com" --team-id "TEAMID" \
-  --password "app-specific-password"
-
-./scripts/notarize.sh
-```
-
-An app-specific password is created at
-[appleid.apple.com](https://appleid.apple.com) under "App-Specific Passwords".
-
-### Tests
-
-```sh
-swift test
-```
-
-The scheduling logic is a pure function of `(reminder, now)` with no timers, so
-the suite drives a controllable clock. It covers overdue catch-up after the Mac
-sleeps, snooze, quiet hours, pause, daylight-saving shifts in both directions,
-leap day, and month and year boundaries.
-
-### Icons
-
-`Resources/icon-source.png` is the app icon artwork and
-`Resources/menubar-icon.svg` the menu bar mark. The `.icns` and the template
-images are generated from them — the build crops the artwork to its content and
-applies the rounded mask macOS expects:
-
-```sh
-./scripts/build_icons.sh
-```
-
-### Screenshots
-
-```sh
-./dist/Pauselet.app/Contents/MacOS/Pauselet --snapshot build/ui
-./dist/Pauselet.app/Contents/MacOS/Pauselet --open-settings
-```
-
-`--snapshot` renders each surface to a PNG, which is easier than trying to
-photograph a transient popover.
-
-## Where your data lives
-
-```
-~/Library/Application Support/Pauselet/data.json
-```
-
-Plain JSON — readable, editable, backup-able, and yours.
+Notarization matters for more than Gatekeeper warnings: macOS will not grant
+notification authorization to an app it does not fully trust, so an
+un-notarized build falls back to the app's own card instead of posting system
+notifications.
 
 ## Layout
 
-```
-Sources/ReminderCore/   Models, scheduler, storage, engine, exercise coach session (no UI, fully tested)
-Sources/ReminderUI/     SwiftUI shared with the iOS app: exercise rows and editor fields, help badges
-Sources/ReminderApp/    Menu bar, overlays, notifications, settings, speech
-Tests/                  215 tests against the core
-scripts/                Build, notarize, icon generation, rasterizer
-```
+| Path | What lives there |
+|---|---|
+| `Sources/ReminderCore` | Models, scheduling, persistence, the exercise timeline and the text importer. Pure Foundation, no UI, no network |
+| `Sources/ReminderUI` | SwiftUI pieces shared between the Mac and iOS apps |
+| `Sources/ReminderAI` | The optional OpenAI path and the keychain store — the only code with a route off the machine |
+| `Sources/ReminderApp` | The macOS app: menu bar, overlays, notifications, settings, speech |
+| `iOS/` | The iOS app, consuming the shared core as a local package |
+| `Windows/` | A C# port of the core and a WPF shell, kept byte-compatible with the Mac's data file |
 
-`ReminderCore` deliberately knows nothing about AppKit: the engine hands fired
-reminders to a `ReminderPresenting` protocol, which is what makes the firing
-rules testable without a screen.
-
-## Licence
-
-MIT — see [LICENSE](LICENSE).
+`ReminderCore` deliberately has no network path. Anything that leaves the
+machine lives in `ReminderAI`, so the boundary is easy to audit.
