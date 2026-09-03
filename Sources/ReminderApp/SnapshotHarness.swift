@@ -229,14 +229,20 @@ enum SnapshotHarness {
             // The coach mid-hold: the first exercise done, the second on set
             // 1, rep 2 with three seconds of its ten-second hold left
             // (lead-in 3 + hold 10 + rest 5 + 7 into the next hold).
+            //
+            // The offsets are named constants and the coach is built before
+            // the call rather than inside it: as one expression this defeated
+            // the type checker on a clean build.
+            let midHoldOffset: TimeInterval = 25
+            let midHoldCoach = ExerciseCoach.previewing(
+                exercises: exercises, settings: engine.settings,
+                completed: [exercises[0].id], active: exercises[1].id,
+                atOffset: midHoldOffset
+            )
             snapshot(
                 CriticalOverlayView(
                     reminder: physioSet,
-                    coach: ExerciseCoach.previewing(
-                        exercises: exercises, settings: engine.settings,
-                        completed: [exercises[0].id], active: exercises[1].id,
-                        atOffset: 25
-                    ),
+                    coach: midHoldCoach,
                     onComplete: {}, onSnooze: {}
                 ),
                 size: NSSize(width: 1280, height: 800),
@@ -247,14 +253,16 @@ enum SnapshotHarness {
             // Paused during the rest after set 1 (12 holds and 11 rests in,
             // then 7 s into the 20 s set rest), with the first exercise
             // cancelled so that state shows too.
+            let setRestOffset: TimeInterval = 3 + 12 * 10 + 11 * 5 + 7
+            let setRestCoach = ExerciseCoach.previewing(
+                exercises: exercises, settings: engine.settings,
+                completed: [], cancelled: [exercises[0].id], active: exercises[1].id,
+                atOffset: setRestOffset, paused: true
+            )
             snapshot(
                 CriticalOverlayView(
                     reminder: physioSet,
-                    coach: ExerciseCoach.previewing(
-                        exercises: exercises, settings: engine.settings,
-                        completed: [], cancelled: [exercises[0].id], active: exercises[1].id,
-                        atOffset: 3 + 12 * 10 + 11 * 5 + 7, paused: true
-                    ),
+                    coach: setRestCoach,
                     onComplete: {}, onSnooze: {}
                 ),
                 size: NSSize(width: 1280, height: 800),
