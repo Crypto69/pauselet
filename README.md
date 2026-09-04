@@ -8,6 +8,22 @@ Everything stays on your Mac. There is no account, no sync, and no telemetry.
 The one exception is opt-in and explicit: if you choose to interpret pasted
 exercise text with AI, that text is sent to OpenAI using a key you supply.
 
+## The menu bar
+
+Clicking the menu bar icon opens a popover — the everyday surface. It shows
+what is coming next with a live countdown, and lists every reminder with its
+schedule and priority. From here you can tick a reminder off as done, toggle
+one on or off, or pause everything with a single button.
+
+The menu bar itself can show a countdown to the next reminder, so you can see
+what is coming without opening anything. That can be turned off if you would
+rather keep the menu bar quiet.
+
+Right-clicking the icon opens a quick menu for pausing without opening the
+popover: **30 minutes**, **1 hour**, **2 hours**, or **indefinitely**, plus
+Settings and Quit. While paused, the popover shows how long is left before
+reminders resume.
+
 ## Reminders
 
 Each reminder carries a priority, and the priority decides how loudly it
@@ -15,21 +31,55 @@ interrupts you:
 
 | Tier | How it arrives |
 |---|---|
-| **Subtle** | A small hint near the menu bar that fades on its own |
-| **Normal** | A standard system notification |
-| **Important** | A system notification with a sound |
-| **Critical** | A full-screen takeover you have to acknowledge |
+| **Subtle** | A small self-dismissing card. No sound — for frequent micro-nudges |
+| **Normal** | A standard notification that stays in Notification Center |
+| **Important** | A notification with sound that persists until acknowledged |
+| **Critical** | A full-screen overlay that takes over every display until acknowledged |
 
-Reminders repeat on an interval, daily at a time, or on chosen weekdays. Quiet
-hours silence them overnight, with an option to let critical ones through
-anyway. Reminders can also start a Spotify playlist when they fire.
+### Scheduling
+
+Three kinds of schedule:
+
+- **Repeating** — every *n* minutes or hours, measured from the last time it fired
+- **Daily** — at a fixed time, every day or every *n* days
+- **Weekly** — at a fixed time on the weekdays you choose
+
+### What else a reminder can carry
+
+- **Title and message** — what it says when it arrives
+- **An icon** — chosen from a picker, shown in the popover and on the overlay
+- **A countdown** — for reminders describing a timed activity ("tilt back for
+  five minutes"), the overlay runs a timer of that length
+- **A sound** — the tier default, or a specific one you pick
+- **How long a subtle card lingers** — per reminder, overriding the global setting
+- **Music** — a Spotify playlist to start when it fires (see below)
+- **Exercises** — turning it into an exercise reminder (see below)
+
+## Overlays and keyboard control
+
+Subtle reminders appear as a small card near the menu bar and fade on their
+own. Critical reminders take over every connected display until acknowledged.
+
+Overlays are fully keyboard-driven, so you never have to reach for the mouse
+mid-stretch:
+
+| Key | Does |
+|---|---|
+| **Return** | Mark it done |
+| **S** | Snooze |
+| **1–9** | Tick an exercise off, or start the coach on that row |
+| **Space** | Start or pause the voice coach |
+| **N** | Next |
+| **X** | Stop the coach |
+
+The on-screen hint changes to match what the current overlay can actually do.
 
 ## Exercise reminders
 
 An exercise reminder carries a list of exercises rather than a single message.
 When it fires it takes over the screen and lists the programme with a tick box
 for each exercise, so the whole thing is in front of you while you work
-through it.
+through it, with a running "3 of 5 done" count.
 
 Each exercise has a name, optional instructions, sets and reps, and — when the
 movement is held rather than repeated — a hold time and rest periods between
@@ -66,9 +116,8 @@ reminder — which matters when the numbers are someone's rehabilitation.
 
 To set up the AI option, go to **Settings → Preferences → Exercise Import** and
 paste an OpenAI API key. The key is stored in your macOS keychain, never in the
-app's data file.
-
-Three models are offered:
+app's data file. A **Test** button checks the key and model before you rely on
+them.
 
 | Model | Notes |
 |---|---|
@@ -93,15 +142,65 @@ screen and your form intact:
 
 There is a short lead-in before the first rep, a spoken countdown inside holds
 long enough to warrant one, and rests announced between reps and between sets.
-You can pause, resume, or skip an exercise at any point. The clock follows
-real time rather than counting ticks, so a hold is not shortened if the machine
-stalls, and the timer freezes while a cue is spoken so speech never eats into a
-hold.
+Pause, resume, or skip at any point with Space, N and X.
+
+The clock follows real time rather than counting ticks, so a hold is not
+shortened if the machine stalls, and the timer freezes while a cue is spoken so
+speech never eats into a hold.
 
 The coach is off by default — a talking computer should be a choice. Turn it on
 in **Settings → Preferences → Voice Coach**, where you can pick any installed
 system voice and set the speaking pace. The **Test** button reads a sample cue
 so you can hear a voice before committing to it.
+
+## Music
+
+A reminder can start a Spotify playlist when it fires — useful for a wind-down
+or a stretch you would rather not do in silence. Set a default playlist in
+**Settings → Preferences → Music** by pasting a Spotify link, and choose the
+volume Pauselet fades up to. Each reminder can use that default, pick its own
+playlist, or stay silent.
+
+A master switch silences music for every reminder at once — during a meeting,
+say — without losing the playlists you have set up. Pauselet drives the Spotify
+desktop app directly, so it needs Automation permission the first time; there
+is a **Test** button to confirm it works.
+
+## History
+
+**Settings → History** shows what actually happened, over the last **24 hours**,
+**7 days**, or **30 days**.
+
+Every time a reminder fires, the outcome is recorded — *fired*, *completed*,
+*snoozed*, *dismissed*, or *missed* — and the History tab turns that into a
+per-reminder **adherence** summary, plus a list of recent activity. It answers
+the question the app exists for: are you actually doing them?
+
+History can be cleared at any time.
+
+## Quiet hours, pausing and sleep
+
+**Quiet hours** silence reminders overnight — 22:00 to 07:00 by default, and
+adjustable. Critical reminders can be allowed through anyway, which is on by
+default, so something genuinely important is not swallowed by the schedule.
+
+**Pausing** stops everything, either indefinitely or for a set period, from
+the popover or the right-click menu.
+
+If the Mac has been asleep or the app closed, Pauselet does **not** replay the
+backlog on waking. Reminders whose moment passed hours ago are absorbed rather
+than fired all at once. A reminder that merely fell due inside quiet hours is
+still delivered when the window ends, because that one has not lost its
+meaning.
+
+## Other settings
+
+- **Snooze length** — how long the snooze button defers a reminder
+- **How long subtle cards stay on screen** — the global default
+- **Play sounds** — master switch for the Important and Critical tiers
+- **Show countdown in menu bar**
+- **Launch at login**
+- **Data** — where `data.json` lives, shown so you can back it up or move it
 
 ## Requirements
 
@@ -135,3 +234,7 @@ notifications.
 
 `ReminderCore` deliberately has no network path. Anything that leaves the
 machine lives in `ReminderAI`, so the boundary is easy to audit.
+
+Reminders, settings and history live in a single JSON file at
+`~/Library/Application Support/Pauselet/data.json`. The Windows port reads and
+writes the same file byte-for-byte, so it can be copied between machines.
