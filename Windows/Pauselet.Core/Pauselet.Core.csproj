@@ -13,6 +13,10 @@
     <!-- ObservableObject: the WPF-side stand-in for Combine's
          ObservableObject/@Published on the engine. -->
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <!-- DPAPI, for the AI import key. The API key must not go in data.json:
+         that file is plaintext at a path the UI shows, and is copied verbatim
+         to data.corrupt.json on a decode failure. See SecretStore.cs. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

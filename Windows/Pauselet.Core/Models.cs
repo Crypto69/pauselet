@@ -403,6 +403,18 @@ public sealed record Settings
     public int VoiceCoachRate { get; init; } = 45;
 
     /// <summary>
+    /// Whether a reminder of <paramref name="priority"/> makes a sound.
+    /// Subtle and normal stay silent so a busy reminder set does not become a
+    /// stream of chimes.
+    ///
+    /// One place decides this for every surface on every platform — the
+    /// notification, the overlay, the coach — so the policy cannot drift
+    /// between them.
+    /// </summary>
+    public bool PlaysSound(Priority priority) =>
+        SoundEnabled && priority >= Priority.Important;
+
+    /// <summary>
     /// The playlist <paramref name="reminder"/> should start when it fires, or
     /// <c>null</c> for silence.
     ///

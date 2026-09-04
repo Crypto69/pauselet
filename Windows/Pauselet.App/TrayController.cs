@@ -23,6 +23,11 @@ internal sealed class TrayController : IDisposable
 {
     private readonly ReminderEngine _engine;
     private readonly OverlayPresenter _overlays;
+    /// <summary>
+    /// One per app run, so the settings section and the import dialog share a
+    /// single view of whether an API key is stored.
+    /// </summary>
+    private readonly AIImportController _ai = new();
     private readonly Action _quit;
     private readonly TaskbarIcon _icon;
     private FlyoutWindow? _flyout;
@@ -180,7 +185,7 @@ internal sealed class TrayController : IDisposable
             _settingsWindow.Activate();
             return;
         }
-        _settingsWindow = new SettingsWindow(_engine, _overlays);
+        _settingsWindow = new SettingsWindow(_engine, _overlays, _ai);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();

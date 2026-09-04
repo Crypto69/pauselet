@@ -16,13 +16,17 @@ questions are substantially answered.
 
 ### Phase 1 — Core port: complete and verified
 - `Pauselet.Core` is a faithful C#/.NET 8 translation of `ReminderCore`
-  (Models, Scheduler, Store, Engine, Projection, Music). NodaTime carries the
+  (Models, Scheduler, Store, Engine, Projection, Music, Catalog, the exercise
+  importer and the coach's session timeline) plus the AI-import client and
+  secret store that live in `ReminderAI` on the Mac. NodaTime carries the
   calendar math; CommunityToolkit.Mvvm's `ObservableObject` stands in for
   Combine.
-- **195 xUnit tests pass** (`dotnet test Windows/Pauselet.Core.Tests`): the
+- **287 xUnit tests pass** (`dotnet test Windows/Pauselet.Core.Tests`): the
   entire Swift suite translated 1:1 (minus the two Mac-only legacy-directory
-  migration tests), plus new golden-file tests and the exercise-list tests
-  (`ExerciseTests`, whose inline fixture is the Swift encoder's output).
+  migration tests), plus new golden-file tests, the exercise-list tests
+  (`ExerciseTests`, whose inline fixture is the Swift encoder's output), the
+  importer and session specs translated from Swift case for case, and the
+  Windows-only AI-import tests.
 - **One firing decision, same as the Mac**: `Scheduler.NextStep` is what
   `Tick()`, `Projection.ProjectedFires`, `IsDue` and `RefreshNextUp` are all
   defined through (the Swift `nextStep` refactor of 2026-09-02, ported the
@@ -88,7 +92,7 @@ questions are substantially answered.
 1. **Sounds are synthesized placeholders** — replace with designed CC0
    recordings before release; only the mapping table needs updating.
 2. ~~SF → Segoe Fluent glyph mapping~~ **Resolved 2026-08-25**: the icons now
-   come from a bundled 9 KB subset of Material Symbols (Apache 2.0), which
+   come from a bundled 10 KB subset of Material Symbols (Apache 2.0), which
    actually has the human-figure poses — `figure.seated.side` renders as a
    person reclining. `SymbolMap.cs` carries the audited codepoint table; a
    quick visual pass over the picker in the VM is still worthwhile.
@@ -104,33 +108,54 @@ questions are substantially answered.
    see the new items in TESTING.md Groups D and G. The model and JSON side
    is covered by `ExerciseTests` and verified against the Swift encoder's
    bytes.
-7. **Guided exercise coach (2026-09-03): core fields only.** The Mac added
-   per-exercise `holdSeconds` / `restBetweenRepsSeconds` /
-   `restBetweenSetsSeconds` and the `voiceCoachEnabled` /
-   `voiceCoachVoiceIdentifier` settings; `Exercise.cs`, `Models.cs` and
-   `Json.cs` mirror them and the golden fixtures carry the new keys, so files
-   round-trip. Nothing on Windows edits or uses them yet: the editor rows
-   need three more fields (hold 0 = untimed), and the overlay needs a port of
-   `Sources/ReminderCore/ExerciseSession.swift` (pure timeline + cursor, with
-   `ExerciseSessionTests.swift` as the spec) plus a `System.Speech` /
-   WinRT `SpeechSynthesizer` coach behind the same settings.
-8. **Exercise import from text (2026-09-03): settings fields only.** The Mac
-   added an importer that turns a physiotherapist's pasted text into exercise
-   rows, with an optional OpenAI path behind a user-supplied API key. The two
-   non-secret settings (`aiImportEnabled`, `aiImportModel`) are mirrored in
-   `Models.cs` / `Json.cs` and the golden fixtures carry `aiImportEnabled`, so
-   files round-trip. Nothing on Windows imports yet. Three pieces are needed:
-   - a port of `Sources/ReminderCore/ExerciseImporter.swift` — pure text →
-     exercises, deliberately written with `NSRegularExpression` patterns that
-     re-express in .NET `Regex`, with
-     `Tests/ReminderCoreTests/ExerciseImporterTests.swift` as the spec;
-   - an import dialog (paste box → preview rows the user can correct → add),
-     mirroring `Sources/ReminderApp/ExerciseImportSheet.swift`;
-   - **the API key must not go in `data.json`** — it is plaintext and is copied
-     to `data.corrupt.json` on a decode failure. Implement `SecretStoring`
-     (see `Sources/ReminderAI/SecretStore.swift`, which macOS and iOS share
-     verbatim) over `Windows.Security.Credentials.PasswordVault` or DPAPI
-     `ProtectedData` at user scope.
+7. ~~Guided exercise coach: core fields only~~ **Resolved 2026-09-04.**
+   `ExerciseSession.cs` ports the pure timeline and cursor
+   (`ExerciseSessionTests.cs`, 23 cases, is the Swift spec translated 1:1);
+   the editor's exercise rows gained **Hold**, **Rest** and **Set rest**, with
+   both rests disabled while hold is 0 as on the Mac; and
+   `ExerciseCoach.cs` + `SpeechCoach.cs` drive it, speaking through
+   `System.Speech` behind the existing `voiceCoachEnabled` /
+   `voiceCoachVoiceIdentifier` / `voiceCoachRate` settings. The takeover has
+   the countdown ring, phase headline, per-row Start/Skip pills and
+   Space/N/X keys. **Wants a human pass in the VM** — see item 9.
+8. ~~Exercise import from text: settings fields only~~ **Resolved 2026-09-04.**
+   `ExerciseImporter.cs` is the Swift parser translated (all 25 cases of
+   `ExerciseImporterTests.cs` green, including the continuous-prose paragraph
+   and the "then inside an instruction does not split" case);
+   `ExerciseImportWindow.cs` is the paste box → preview rows → **Add N
+   Exercises** dialog, entered from "Import from Text…" beside Add exercise,
+   and it clears untouched placeholder rows on import. The AI path is
+   `ExerciseInterpreter.cs` (Responses API, Structured Outputs, the Mac's
+   120-second timeout and its offline/timed-out distinction) with the key in
+   `SecretStore.cs` — **DPAPI at user scope, never `data.json`**, as required.
+   `AIImportControllerTests.cs` and `ExerciseInterpreterTests.cs` cover the
+   key's life and prove no request is made without one.
+9. **The parity work of 2026-09-04 was written and verified on macOS only.**
+   `Pauselet.App` compiles clean for `win-arm64` with `EnableWindowsTargeting`
+   and the 287 core tests pass, but none of the new UI has been seen running:
+   `prlctl exec` in the Windows 11 VM would launch a bare `notepad.exe` and
+   nothing else — every `powershell` invocation, encoded or plain, returned
+   without executing — so the app could not be started there. What needs eyes,
+   in rough order of risk:
+   - the **coach panel** on the takeover (ring, headline, pause/skip/stop) and
+     the per-row pills — written blind, and the row grid gained a column;
+   - **speech**: that `System.Speech` finds a voice, that the Test button in
+     Preferences speaks, and that a phase is announced before it is timed;
+   - the **import dialog** and the three new editor fields, at both themes;
+   - **History**: the 24h/7d/30d picker and the adherence bars;
+   - the four **new glyphs** (`eye.fill`, `hand.raised.fill`,
+     `cross.case.fill`, `wind`) in the icon picker — the font subset was
+     regenerated to 51 glyphs and has not been rendered.
+10. **History adherence and the range picker** were absent until 2026-09-04
+    and are not in this document's earlier lists. `ReminderEngine.Adherence()`
+    was already ported and tested; nothing called it. `SettingsWindow.cs` now
+    has the picker, the "Adherence" bars and an empty state.
+11. **`EditorCatalog`** (`Catalog.cs`) now mirrors `Catalog.swift`, so the
+    weekday order/numbering, the icon list and the interval presets come from
+    one place on all three platforms. Windows had duplicated the weekdays
+    inline and offered **no interval presets at all**; it now offers the
+    shared eleven. Its icon picker leads with the shared catalog and keeps the
+    Windows-only extras after it.
 
 ## VM verification session (2026-08-24, headless via prlctl)
 
@@ -139,7 +164,10 @@ with `prlctl exec` and verifying visually from `prlctl capture` screenshots
 (kept in the session records; the artifact page shows the highlights).
 
 **Verified working:**
-- All **195 core tests pass in the VM** (`dotnet test`), as on macOS and CI.
+- All **195 core tests then existing passed in the VM** (`dotnet test`), as
+  on macOS and CI. The suite is now **287**; the 80 added by the parity work
+  (and the 10 in `SpacingPreservationTests.cs`, which landed separately) pass
+  on macOS and in CI but have not been re-run in the VM.
 - App startup end-to-end: engine load → toast registration → tray icon →
   backlog absorption → tick loop. Fire timing exact (a reminder due at
   seed+10 s fired at seed+11 s).
@@ -189,6 +217,6 @@ See `TESTING.md` for VM setup and the full manual test matrix. Short version:
 winget install Microsoft.DotNet.SDK.8 Git.Git
 git clone https://github.com/Crypto69/pauselet.git && cd pauselet
 git checkout windows-port
-dotnet test Windows/Pauselet.Core.Tests   # expect 195 green
+dotnet test Windows/Pauselet.Core.Tests   # expect 287 green
 dotnet run --project Windows/Pauselet.App -- --open-settings
 ```

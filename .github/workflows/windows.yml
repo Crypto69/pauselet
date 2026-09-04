@@ -1,6 +1,6 @@
 name: Windows
 
-# Protects the C# port the way the macOS job protects the original: the 168
+# Protects the C# port the way the macOS job protects the original: the 287
 # core tests are the executable specification, and they must stay green on
 # real Windows. Kept as its own workflow so the Swift and .NET toolchains
 # never entangle.
