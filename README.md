@@ -19,10 +19,16 @@ The menu bar itself can show a countdown to the next reminder, so you can see
 what is coming without opening anything. That can be turned off if you would
 rather keep the menu bar quiet.
 
+Hovering a row reveals a **tick button** to mark that reminder done on the
+spot, and a row turns orange and reads "due" when it is overdue.
+
 Right-clicking the icon opens a quick menu for pausing without opening the
 popover: **30 minutes**, **1 hour**, **2 hours**, or **indefinitely**, plus
 Settings and Quit. While paused, the popover shows how long is left before
 reminders resume.
+
+Pauselet lives only in the menu bar — there is no Dock icon and no
+app-switcher entry.
 
 ## Reminders
 
@@ -35,6 +41,13 @@ interrupts you:
 | **Normal** | A standard notification that stays in Notification Center |
 | **Important** | A notification with sound that persists until acknowledged |
 | **Critical** | A full-screen overlay that takes over every display until acknowledged |
+
+In **Settings → Reminders**, click a row to edit it, or right-click to
+**Edit**, **Duplicate** or **Delete** — deleting asks first, since it takes the
+reminder's history with it. A count of how many are active sits in the footer.
+
+On first launch the app comes with four example reminders, one per priority
+tier, so there is something to look at before you write your own.
 
 ### Scheduling
 
@@ -54,6 +67,23 @@ Three kinds of schedule:
 - **How long a subtle card lingers** — per reminder, overriding the global setting
 - **Music** — a Spotify playlist to start when it fires (see below)
 - **Exercises** — turning it into an exercise reminder (see below)
+
+Picking a sound plays it immediately so you can audition it, and a **Preview**
+button in the editor shows the reminder exactly as it will appear — sound,
+music and all — without touching its schedule or history.
+
+## Notifications
+
+Normal and Important reminders arrive as real system notifications, with
+**Done** and **Snooze** buttons on the banner itself — clicking the body marks
+it done, swiping it away records it as dismissed. Important reminders are sent
+as time-sensitive, so they can pierce a Focus mode.
+
+If notifications are denied, or the build is not notarized, the reminder is
+shown as an in-app card rather than being dropped, and an Important one stays
+for a full minute instead of the usual few seconds. Pauselet checks that each
+notification actually arrived, and switches back to system notifications by
+itself once permission is granted.
 
 ## Overlays and keyboard control
 
@@ -146,7 +176,13 @@ Pause, resume, or skip at any point with Space, N and X.
 
 The clock follows real time rather than counting ticks, so a hold is not
 shortened if the machine stalls, and the timer freezes while a cue is spoken so
-speech never eats into a hold.
+speech never eats into a hold. If the Mac goes to sleep mid-set the coach
+pauses, so a hold cannot quietly "complete" under a closed lid. Quiet chimes
+mark each phase change and the end of an exercise, following the global sound
+setting.
+
+On a multi-display setup the takeover appears on every screen but the coach is
+shared, so cues are spoken once and ticking a row shows up everywhere.
 
 The coach is off by default — a talking computer should be a choice. Turn it on
 in **Settings → Preferences → Voice Coach**, where you can pick any installed
@@ -161,10 +197,20 @@ or a stretch you would rather not do in silence. Set a default playlist in
 volume Pauselet fades up to. Each reminder can use that default, pick its own
 playlist, or stay silent.
 
+Music starts silent and fades up over a couple of seconds to the volume you
+choose, so a reminder never arrives at whatever volume Spotify was last left
+at. Marking a reminder done or snoozing it stops the music it started — but
+music you started yourself is never touched.
+
 A master switch silences music for every reminder at once — during a meeting,
 say — without losing the playlists you have set up. Pauselet drives the Spotify
 desktop app directly, so it needs Automation permission the first time; there
-is a **Test** button to confirm it works.
+is a **Test** button to confirm it works, and if permission is refused the app
+offers a link straight to the right System Settings pane. If Spotify is not
+installed the section simply says so — everything else works without it.
+
+Playlist, album and track links are all accepted, in either the
+`spotify:playlist:…` or `open.spotify.com/…` form.
 
 ## History
 
@@ -184,8 +230,26 @@ History can be cleared at any time.
 adjustable. Critical reminders can be allowed through anyway, which is on by
 default, so something genuinely important is not swallowed by the schedule.
 
+A repeating reminder that falls due inside the window is held and delivered
+when the window ends. A daily or weekly one scheduled *at* a quiet time is
+skipped instead and recorded as missed — "daily at 23:00" is not something you
+want arriving at 07:00. The menu bar countdown accounts for this, so it always
+shows when a reminder will actually reach you.
+
 **Pausing** stops everything, either indefinitely or for a set period, from
-the popover or the right-click menu.
+the popover or the right-click menu. A timed pause expires by itself, and
+repeating reminders are re-anchored to the moment it lifts — so a two-hour
+pause never ends in a burst of overdue reminders.
+
+**Marking something done** means what you would expect for each schedule kind.
+For a repeating reminder, done buys you a full interval of peace. For a daily
+or weekly one, doing the task early consumes the upcoming slot rather than
+letting it fire again hours later.
+
+Reminders that fire while another is already on screen are queued rather than
+dropped, but anything that has been waiting more than two minutes is discarded
+when you finally acknowledge — so coming back to the desk does not mean
+dismissing takeover after takeover. Those are recorded as *missed*.
 
 If the Mac has been asleep or the app closed, Pauselet does **not** replay the
 backlog on waking. Reminders whose moment passed hours ago are absorbed rather
@@ -193,14 +257,28 @@ than fired all at once. A reminder that merely fell due inside quiet hours is
 still delivered when the window ends, because that one has not lost its
 meaning.
 
+## About
+
+**Settings → About** shows the version, why the app exists — it was built for a
+wheelchair user who needed reliable pressure-relief reminders — and links for
+feedback and to the project behind it. Pauselet is free and open source under
+the MIT licence.
+
 ## Other settings
 
-- **Snooze length** — how long the snooze button defers a reminder
-- **How long subtle cards stay on screen** — the global default
+- **Snooze length** — how long the snooze button defers a reminder (1–120 minutes, 5 by default)
+- **How long subtle cards stay on screen** — the global default (2–60 seconds, 8 by default)
 - **Play sounds** — master switch for the Important and Critical tiers
 - **Show countdown in menu bar**
-- **Launch at login**
-- **Data** — where `data.json` lives, shown so you can back it up or move it
+- **Launch at login** — kept in step with System Settings › Login Items, so
+  turning it off there is reflected here
+- **Data** — where `data.json` lives, shown and selectable so you can back it up
+
+Every row in Preferences has an **i** badge that opens a short explanation.
+They are real buttons rather than hover tooltips, so they work with switch
+control, head pointers and VoiceOver. In the same spirit, times and counts can
+be typed as well as stepped, and out-of-range values are clamped rather than
+rejected.
 
 ## Requirements
 
@@ -220,6 +298,11 @@ Notarization matters for more than Gatekeeper warnings: macOS will not grant
 notification authorization to an app it does not fully trust, so an
 un-notarized build falls back to the app's own card instead of posting system
 notifications.
+
+Two launch flags help when working on the UI: `--open-settings` opens the
+Settings window straight after launch, and `--snapshot <dir>` renders every
+surface to PNGs and exits, so layout can be reviewed without driving the menu
+bar by hand.
 
 ## Layout
 
