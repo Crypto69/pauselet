@@ -340,6 +340,18 @@ public sealed record Settings
     public bool IsPaused { get; init; } = false;
     /// <summary>When set, the app is paused until this date, then resumes automatically.</summary>
     public Instant? PausedUntil { get; init; }
+
+    /// <summary>
+    /// When the current pause began.
+    /// </summary>
+    /// <remarks>
+    /// Lets resume preserve each interval reminder's phase — how far through
+    /// its interval it had got when everything stopped — instead of restarting
+    /// them all together and collapsing them onto one instant. <c>null</c>
+    /// when not paused, and read leniently: settings written before this
+    /// existed fall back to treating the resume itself as the start.
+    /// </remarks>
+    public Instant? PausedAt { get; init; }
     /// <summary>Minutes added when the user snoozes a reminder.</summary>
     public int SnoozeMinutes { get; init; } = 5;
     /// <summary>Seconds a subtle reminder stays on screen before self-dismissing.</summary>

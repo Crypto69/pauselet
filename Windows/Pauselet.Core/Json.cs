@@ -246,6 +246,10 @@ public static class AppDataJson
         {
             obj.Members["pausedUntil"] = EncodeDate(pausedUntil);
         }
+        if (settings.PausedAt is { } pausedAt)
+        {
+            obj.Members["pausedAt"] = EncodeDate(pausedAt);
+        }
         obj.Members["snoozeMinutes"] = new JVal.Num(settings.SnoozeMinutes);
         obj.Members["subtleDisplaySeconds"] = new JVal.Num(settings.SubtleDisplaySeconds);
         obj.Members["launchAtLogin"] = new JVal.Bool(settings.LaunchAtLogin);
@@ -547,6 +551,7 @@ public static class AppDataJson
         QuietHours = DecodeQuietHours(Require(element, "quietHours")),
         IsPaused = Require(element, "isPaused").GetBoolean(),
         PausedUntil = OptionalDate(element, "pausedUntil"),
+        PausedAt = OptionalDate(element, "pausedAt"),
         SnoozeMinutes = Require(element, "snoozeMinutes").GetInt32(),
         SubtleDisplaySeconds = Require(element, "subtleDisplaySeconds").GetInt32(),
         LaunchAtLogin = Require(element, "launchAtLogin").GetBoolean(),

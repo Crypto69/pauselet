@@ -326,6 +326,15 @@ public struct Settings: Codable, Equatable, Sendable {
     public var isPaused: Bool
     /// When set, the app is paused until this date, then resumes automatically.
     public var pausedUntil: Date?
+    /// When the current pause began.
+    ///
+    /// Lets resume preserve each interval reminder's phase — how far through
+    /// its interval it had got when everything stopped — instead of restarting
+    /// them all together and collapsing them onto one instant. `nil` when not
+    /// paused, and read leniently: settings written before this existed fall
+    /// back to treating the resume itself as the start, which is the old
+    /// behaviour for a single reminder and harmless for a set.
+    public var pausedAt: Date?
     /// Minutes added when the user snoozes a reminder.
     public var snoozeMinutes: Int
     /// Seconds a subtle reminder stays on screen before self-dismissing.
@@ -377,6 +386,7 @@ public struct Settings: Codable, Equatable, Sendable {
         quietHours: QuietHours = QuietHours(),
         isPaused: Bool = false,
         pausedUntil: Date? = nil,
+        pausedAt: Date? = nil,
         snoozeMinutes: Int = 5,
         subtleDisplaySeconds: Int = 8,
         launchAtLogin: Bool = false,
@@ -394,6 +404,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.quietHours = quietHours
         self.isPaused = isPaused
         self.pausedUntil = pausedUntil
+        self.pausedAt = pausedAt
         self.snoozeMinutes = snoozeMinutes
         self.subtleDisplaySeconds = subtleDisplaySeconds
         self.launchAtLogin = launchAtLogin
@@ -417,6 +428,7 @@ public struct Settings: Codable, Equatable, Sendable {
         quietHours = try container.decode(QuietHours.self, forKey: .quietHours)
         isPaused = try container.decode(Bool.self, forKey: .isPaused)
         pausedUntil = try container.decodeIfPresent(Date.self, forKey: .pausedUntil)
+        pausedAt = try container.decodeIfPresent(Date.self, forKey: .pausedAt)
         snoozeMinutes = try container.decode(Int.self, forKey: .snoozeMinutes)
         subtleDisplaySeconds = try container.decode(Int.self, forKey: .subtleDisplaySeconds)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)

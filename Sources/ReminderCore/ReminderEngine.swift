@@ -217,6 +217,22 @@ public final class ReminderEngine: ObservableObject {
             return moment <= cutoff
         }
 
+        // Stagger slots for the interval reminders that went fully overdue
+        // while the machine was asleep, so they come back spread out and in
+        // their original order rather than stacked on one instant. `cutoff`
+        // stands in for when the engine stopped honouring fires.
+        let staggered = Scheduler.reanchorAllForDowntime(
+            reminders, downtimeStart: cutoff, resumeDate: current,
+            includeReminder: { reminder in
+                guard reminder.isEnabled, reminder.snoozedUntil == nil,
+                      case .interval = reminder.schedule else { return false }
+                guard let pending = Scheduler.pendingFireDate(
+                    for: reminder, calendar: calendar
+                ) else { return false }
+                return isStale(pending, priority: reminder.priority)
+            }
+        )
+
         for index in reminders.indices where reminders[index].isEnabled {
             var didAbsorb = false
             let priority = reminders[index].priority
@@ -233,12 +249,14 @@ public final class ReminderEngine: ObservableObject {
                 switch reminders[index].schedule {
                 case .interval:
                     // An interval measures time spent working, and nothing was
-                    // measuring it. Restart the clock from now, exactly as
-                    // `resume()` does after a pause.
+                    // measuring it. Restart the clock, exactly as `resume()`
+                    // does after a pause — each reminder getting a slot of its
+                    // own so a set of them does not come back welded together.
                     if let pending = Scheduler.pendingFireDate(
                         for: reminders[index], calendar: calendar
                     ), isStale(pending, priority: priority) {
-                        reminders[index].lastFiredAt = current
+                        reminders[index].lastFiredAt =
+                            staggered[reminders[index].id] ?? current
                         didAbsorb = true
                     }
 
@@ -429,6 +447,24 @@ public final class ReminderEngine: ObservableObject {
         return fired
     }
 
+    /// Re-anchors every interval reminder after a stretch of downtime,
+    /// preserving how far apart they were.
+    ///
+    /// The policy itself lives in `Scheduler.reanchorForDowntime` so the
+    /// projection (which must predict this without running the engine) and
+    /// the live engine cannot drift apart.
+    private func reanchorIntervals(downtimeStart: Date, resumeDate: Date) {
+        let anchors = Scheduler.reanchorAllForDowntime(
+            reminders, downtimeStart: downtimeStart, resumeDate: resumeDate
+        )
+        guard !anchors.isEmpty else { return }
+        for index in reminders.indices {
+            if let anchor = anchors[reminders[index].id] {
+                reminders[index].lastFiredAt = anchor
+            }
+        }
+    }
+
     /// A timed pause that has run out lifts itself, and re-anchors interval
     /// reminders to the moment it ended — the same thing `resume()` does by
     /// hand, and what the projection assumed while the pause was running —
@@ -436,14 +472,11 @@ public final class ReminderEngine: ObservableObject {
     /// lifts. Anchors already past the pause's end are left alone.
     private func expireTimedPauseIfNeeded(at date: Date) {
         guard let until = settings.pausedUntil, date >= until else { return }
+        let pausedAt = settings.pausedAt
         settings.pausedUntil = nil
         settings.isPaused = false
-        for index in reminders.indices {
-            if case .interval = reminders[index].schedule,
-               (reminders[index].lastFiredAt ?? reminders[index].createdAt) < until {
-                reminders[index].lastFiredAt = until
-            }
-        }
+        settings.pausedAt = nil
+        reanchorIntervals(downtimeStart: pausedAt ?? until, resumeDate: until)
         persist()
     }
 
@@ -544,6 +577,7 @@ public final class ReminderEngine: ObservableObject {
     public func setPaused(_ paused: Bool) {
         settings.isPaused = paused
         settings.pausedUntil = nil
+        settings.pausedAt = paused ? now : nil
         if paused { presenter?.dismissAll() }
         persist()
         refreshNextUp()
@@ -551,6 +585,7 @@ public final class ReminderEngine: ObservableObject {
 
     public func pause(forMinutes minutes: Int) {
         settings.isPaused = true
+        settings.pausedAt = now
         settings.pausedUntil = now.addingTimeInterval(TimeInterval(minutes * 60))
         presenter?.dismissAll()
         persist()
@@ -558,16 +593,17 @@ public final class ReminderEngine: ObservableObject {
     }
 
     public func resume() {
+        let pausedAt = settings.pausedAt
         settings.isPaused = false
         settings.pausedUntil = nil
+        settings.pausedAt = nil
         // Re-anchor interval reminders so a long pause does not dump every
-        // missed reminder on the user the instant they come back.
+        // missed reminder on the user the instant they come back — while
+        // preserving how far apart they were. Stamping them all with `now`
+        // (which this used to do) welds every reminder sharing an interval
+        // onto the same second, permanently.
         let current = now
-        for index in reminders.indices {
-            if case .interval = reminders[index].schedule {
-                reminders[index].lastFiredAt = current
-            }
-        }
+        reanchorIntervals(downtimeStart: pausedAt ?? current, resumeDate: current)
         persist()
         refreshNextUp()
     }
