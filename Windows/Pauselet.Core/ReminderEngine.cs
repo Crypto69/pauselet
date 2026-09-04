@@ -279,6 +279,19 @@ public sealed class ReminderEngine : ObservableObject
                 ? moment <= cutoff
                 : due <= cutoff;
 
+        // Stagger slots for the interval reminders that went fully overdue
+        // while the machine was asleep, so they come back spread out and in
+        // their original order rather than stacked on one instant. `cutoff`
+        // stands in for when the engine stopped honouring fires.
+        var staggered = Scheduler.ReanchorAllForDowntime(
+            _reminders, cutoff, current,
+            reminder =>
+                reminder.IsEnabled
+                && reminder.SnoozedUntil is null
+                && reminder.Schedule is Schedule.Interval
+                && Scheduler.PendingFireDate(reminder, _zone) is { } due
+                && IsStale(due, reminder.Priority));
+
         for (var index = 0; index < _reminders.Count; index++)
         {
             if (!_reminders[index].IsEnabled) continue;
@@ -300,15 +313,20 @@ public sealed class ReminderEngine : ObservableObject
                 {
                     case Schedule.Interval:
                         // An interval measures time spent working, and nothing
-                        // was measuring it. Restart the clock from now, exactly
-                        // as Resume() does after a pause.
+                        // was measuring it. Restart the clock, exactly as
+                        // Resume() does after a pause — each reminder getting a
+                        // slot of its own so a set of them does not come back
+                        // welded together.
                         if (Scheduler.PendingFireDate(_reminders[index], _zone)
                                 is { } pending
                             && IsStale(pending, priority))
                         {
                             _reminders[index] = _reminders[index] with
                             {
-                                LastFiredAt = current,
+                                LastFiredAt =
+                                    staggered.TryGetValue(_reminders[index].Id, out var staggeredAt)
+                                        ? staggeredAt
+                                        : current,
                             };
                             didAbsorb = true;
                         }
@@ -539,6 +557,26 @@ public sealed class ReminderEngine : ObservableObject
     }
 
     /// <summary>
+    /// Re-anchors every interval reminder after a stretch of downtime,
+    /// preserving how far apart they were. The policy itself lives in
+    /// <see cref="Scheduler.ReanchorForDowntime"/> so the projection and the
+    /// live engine cannot drift apart.
+    /// </summary>
+    private void ReanchorIntervals(Instant downtimeStart, Instant resumeDate)
+    {
+        var anchors = Scheduler.ReanchorAllForDowntime(
+            _reminders, downtimeStart, resumeDate);
+        if (anchors.Count == 0) return;
+        for (var index = 0; index < _reminders.Count; index++)
+        {
+            if (anchors.TryGetValue(_reminders[index].Id, out var anchor))
+            {
+                _reminders[index] = _reminders[index] with { LastFiredAt = anchor };
+            }
+        }
+    }
+
+    /// <summary>
     /// A timed pause that has run out lifts itself, and re-anchors interval
     /// reminders to the moment it ended — the same thing <c>Resume()</c> does
     /// by hand, and what the projection assumed while the pause was running —
@@ -548,16 +586,9 @@ public sealed class ReminderEngine : ObservableObject
     private void ExpireTimedPauseIfNeeded(Instant date)
     {
         if (_settings.PausedUntil is not { } until || date < until) return;
-        _settings = _settings with { PausedUntil = null, IsPaused = false };
-        for (var index = 0; index < _reminders.Count; index++)
-        {
-            var reminder = _reminders[index];
-            if (reminder.Schedule is Schedule.Interval
-                && (reminder.LastFiredAt ?? reminder.CreatedAt) < until)
-            {
-                _reminders[index] = reminder with { LastFiredAt = until };
-            }
-        }
+        var pausedAt = _settings.PausedAt;
+        _settings = _settings with { PausedUntil = null, IsPaused = false, PausedAt = null };
+        ReanchorIntervals(pausedAt ?? until, until);
         Persist();
     }
 
@@ -689,7 +720,12 @@ public sealed class ReminderEngine : ObservableObject
 
     public void SetPaused(bool paused)
     {
-        _settings = _settings with { IsPaused = paused, PausedUntil = null };
+        _settings = _settings with
+        {
+            IsPaused = paused,
+            PausedUntil = null,
+            PausedAt = paused ? Now : null,
+        };
         if (paused) _presenter?.DismissAll();
         Persist();
         RefreshNextUp();
@@ -700,6 +736,7 @@ public sealed class ReminderEngine : ObservableObject
         _settings = _settings with
         {
             IsPaused = true,
+            PausedAt = Now,
             PausedUntil = Now.Plus(Duration.FromMinutes(minutes)),
         };
         _presenter?.DismissAll();
@@ -709,17 +746,15 @@ public sealed class ReminderEngine : ObservableObject
 
     public void Resume()
     {
-        _settings = _settings with { IsPaused = false, PausedUntil = null };
+        var pausedAt = _settings.PausedAt;
+        _settings = _settings with { IsPaused = false, PausedUntil = null, PausedAt = null };
         // Re-anchor interval reminders so a long pause does not dump every
-        // missed reminder on the user the instant they come back.
+        // missed reminder on the user the instant they come back — while
+        // preserving how far apart they were. Stamping them all with `now`
+        // (which this used to do) welds every reminder sharing an interval
+        // onto the same second, permanently.
         var current = Now;
-        for (var index = 0; index < _reminders.Count; index++)
-        {
-            if (_reminders[index].Schedule is Schedule.Interval)
-            {
-                _reminders[index] = _reminders[index] with { LastFiredAt = current };
-            }
-        }
+        ReanchorIntervals(pausedAt ?? current, current);
         Persist();
         RefreshNextUp();
     }

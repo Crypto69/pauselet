@@ -55,6 +55,27 @@ internal sealed class CriticalOverlayWindow : Window
     private readonly List<System.Windows.Controls.Primitives.ToggleButton> _exerciseToggles = [];
     private TextBlock? _exerciseProgress;
 
+    /// <summary>
+    /// Shared with every other monitor's copy of this takeover; <c>null</c>
+    /// for an ordinary reminder, and for an exercise list with nothing guided
+    /// in it, which keeps its plain tick boxes.
+    /// </summary>
+    private readonly ExerciseCoach? _coach;
+    /// <summary>Per-guided-exercise controls, so a tick refreshes the right row.</summary>
+    private readonly List<CoachRow> _coachRows = [];
+    private Border? _coachPanel;
+    private TextBlock? _coachHeadline;
+    private TextBlock? _coachCaption;
+    private TextBlock? _coachCountdown;
+    private System.Windows.Shapes.Path? _coachRingProgress;
+    private Button? _coachPauseButton;
+
+    /// <summary>The coach-driven controls belonging to one exercise row.</summary>
+    private sealed record CoachRow(
+        Guid Id, Button Start, Button Cancel, TextBlock Caption, StackPanel Text);
+
+    private bool HasCoach => _coach is { HasGuidedExercises: true };
+
     private bool HasCountdown => (_reminder.ActivityDurationSeconds ?? 0) > 0;
 
     private static readonly Brush IconBrush =
@@ -86,10 +107,12 @@ internal sealed class CriticalOverlayWindow : Window
         Reminder reminder,
         System.Drawing.Rectangle physicalBounds,
         bool isPrimary,
+        ExerciseCoach? coach,
         Action onComplete,
         Action onSnooze)
     {
         _reminder = reminder;
+        _coach = coach;
         _bounds = physicalBounds;
         IsPrimaryScreen = isPrimary;
         _onComplete = onComplete;
@@ -110,8 +133,20 @@ internal sealed class CriticalOverlayWindow : Window
         Top = physicalBounds.Y;
 
         Content = BuildContent();
-        KeyDown += OnKeyDown;
+        // PreviewKeyDown, not KeyDown: WPF's ButtonBase handles Space itself,
+        // so once the Start pill has been clicked the coach's Space shortcut
+        // would re-invoke that button instead — restarting the exercise the
+        // user meant to pause. Tunnelling reaches the window first. (The Mac's
+        // .keyboardShortcut(.space) is focus-independent for the same reason.)
+        PreviewKeyDown += OnKeyDown;
         SourceInitialized += OnSourceInitialized;
+
+        if (_coach is not null)
+        {
+            // Every monitor's window redraws from the one shared coach, so a
+            // cue spoken once is reflected on all of them.
+            _coach.Changed += OnCoachChanged;
+        }
 
         _topmostTimer = new DispatcherTimer
         {
@@ -194,6 +229,7 @@ internal sealed class CriticalOverlayWindow : Window
         _topmostTimer.Stop();
         _countdownTimer?.Stop();
         _countdownTimer = null;
+        if (_coach is not null) _coach.Changed -= OnCoachChanged;
         Close();
     }
 
@@ -208,6 +244,18 @@ internal sealed class CriticalOverlayWindow : Window
             case Key.S:
                 e.Handled = true;
                 Acknowledge(_onSnooze);
+                break;
+            case Key.Space when HasCoach:
+                e.Handled = true;
+                _coach?.PauseResumeOrStart();
+                break;
+            case Key.N when HasCoach:
+                e.Handled = true;
+                _coach?.Skip();
+                break;
+            case Key.X when HasCoach:
+                e.Handled = true;
+                _coach?.Stop();
                 break;
             case >= Key.D1 and <= Key.D9:
                 e.Handled = ToggleExercise(e.Key - Key.D1);
@@ -234,6 +282,10 @@ internal sealed class CriticalOverlayWindow : Window
     {
         if (_acknowledged) return;
         _acknowledged = true;
+        // Done and Snooze both end the takeover: silence the coach before the
+        // windows come down, so a cue cannot outlive the overlay that
+        // prompted it.
+        _coach?.ShutDown();
         action();
     }
 
@@ -306,13 +358,17 @@ internal sealed class CriticalOverlayWindow : Window
         Grid.SetRow(header, 0);
         layout.Children.Add(header);
 
-        var scroller = BuildExerciseList(_reminder.Exercises ?? []);
-        Grid.SetRow(scroller, 1);
-        layout.Children.Add(scroller);
+        var middle = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        if (HasCoach) middle.Children.Add(BuildCoachPanel());
+        middle.Children.Add(BuildExerciseList(_reminder.Exercises ?? []));
+        Grid.SetRow(middle, 1);
+        layout.Children.Add(middle);
 
         var footer = BuildFooter(
             ringGap: 20, buttonsGap: HasCountdown ? 28 : 8,
-            hint: "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
+            hint: HasCoach
+                ? "Space to start or pause · N to skip · X to stop · Return when you're done"
+                : "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
         );
         Grid.SetRow(footer, 2);
         layout.Children.Add(footer);
@@ -444,9 +500,50 @@ internal sealed class CriticalOverlayWindow : Window
             text.Children.Add(instructions);
         }
 
+        // A guided exercise gets a caption naming the phase while it runs, so
+        // the row itself says what is happening even when the panel above is
+        // off the top of a scrolled list.
+        var coachCaption = Ui.Text("", 14, IconBrush);
+        coachCaption.Margin = new Thickness(0, 4, 0, 0);
+        coachCaption.Visibility = Visibility.Collapsed;
+        if (HasCoach && exercise.IsGuided) text.Children.Add(coachCaption);
+
         var badge = Ui.Text((index + 1).ToString(), 12, BadgeBrush);
         badge.VerticalAlignment = VerticalAlignment.Top;
         badge.Margin = new Thickness(16, 4, 0, 0);
+
+        // Start and Skip for a guided exercise, in the row's trailing edge.
+        // Their widths are fixed so the rows' names all wrap at the same
+        // place — the narrow-row problem iOS hit, solved here by a 700pt row
+        // having the space to spare.
+        StackPanel? pills = null;
+        Button? startPill = null;
+        Button? cancelPill = null;
+        if (HasCoach && exercise.IsGuided)
+        {
+            startPill = Ui.RoundedButton(
+                "Start", SecondaryButtonBrush, Brushes.White, SecondaryButtonBorderBrush,
+                cornerRadius: 9, padding: new Thickness(12, 5, 12, 5), minWidth: 74);
+            var id = exercise.Id;
+            startPill.Click += (_, _) => _coach?.Start(id);
+            cancelPill = Ui.RoundedButton(
+                "Skip", SecondaryButtonBrush, Brushes.White, SecondaryButtonBorderBrush,
+                cornerRadius: 9, padding: new Thickness(12, 5, 12, 5), minWidth: 74);
+            cancelPill.Click += (_, _) =>
+            {
+                if (_coach?.ActiveExerciseId == id) _coach.Stop();
+                else _coach?.Cancel(id);
+            };
+            cancelPill.Margin = new Thickness(8, 0, 0, 0);
+            pills = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(16, 0, 0, 0),
+            };
+            pills.Children.Add(startPill);
+            pills.Children.Add(cancelPill);
+        }
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -457,7 +554,17 @@ internal sealed class CriticalOverlayWindow : Window
         grid.Children.Add(glyph);
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
-        Grid.SetColumn(badge, 2);
+        if (pills is not null)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(pills, 2);
+            grid.Children.Add(pills);
+            Grid.SetColumn(badge, 3);
+        }
+        else
+        {
+            Grid.SetColumn(badge, 2);
+        }
         grid.Children.Add(badge);
 
         var toggle = Ui.RoundedToggle(grid, RowBrush, 14, new Thickness(18, 12, 18, 12));
@@ -482,6 +589,28 @@ internal sealed class CriticalOverlayWindow : Window
             toggle, $"{exercise.Name}, {exercise.Sets} sets of {exercise.Reps}"
         );
         _exerciseToggles.Add(toggle);
+
+        if (HasCoach)
+        {
+            var id = exercise.Id;
+            // The coach owns "done" once there is one: a hand-tick tells it,
+            // and a coached exercise finishing ticks the box on every display.
+            toggle.Checked += (_, _) =>
+            {
+                if (_coach?.CompletedExerciseIds.Contains(id) == false) _coach.Toggle(id);
+            };
+            toggle.Unchecked += (_, _) =>
+            {
+                if (_coach?.CompletedExerciseIds.Contains(id) == true) _coach.Toggle(id);
+            };
+            if (startPill is not null && cancelPill is not null)
+            {
+                var row = new CoachRow(id, startPill, cancelPill, coachCaption, text);
+                _coachRows.Add(row);
+                UpdateCoachRow(row);
+            }
+        }
+
         return toggle;
     }
 
@@ -490,6 +619,194 @@ internal sealed class CriticalOverlayWindow : Window
         if (_exerciseProgress is null) return;
         var done = _exerciseToggles.Count(toggle => toggle.IsChecked == true);
         _exerciseProgress.Text = $"{done} of {_exerciseToggles.Count} done";
+    }
+
+    // MARK: - Coach
+
+    /// <summary>
+    /// The countdown panel above the list: what phase is running, how long is
+    /// left of it, and the three controls. Hidden until an exercise is
+    /// started, since there is nothing to count before then.
+    /// </summary>
+    private UIElement BuildCoachPanel()
+    {
+        var body = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+
+        // The ring, with the seconds inside it — the same shape as the
+        // activity countdown, at the size a phase needs.
+        var ring = new Grid { Width = 118, Height = 118 };
+        ring.Children.Add(new System.Windows.Shapes.Ellipse
+        {
+            Stroke = RingTrackBrush,
+            StrokeThickness = 7,
+            Margin = new Thickness(3),
+        });
+        _coachRingProgress = new System.Windows.Shapes.Path
+        {
+            Stroke = RingBrush,
+            StrokeThickness = 7,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+        };
+        ring.Children.Add(_coachRingProgress);
+        _coachCountdown = Ui.Text("", 34, Brushes.White, FontWeights.SemiBold, TextAlignment.Center);
+        _coachCountdown.HorizontalAlignment = HorizontalAlignment.Center;
+        _coachCountdown.VerticalAlignment = VerticalAlignment.Center;
+        ring.Children.Add(_coachCountdown);
+        body.Children.Add(ring);
+
+        _coachHeadline = Ui.Text(
+            "", 22, Brushes.White, FontWeights.Medium, TextAlignment.Center);
+        _coachHeadline.HorizontalAlignment = HorizontalAlignment.Center;
+        _coachHeadline.Margin = new Thickness(0, 12, 0, 0);
+        body.Children.Add(_coachHeadline);
+
+        _coachCaption = Ui.Text("", 15, IconBrush, alignment: TextAlignment.Center);
+        _coachCaption.HorizontalAlignment = HorizontalAlignment.Center;
+        _coachCaption.Margin = new Thickness(0, 4, 0, 0);
+        body.Children.Add(_coachCaption);
+
+        var controls = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 14, 0, 0),
+        };
+        _coachPauseButton = CoachButton("Pause", () => _coach?.TogglePause());
+        controls.Children.Add(_coachPauseButton);
+        controls.Children.Add(CoachButton("Skip", () => _coach?.Skip()));
+        controls.Children.Add(CoachButton("Stop", () => _coach?.Stop()));
+        body.Children.Add(controls);
+
+        _coachPanel = new Border
+        {
+            Background = RowBrush,
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(28, 20, 28, 20),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 18),
+            Visibility = Visibility.Collapsed,
+            Child = body,
+        };
+        return _coachPanel;
+    }
+
+    private Button CoachButton(string label, Action onClick)
+    {
+        var button = Ui.RoundedButton(
+            label, SecondaryButtonBrush, Brushes.White, SecondaryButtonBorderBrush,
+            padding: new Thickness(16, 7, 16, 7), minWidth: 92);
+        button.Margin = new Thickness(6, 0, 6, 0);
+        button.Click += (_, _) => onClick();
+        return button;
+    }
+
+    /// <summary>
+    /// Redraws everything the coach owns: the panel, the ring, and each guided
+    /// row's pills and caption. Called on every tick of the shared coach.
+    /// </summary>
+    private void OnCoachChanged()
+    {
+        if (_coach is null) return;
+        var session = _coach.Session;
+
+        if (_coachPanel is not null)
+        {
+            _coachPanel.Visibility = session is not null ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        if (session is not null && session.PhaseAt(_coach.Now) is { } phase)
+        {
+            var position = session.PositionAt(_coach.Now);
+            if (_coachHeadline is not null) _coachHeadline.Text = phase.Title;
+            if (_coachCaption is not null)
+            {
+                _coachCaption.Text =
+                    session.State == ExerciseSession.SessionState.Paused
+                        ? $"Paused · {phase.Label}"
+                        : phase.Label;
+            }
+            if (_coachCountdown is not null)
+            {
+                // Ceiling, so the last whole second reads "1" rather than "0"
+                // while it is still being held.
+                _coachCountdown.Text = Math.Max(0, (int)Math.Ceiling(position.Remaining))
+                    .ToString();
+            }
+            if (_coachRingProgress is not null)
+            {
+                // Draining, like the activity ring: full at the phase start.
+                _coachRingProgress.Data = RingGeometry(
+                    Math.Clamp(1 - position.Progress, 0, 1), 118, 7);
+            }
+            if (_coachPauseButton is not null)
+            {
+                _coachPauseButton.Content =
+                    session.State == ExerciseSession.SessionState.Paused ? "Resume" : "Pause";
+            }
+        }
+
+        foreach (var row in _coachRows) UpdateCoachRow(row);
+        SyncTogglesToCoach();
+        UpdateExerciseProgress();
+    }
+
+    /// <summary>
+    /// Reflects the coach's completed set onto the tick boxes, so an exercise
+    /// the coach finished shows ticked on every display. The Checked handlers
+    /// consult the coach before acting, so setting the box here does not bounce
+    /// back into Toggle.
+    /// </summary>
+    private void SyncTogglesToCoach()
+    {
+        if (_coach is null) return;
+        var exercises = _reminder.Exercises ?? [];
+        for (var i = 0; i < _exerciseToggles.Count && i < exercises.Count; i++)
+        {
+            var done = _coach.CompletedExerciseIds.Contains(exercises[i].Id);
+            if (_exerciseToggles[i].IsChecked != done) _exerciseToggles[i].IsChecked = done;
+        }
+    }
+
+    /// <summary>
+    /// One guided row's presentation: which pills it shows, whether its text
+    /// is dimmed, and the caption naming the phase while it is being coached.
+    /// </summary>
+    private void UpdateCoachRow(CoachRow row)
+    {
+        if (_coach is null) return;
+        var state = _coach.RowState(row.Id) ?? ExerciseRowCoachState.Idle;
+        var caption = _coach.RowCaption(row.Id);
+
+        row.Caption.Text = caption ?? "";
+        row.Caption.Visibility = caption is null ? Visibility.Collapsed : Visibility.Visible;
+
+        row.Start.Visibility =
+            state == ExerciseRowCoachState.Active ? Visibility.Collapsed : Visibility.Visible;
+        row.Start.Content = state == ExerciseRowCoachState.Completed ? "Again" : "Start";
+        // The suggested row is the one Space starts, so it is the one that
+        // looks pressable.
+        row.Start.Background = state == ExerciseRowCoachState.Suggested
+            ? PrimaryButtonBrush
+            : SecondaryButtonBrush;
+        row.Start.Foreground = state == ExerciseRowCoachState.Suggested
+            ? PrimaryButtonTextBrush
+            : Brushes.White;
+
+        row.Cancel.Visibility = state switch
+        {
+            ExerciseRowCoachState.Completed or ExerciseRowCoachState.Cancelled =>
+                Visibility.Collapsed,
+            _ => Visibility.Visible,
+        };
+        row.Cancel.Content =
+            state == ExerciseRowCoachState.Active ? "Stop" : "Skip";
+
+        row.Text.Opacity = state switch
+        {
+            ExerciseRowCoachState.Completed or ExerciseRowCoachState.Cancelled => 0.5,
+            _ => 1,
+        };
     }
 
     private UIElement BuildCountdownRing()
@@ -595,17 +912,18 @@ internal sealed class CriticalOverlayWindow : Window
         if (_ringProgress is null) return;
         var total = _reminder.ActivityDurationSeconds ?? 0;
         var progress = total > 0 ? 1.0 - ((double)_remaining / total) : 0.0;
-        _ringProgress.Data = RingGeometry(progress);
+        _ringProgress.Data = RingGeometry(progress, 168, 8);
     }
 
     /// <summary>
-    /// The progress arc: starts at 12 o'clock, sweeps clockwise. 168px ring,
-    /// 8px stroke, drawn on the stroke's centreline.
+    /// The progress arc: starts at 12 o'clock, sweeps clockwise, drawn on the
+    /// stroke's centreline. Sized per ring — the activity countdown is 168px
+    /// with an 8px stroke, the coach's phase ring smaller.
     /// </summary>
-    private static Geometry RingGeometry(double progress)
+    private static Geometry RingGeometry(double progress, double size, double stroke)
     {
-        const double center = 84;
-        const double radius = 80;
+        var center = size / 2;
+        var radius = center - (stroke / 2);
         if (progress <= 0)
         {
             return Geometry.Empty;

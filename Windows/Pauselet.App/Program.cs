@@ -148,6 +148,14 @@ public static class Program
 
     private static void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
+        if (e.Mode == PowerModes.Suspend)
+        {
+            // A guided hold must not "complete" under a sleeping machine, so
+            // the coach pauses and the user resumes when they are back in
+            // position — the Mac's willSleep behaviour.
+            RunOnDispatcher(() => _overlays?.SuspendCoach());
+            return;
+        }
         if (e.Mode != PowerModes.Resume) return;
         RunOnDispatcher(() =>
         {
@@ -158,6 +166,13 @@ public static class Program
 
     private static void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
     {
+        if (e.Reason == SessionSwitchReason.SessionLock)
+        {
+            // Same reasoning as sleep: nobody is doing the exercise behind a
+            // lock screen.
+            RunOnDispatcher(() => _overlays?.SuspendCoach());
+            return;
+        }
         if (e.Reason != SessionSwitchReason.SessionUnlock) return;
         RunOnDispatcher(() =>
         {

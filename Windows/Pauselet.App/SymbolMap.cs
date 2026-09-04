@@ -1,4 +1,5 @@
 using System.Windows.Media;
+using Pauselet.Core;
 
 namespace Pauselet.App;
 
@@ -50,6 +51,13 @@ internal static class SymbolMap
         ["figure.stand"] = "\uE92C",                   // accessibility_new
         ["dumbbell.fill"] = "\uEB43",                  // fitness_center
         ["eye"] = "\uE8F4",                            // visibility
+        // The catalog offers the filled variant; Material Symbols' outlined
+        // subset has one eye, so both SF names land on it rather than one of
+        // them falling back to a bell.
+        ["eye.fill"] = "\uE8F4",                       // visibility
+        ["hand.raised.fill"] = "\uE769",               // front_hand
+        ["cross.case.fill"] = "\uF109",                // medical_services
+        ["wind"] = "\uEFD8",                           // air
         ["cup.and.saucer.fill"] = "\uEB44",            // local_cafe
         ["fork.knife"] = "\uE56C",                     // restaurant
         ["pills.fill"] = "\uF033",                     // medication
@@ -96,17 +104,20 @@ internal static class SymbolMap
     /// <summary>
     /// The names offered in the editor's icon picker. SF names, so every
     /// choice stays valid when the data file moves to the Mac.
+    ///
+    /// EditorCatalog.Symbols first and in its order, so the three platforms
+    /// lead with the same icons; the rest are ones Windows has glyphs for and
+    /// the Mac picker does not list. Every name here must have an entry in
+    /// <see cref="Glyphs"/> — one that does not falls back to a bell, which
+    /// looks like a bug rather than a choice.
     /// </summary>
     public static readonly string[] PickerSymbols =
     [
-        "bell", "figure.seated.side", "arrow.up.and.down.circle", "drop.fill",
-        "figure.flexibility", "figure.mind.and.body", "figure.walk",
-        "figure.stand", "dumbbell.fill", "eye", "cup.and.saucer.fill",
-        "fork.knife",
-        "pills.fill", "heart.fill", "lungs.fill", "brain.head.profile",
-        "moon.fill", "sun.max.fill", "alarm", "clock", "timer", "calendar",
-        "book.fill", "phone.fill", "envelope.fill", "gamecontroller.fill",
-        "music.note", "leaf.fill", "pawprint.fill", "house.fill",
-        "desktopcomputer", "keyboard", "hands.sparkles.fill", "sparkles",
+        .. EditorCatalog.Symbols,
+        "figure.mind.and.body", "figure.stand", "eye", "cup.and.saucer.fill",
+        "brain.head.profile", "alarm", "clock", "calendar",
+        "envelope.fill", "gamecontroller.fill", "music.note", "leaf.fill",
+        "pawprint.fill", "house.fill", "desktopcomputer", "keyboard",
+        "hands.sparkles.fill", "sparkles",
     ];
 }

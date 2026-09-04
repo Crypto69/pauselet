@@ -31,6 +31,11 @@
     <!-- Toast notifications with buttons + background activation for an
          unpackaged desktop app. -->
     <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+    <!-- The exercise coach's spoken cues. System.Speech ships out of .NET
+         Framework but is a package on .NET; it speaks straight to the default
+         output device and enumerates the same SAPI voices Windows' own speech
+         settings install. -->
+    <PackageReference Include="System.Speech" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

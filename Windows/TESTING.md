@@ -57,7 +57,9 @@ git checkout windows-port
 ```powershell
 dotnet test Windows/Pauselet.Core.Tests
 ```
-- [ ] **Expected: 195 passed, 0 failed.** ✅ verified in this VM already — This runs the complete behavioural
+- [ ] **Expected: 287 passed, 0 failed.** (195 of these were verified in this
+      VM on 2026-08-24; the parity work since was verified on macOS only.)
+      This runs the complete behavioural
       spec (scheduler, engine, DST, persistence, golden files) on real
       Windows. If this is green, the port's logic is correct on this machine
       and everything after is about the shell.
@@ -246,12 +248,87 @@ reminders with 1-minute intervals.
       fires stay on time (±5 s), no memory creep in Task Manager, tooltip
       countdown never goes stale.
 
+### Group I — Exercise parity (added 2026-09-04, never run)
+
+Everything in this group was written on a Mac and has **never been seen
+running** — the app compiles for `win-arm64` and the core logic is covered by
+287 tests, but no part of this UI has been rendered. Treat it as a first pass,
+not a regression check.
+
+**The three new editor fields (Win-1)**
+- [ ] Editing an exercise reminder shows Hold, Rest and Set rest beside Sets
+      and Reps, with a caption under them.
+- [ ] With Hold at 0 both rest fields are greyed out and the caption reads
+      "Seconds. Hold 0 leaves this exercise untimed."; typing a hold enables
+      them and the caption changes.
+- [ ] A blank or out-of-range timing is refused by name on Save, not silently
+      read as 0.
+- [ ] **Interchange:** a reminder with timings saved on the Mac opens here with
+      them intact, and survives a round trip back.
+
+**Import from text (Win-2/Win-3)**
+- [ ] "Import from Text…" sits beside Add exercise and opens the dialog.
+- [ ] Pasting `3 sets of 10 chin tucks, hold 5 seconds, rest 30 seconds
+      between sets` and pressing **Read Text** produces one row, named "Chin
+      tucks", 3 × 10, hold 5, set rest 30.
+- [ ] The preview rows are editable and Remove drops one; **Add N Exercises**
+      appends them and an untouched blank row is replaced, not left above.
+- [ ] Cancel adds nothing.
+- [ ] Nonsense text shows "No exercises found in that text", not an empty list.
+
+**The coach (Win-4) — the riskiest item here**
+- [ ] A guided exercise's takeover row has **Start** and **Skip** pills, and
+      the suggested row's Start is the filled one.
+- [ ] Start shows the panel: countdown ring, "Set 1 · Rep 1", "Hold", and
+      Pause/Skip/Stop. The ring drains over the phase.
+- [ ] **Space** starts or pauses, **N** skips a phase, **X** stops. Pause
+      shows "Resume" and freezes the count.
+- [ ] With the voice on, each phase is *announced before it is timed* — "Hold
+      for 5 seconds" finishes, and only then do five seconds run.
+- [ ] Holds of 6 s or more get a spoken "Three. Two. One."
+- [ ] Finishing an exercise ticks its box and plays the completion chime; the
+      suggestion moves to the next guided exercise.
+- [ ] **Lock the PC mid-hold** (Win+L): on return the session is paused, not
+      advanced. Same for sleep/resume.
+- [ ] Multi-monitor: a cue is spoken **once**, and a tick shows on every
+      display.
+- [ ] Voice Coach settings: the voice picker lists English SAPI voices, Test
+      speaks a sample cue, and the pace slider changes the speed audibly.
+      (If no English voice is installed the section says so.)
+
+**AI import (Win-5)**
+- [ ] With no key stored, the import dialog shows **no** "Interpret with AI"
+      button and the app makes no network requests.
+- [ ] Saving a key in Preferences → Exercise Import clears the box and reports
+      that a key is stored; **Test** reports whether it works.
+- [ ] With a key, "Interpret with AI" fills the preview rows; a bad key
+      reports "That API key was rejected", and pulling the network reports the
+      offline message — **not** a crash, and the local parse stays on screen.
+- [ ] **The key is not in `data.json`.** Open `%APPDATA%\Pauselet\data.json`
+      and grep for it; it must be absent. It lives encrypted in `secrets.dat`.
+- [ ] Remove takes the key away and the AI button disappears again.
+
+**History (Win-6)**
+- [ ] The History tab has a 24 hours / 7 days / 30 days picker, defaulting to
+      7 days, and switching it re-filters the log.
+- [ ] An "Adherence" list shows one bar and percentage per reminder that fired
+      in the window; reminders with nothing in the window are absent, not 0 %.
+- [ ] A window with no activity shows "No activity in this period" rather than
+      an empty table.
+
+**Catalog and icons (Win-7)**
+- [ ] The interval schedule offers the preset list (5 min … 4 hours) and
+      choosing one fills the minutes box; a custom number still typeable.
+- [ ] The icon picker's first twenty icons all render as real glyphs — in
+      particular the four new ones: **eye, raised hand, medical case, wind**.
+      A bell where one of those should be means a missing codepoint.
+
 ---
 
 ## Part 3 — When things fail
 
 - Logic/timing wrong → it is almost certainly shell wiring
-  (`Program.cs` / `OverlayPresenter.cs`), because the same logic passes 168
+  (`Program.cs` / `OverlayPresenter.cs`), because the same logic passes 287
   tests; fix the shell, not the core.
 - A behaviour genuinely missing from the core → write the failing xUnit test
   first (the Swift suite is the reference), then fix.

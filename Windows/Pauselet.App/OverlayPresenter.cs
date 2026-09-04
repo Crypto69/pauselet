@@ -25,6 +25,14 @@ internal sealed class OverlayPresenter : IReminderPresenting
     private readonly List<(Reminder Reminder, Core.Settings Settings, Instant QueuedAt)>
         _criticalQueue = [];
 
+    /// <summary>
+    /// The coach driving the takeover currently on screen, shared by every
+    /// monitor's window so a cue is spoken once and a tick shows everywhere.
+    /// Survives a monitor hot-plug: the windows are rebuilt around it rather
+    /// than the session being restarted.
+    /// </summary>
+    private ExerciseCoach? _criticalCoach;
+
     private SubtleCardWindow? _subtleCard;
     private readonly List<(Reminder Reminder, Core.Settings Settings, int MinimumSeconds)>
         _subtleQueue = [];
@@ -109,6 +117,11 @@ internal sealed class OverlayPresenter : IReminderPresenting
         {
             if (isPreview)
             {
+                // A preview replaces whatever is on screen. CloseCriticalWindows
+                // only takes the windows down, so the coach behind them has to
+                // be ended here too — otherwise its timer keeps ticking and
+                // speaking with nothing left to show it.
+                ShutDownCoach();
                 CloseCriticalWindows();
             }
             else
@@ -128,10 +141,14 @@ internal sealed class OverlayPresenter : IReminderPresenting
 
     private void DisplayCritical(Reminder reminder, Core.Settings settings, bool isPreview)
     {
-        if (settings.SoundEnabled)
+        // Always Critical here, but asked of the settings rather than assumed,
+        // so the one rule about which tiers make a sound stays in one place.
+        if (settings.PlaysSound(reminder.Priority))
         {
             Sounds.Play(reminder.SoundName ?? "Submarine");
         }
+
+        _criticalCoach = BuildCoach(reminder, settings);
 
         // One window per monitor: on a multi-display desk the user may not be
         // looking at the main display.
@@ -142,6 +159,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 reminder,
                 screen.Bounds,
                 isPrimary: screen.Primary,
+                coach: _criticalCoach,
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);
@@ -186,6 +204,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 reminder,
                 screen.Bounds,
                 isPrimary: screen.Primary,
+                coach: _criticalCoach,
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);
@@ -227,6 +246,10 @@ internal sealed class OverlayPresenter : IReminderPresenting
         });
         Engine?.RecordMissedPresentations(dropped);
 
+        // The end of this takeover, unlike a monitor relayout, is where the
+        // coach's timer and voice are torn down.
+        ShutDownCoach();
+
         CloseCriticalWindows();
         if (_criticalQueue.Count > 0)
         {
@@ -245,6 +268,51 @@ internal sealed class OverlayPresenter : IReminderPresenting
         }
         _criticalWindows.Clear();
     }
+
+    /// <summary>
+    /// The coach for an exercise takeover, or <c>null</c> for an ordinary one.
+    /// The voice is attached only when the setting is on and the exercises
+    /// include a guided one, so a list of plain tick boxes never talks.
+    /// </summary>
+    private static ExerciseCoach? BuildCoach(Reminder reminder, Core.Settings settings)
+    {
+        if (!reminder.IsExercise || reminder.Exercises is not { Count: > 0 } exercises)
+        {
+            return null;
+        }
+        var wantsVoice = settings.VoiceCoachEnabled
+            && exercises.Any(exercise => exercise.IsGuided);
+        ISpeechCoaching? speech = null;
+        if (wantsVoice)
+        {
+            var coachVoice = new SpeechCoach
+            {
+                VoiceIdentifier = settings.VoiceCoachVoiceIdentifier,
+                Rate = settings.VoiceCoachRate,
+            };
+            speech = coachVoice;
+        }
+        return new ExerciseCoach(exercises, settings, speech);
+    }
+
+    /// <summary>
+    /// Ends the current coach: stops its timer, silences it, and disposes the
+    /// synthesizer it owns. Every path that retires a takeover goes through
+    /// here — a coach left running is a timer that keeps speaking over an
+    /// overlay that is no longer on screen.
+    /// </summary>
+    private void ShutDownCoach()
+    {
+        _criticalCoach?.ShutDown();
+        _criticalCoach = null;
+    }
+
+    /// <summary>
+    /// Pauses a running coach when the PC sleeps or the session locks — a hold
+    /// must not tick away behind a lock screen. Program.cs routes the system
+    /// events here.
+    /// </summary>
+    public void SuspendCoach() => _criticalCoach?.SuspendForAbsence();
 
     // MARK: - Subtle hint
 

@@ -14,25 +14,35 @@ older status docs, some of which are now stale.
 
 **Update, 2026-09-04: iOS is done.** iOS-1 (import UI), iOS-2 (the voice coach)
 and iOS-3 (AI import) have all landed; the iOS sections below are kept as a
-record of what was built and why. Windows is untouched and remains the whole of
-the outstanding work — start at **Win-1**.
+record of what was built and why.
+
+**Update, later on 2026-09-04: Win-1 through Win-7 are done.** Everything in
+the table below is now at parity except music, which Win-8 keeps deliberately
+out of scope. All of it was written and verified on macOS —
+`Pauselet.App` compiles for `win-arm64` and the core suite is **287** green —
+but **none of the new Windows UI has been seen running**: `prlctl exec` in the
+Windows 11 VM would launch a bare `notepad.exe` and nothing else, every
+`powershell` invocation returning without executing, so the app could not be
+started there. `Windows/HANDOFF.md` item 9 lists what needs eyes, in order of
+risk.
 
 ## The short version
 
 | | macOS | iOS | Windows |
 |---|---|---|---|
 | Exercise reminders (model + JSON) | ✅ | ✅ | ✅ |
-| Exercise editing — all six fields | ✅ | ✅ *(shares `ExerciseRowEditor`)* | ⚠️ **sets/reps only** |
+| Exercise editing — all six fields | ✅ | ✅ *(shares `ExerciseRowEditor`)* | ✅ |
 | Exercise takeover with tick boxes | ✅ | ✅ | ✅ |
-| **Text importer (parsing engine)** | ✅ | ✅ *shared core* | ❌ not ported |
-| **Import UI** | ✅ | ✅ | ❌ |
-| **AI import (OpenAI + key storage)** | ✅ | ✅ | ❌ |
-| **Guided voice coach** | ✅ | ✅ | ❌ |
+| **Text importer (parsing engine)** | ✅ | ✅ *shared core* | ✅ *ported* |
+| **Import UI** | ✅ | ✅ | ✅ |
+| **AI import (OpenAI + key storage)** | ✅ | ✅ | ✅ *DPAPI* |
+| **Guided voice coach** | ✅ | ✅ | ✅ *unseen* |
 | History — event log | ✅ | ✅ | ✅ |
-| History — adherence + range picker | ✅ | ✅ | ❌ **UI never calls it** |
+| History — adherence + range picker | ✅ | ✅ | ✅ |
+| Shared `EditorCatalog` | ✅ | ✅ | ✅ |
 | Music / Spotify | ✅ | ➖ *by design* | ➖ *deferred to v2* |
 
-✅ done ⚠️ partial ❌ missing ➖ deliberately out of scope
+✅ done ⚠️ partial ❌ missing ➖ deliberately out of scope · *unseen* = built and compiling, never run
 
 **The single most important thing to know:** iOS links `ReminderCore` and runs
 its entire test suite on the iOS destination, so `ExerciseImporter` already
@@ -205,7 +215,7 @@ recorded.
   yet edit or use them.
 - Editor, overlays, tray, history and settings shells exist in `Pauselet.App`.
 
-### Win-1 — Three missing editor fields
+### Win-1 — Three missing editor fields — ✅ **done**
 
 `Windows/Pauselet.App/ReminderEditorWindow.cs:403-410` creates only `Sets` and
 `Reps` text boxes. Add **Hold**, **Rest between reps** and **Set rest**,
@@ -213,7 +223,13 @@ matching the Mac's ranges (`hold 0…300`, rests `0…600`, and both rest fields
 disabled when hold is 0). This is small, unblocks nothing else, and stops
 Windows silently discarding timings a Mac user set — do it first.
 
-### Win-2 — Port `ExerciseImporter`
+
+**Built** in `ReminderEditorWindow.cs`: Hold, Rest and Set rest beside sets and
+reps, both rests disabled while hold is 0, and the Mac's two-sentence caption
+under them. The readback refuses a blank or out-of-range field rather than
+reading it as 0 — silently discarding a hold a Mac user set is the exact bug
+this item existed to fix.
+### Win-2 — Port `ExerciseImporter` — ✅ **done**
 
 Translate `Sources/ReminderCore/ExerciseImporter.swift` to
 `Windows/Pauselet.Core/ExerciseImporter.cs`.
@@ -229,14 +245,29 @@ that is the spec, and the house convention is a 1:1 translation with the
 `ExerciseTests.swift`). All 25 cases should pass, including the continuous-prose
 paragraph and the "then inside an instruction does not split" case.
 
-### Win-3 — Import dialog
+
+**Built as** `Windows/Pauselet.Core/ExerciseImporter.cs`. The prediction in
+this section held exactly: the ICU patterns re-expressed in .NET `Regex`
+unchanged, and all 25 translated cases passed on the first run. Two seams
+needed care — .NET's `Regex.Replace` has no ICU inline `(?i)`, so the flag
+moved to `RegexOptions`, and `firstMatch`'s "first *non-empty* group" rule had
+to be kept, since `Group.Success` is true for an empty capture in an alternation
+that did match.
+### Win-3 — Import dialog — ✅ **done**
 
 Mirror `Sources/ReminderApp/ExerciseImportSheet.swift`: paste box → **Read
 Text** → editable preview rows → **Add N Exercises**, entered from a button
 beside "Add Exercise" in the editor. Same rule as everywhere: nothing is added
 until confirmed, and blank placeholder rows are cleared on import.
 
-### Win-4 — Port `ExerciseSession` and build the coach
+
+**Built as** `Windows/Pauselet.App/ExerciseImportWindow.cs`, entered from
+"Import from Text…" beside Add exercise. Its own layout rather than a port of
+the Mac's 470pt sheet: Cancel/Add docked to the bottom so a long parse never
+pushes them off, and the preview rows carry all six fields as editable boxes.
+Nothing is added until Add is pressed, and the blank-row rule was carried over
+(`ImportExercises`).
+### Win-4 — Port `ExerciseSession` and build the coach — ✅ **done**
 
 - Translate `Sources/ReminderCore/ExerciseSession.swift` —
   `ExercisePhase`, `ExerciseCue`, `ExerciseTimeline`, `ExerciseSession`. It is
@@ -249,7 +280,29 @@ until confirmed, and blank placeholder rows are cleared on import.
   the same `voiceCoachEnabled` / `voiceCoachVoiceIdentifier` / `voiceCoachRate`
   settings that already exist in `Models.cs`.
 
-### Win-5 — AI import
+
+**Built as** `ExerciseSession.cs` (the pure timeline and cursor, over NodaTime
+`Instant` where Swift takes `Date`), `SpeechCoach.cs` (the `ISpeechCoaching`
+seam and `VoiceCatalog`), `ExerciseCoach.cs` (the driver) and the coach panel
+on `CriticalOverlayWindow`. Three Windows-specific decisions:
+
+- **Speech: `System.Speech`, not WinRT.** It speaks straight to the default
+  output device with no `MediaPlayer` plumbing, and enumerates the same SAPI
+  voices Windows' own speech settings install. SAPI has no quality tier, so
+  `VoiceCatalog` orders by the user's region then name where the Mac orders by
+  premium/enhanced/standard first.
+- **Pause on absence:** `PowerModes.Suspend` and `SessionSwitchReason.SessionLock`
+  both pause the session (`OverlayPresenter.SuspendCoach`) — the Mac's
+  `willSleep` and iOS's backgrounding, in the shape Windows reports it. A hold
+  must not tick away behind a lock screen.
+- **The narrow-row problem iOS hit does not arise.** A takeover row is 700pt
+  here, so the Start/Skip pills sit on the name's line with room to spare; they
+  take a grid column of their own rather than a fixed reservation.
+
+Swift's `mutating struct` became a class: the WPF driver holds one instance and
+mutates it, where SwiftUI re-assigns a value. The semantics the tests pin —
+notably that `Skip` while announcing stays announcing — are unchanged.
+### Win-5 — AI import — ✅ **done**
 
 - **The API key must not go in `data.json`.** That file is plaintext at a path
   shown in the UI, and is copied verbatim to `data.corrupt.json` on a decode
@@ -266,7 +319,21 @@ until confirmed, and blank placeholder rows are cleared on import.
 - Keep the model list and the default in step with the Mac
   (`gpt-5.6-luna` default, then `gpt-5-nano`, `gpt-5-mini`).
 
-### Win-6 — History: adherence and the range picker
+
+**Built as** `SecretStore.cs`, `ExerciseInterpreter.cs` and
+`AIImportController.cs` in the core, with the settings section and the
+"Interpret with AI" button in the app. Both instructions in this section were
+followed: the key goes to **DPAPI `ProtectedData` at user scope** in
+`%APPDATA%\Pauselet\secrets.dat` and never to `data.json`, and the
+offline/timed-out distinction is kept — `HttpClient` reports its own timeout as
+a `TaskCanceledException`, which is mapped to `TimedOut`, with
+`HttpRequestException` alone meaning `Offline`. The model list and the
+`gpt-5.6-luna` default are pinned by a test against the Mac's.
+
+PasswordVault was the other option this section offered; DPAPI won because it
+needs no WinRT interop and the core project stays plain `net8.0`, so its tests
+still run on macOS — which is how the whole suite was verified.
+### Win-6 — History: adherence and the range picker — ✅ **done**
 
 Not in `HANDOFF.md`, and easy to miss because the tab exists and looks
 finished. `Windows/Pauselet.App/SettingsWindow.cs:529-531` builds a flat
@@ -279,7 +346,18 @@ The logic is already ported and tested: `ReminderEngine.Adherence()` at
 is UI-only work against a method that already exists — cheap, and it restores
 the answer the app exists to give: are you actually doing them?
 
-### Win-7 — Port `Catalog`
+
+**Built** in `SettingsWindow.cs`: a 24h/7d/30d picker (radio buttons — WPF has
+no segmented control), an "Adherence" list of one bar per reminder that fired
+in the window, and an empty state so a quiet period does not read as a broken
+table. As this section said, `ReminderEngine.Adherence()` needed no changes;
+it simply had no caller. The log is now filtered to the window and capped at
+200 rows, as the Mac's is.
+
+One thing this section did not mention: `Settings.playsSound(for:)` had never
+been ported either, and both Windows call sites restated the rule inline. It
+is now `Settings.PlaysSound` in the core, with both callers going through it.
+### Win-7 — Port `Catalog` — ✅ **done**
 
 `Sources/ReminderCore/Catalog.swift` has no C# mirror, so the Windows editor
 duplicates its data inline — weekdays at
@@ -290,6 +368,20 @@ duplicates its data inline — weekdays at
 This is exactly the drift `Catalog.swift:3-5` says it exists to prevent. Low
 urgency, but worth doing before the two lists diverge further.
 
+
+**Built as** `Windows/Pauselet.Core/Catalog.cs`. The drift this section warned
+about was already real: Windows had its own weekday list and its own icon list,
+and offered **no interval presets at all**. All three now come from the shared
+catalog. Two deliberate divergences remain, both because Windows has room the
+Mac does not: the weekday buttons show "Mon" rather than the catalog's
+one-letter "M" (taken from the shared `Name`, not a second list), and the icon
+picker leads with the catalog's twenty then keeps the Windows-only extras.
+
+Four catalog symbols — `eye.fill`, `hand.raised.fill`, `cross.case.fill`,
+`wind` — had no Windows glyph and would have fallen back to a bell. The font
+subset was regenerated (`scripts/build_assets.py`, now 51 glyphs, 10 KB) with
+`air`, `front_hand` and `medical_services` added. **These four have not been
+rendered** — see HANDOFF item 9.
 ### Win-8 — Music *(largest remaining gap, lowest urgency)*
 
 There is no Spotify integration on Windows at all — no equivalent of
@@ -301,8 +393,11 @@ as its own project rather than folding into this parity pass.
 
 ## Suggested order
 
-The three iOS steps (iOS-1, iOS-2, iOS-3) are **done**. What remains is all
-Windows, cheap and independent first so each step ships something usable:
+**All of this is done except Win-8.** The order below was followed as written,
+and it held up: Win-1 and Win-6 were each well under a day, Win-2's parser
+passed its 25 translated cases on the first run, and having the Mac *and* iOS
+coaches as references made Win-4's platform seam the only real decision. Kept
+for the record:
 
 1. **Win-1** — three editor fields. Small, and stops Windows silently
    discarding timings a Mac user set.
@@ -341,10 +436,13 @@ Steps 1–2 are each a day or less. Steps 3–4 are the substantial work.
 
 ### Stale numbers worth correcting while you are in there
 
-- `Windows/HANDOFF.md` and `Windows/TESTING.md` both say **195** core tests;
-  the actual count is **197**. `TESTING.md:254` and the CI workflow header say
-  **168**, which is staler still. (Unchanged by the iOS work — no C# was
-  touched.)
+- ~~`Windows/HANDOFF.md` and `Windows/TESTING.md` both say **195** core tests~~
+  **Done.** The count was **197** when this work started. The parity work adds
+  **80** (25 importer, 23 session, 12 AI controller, 20 interpreter) for
+  **277**; a separate interval-spacing change landing alongside it adds the
+  last 10, hence the **287** now written in `HANDOFF.md`, `TESTING.md` and the
+  CI workflow header. The two places that claimed the whole suite was
+  VM-verified now say which 195 of it actually were.
 - For reference, the counts after iOS landed: **264** `swift test`, **304**
   unit plus **7** UI on the iOS simulator (up from 275 unit).
 - `iOS Implementation Plan.md` at the repo root predates both new features, so

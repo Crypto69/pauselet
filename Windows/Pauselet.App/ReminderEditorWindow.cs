@@ -18,6 +18,7 @@ namespace Pauselet.App;
 internal sealed class ReminderEditorWindow : Window
 {
     private readonly Reminder? _existing;
+    private readonly AIImportController _ai;
     private readonly Action<Reminder> _onSave;
     private readonly Action<Reminder> _onPreview;
 
@@ -57,13 +58,6 @@ internal sealed class ReminderEditorWindow : Window
     /// </summary>
     private bool _isLoading;
 
-    /// <summary>Weekday order shown in the picker; values are Calendar numbering.</summary>
-    private static readonly (string Label, int Value)[] Weekdays =
-    [
-        ("Mon", 2), ("Tue", 3), ("Wed", 4), ("Thu", 5),
-        ("Fri", 6), ("Sat", 7), ("Sun", 1),
-    ];
-
     /// <summary>The controls for one exercise, kept together so rows can be removed.</summary>
     private sealed class ExerciseRow
     {
@@ -74,12 +68,26 @@ internal sealed class ReminderEditorWindow : Window
         public required TextBox Instructions { get; init; }
         public required TextBox Sets { get; init; }
         public required TextBox Reps { get; init; }
+        /// <summary>
+        /// Seconds each rep is held; 0 leaves the exercise untimed, which is
+        /// why the two rest fields follow it rather than stand alone.
+        /// </summary>
+        public required TextBox Hold { get; init; }
+        public required TextBox RestBetweenReps { get; init; }
+        public required TextBox RestBetweenSets { get; init; }
+        /// <summary>
+        /// The caption under the timing fields, which says what the numbers
+        /// mean and changes when a hold makes the exercise guided.
+        /// </summary>
+        public required TextBlock TimingCaption { get; init; }
     }
 
     public ReminderEditorWindow(
-        Reminder? existing, Action<Reminder> onSave, Action<Reminder> onPreview)
+        Reminder? existing, AIImportController ai,
+        Action<Reminder> onSave, Action<Reminder> onPreview)
     {
         _existing = existing;
+        _ai = ai;
         _onSave = onSave;
         _onPreview = onPreview;
 
@@ -137,11 +145,27 @@ internal sealed class ReminderEditorWindow : Window
         {
             Content = "Add exercise",
             Padding = new Thickness(10, 3, 10, 3),
+        };
+        addExercise.Click += (_, _) => AddExerciseRow(null).Name.Focus();
+
+        var importExercises = new Button
+        {
+            Content = "Import from Text…",
+            Padding = new Thickness(10, 3, 10, 3),
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Paste what your physiotherapist wrote and turn it into exercises",
+        };
+        importExercises.Click += (_, _) => ImportExercises();
+
+        var exerciseButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, 8, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        addExercise.Click += (_, _) => AddExerciseRow(null).Name.Focus();
-        _exercisePanel.Children.Add(addExercise);
+        exerciseButtons.Children.Add(addExercise);
+        exerciseButtons.Children.Add(importExercises);
+        _exercisePanel.Children.Add(exerciseButtons);
         stack.Children.Add(_exercisePanel);
 
         stack.Children.Add(FieldLabel("Schedule"));
@@ -160,6 +184,30 @@ internal sealed class ReminderEditorWindow : Window
         _intervalPanel.Children.Add(InlineLabel("Every"));
         _intervalPanel.Children.Add(_intervalMinutes);
         _intervalPanel.Children.Add(InlineLabel("minutes"));
+
+        // The shared catalog's presets, which Windows did not offer at all.
+        // They fill the box rather than replace it, so a custom interval is
+        // still just typed — the Mac's "presets, then Custom" in the shape a
+        // WPF row has for it.
+        var presets = new ComboBox { Width = 96, Margin = new Thickness(8, 0, 0, 0) };
+        presets.Items.Add(new ComboBoxItem { Content = "Preset…", Tag = 0 });
+        foreach (var minutes in EditorCatalog.IntervalPresets)
+        {
+            presets.Items.Add(new ComboBoxItem
+            {
+                Content = Schedule.HumanDuration(minutes),
+                Tag = minutes,
+            });
+        }
+        presets.SelectedIndex = 0;
+        presets.SelectionChanged += (_, _) =>
+        {
+            if (presets.SelectedItem is ComboBoxItem { Tag: int minutes and > 0 })
+            {
+                _intervalMinutes.Text = minutes.ToString();
+            }
+        };
+        _intervalPanel.Children.Add(presets);
         stack.Children.Add(_intervalPanel);
 
         _dailyPanel = new StackPanel
@@ -178,12 +226,15 @@ internal sealed class ReminderEditorWindow : Window
 
         _weeklyPanel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         var dayRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (label, value) in Weekdays)
+        // Day order and numbering come from the shared catalog, so the three
+        // platforms cannot drift on which day is which. Windows has room for
+        // the abbreviation the Mac's one-letter button cannot show.
+        foreach (var weekday in EditorCatalog.Weekdays)
         {
             var box = new CheckBox
             {
-                Content = label,
-                Tag = value,
+                Content = weekday.Name[..3],
+                Tag = weekday.Number,
                 Margin = new Thickness(0, 0, 8, 0),
                 Foreground = Theme.Brush(Theme.Current.Foreground),
             };
@@ -412,6 +463,39 @@ internal sealed class ReminderEditorWindow : Window
         counts.Children.Add(InlineLabel("Reps per set"));
         counts.Children.Add(reps);
 
+        // Hold, then the two rests it enables — the same three fields, in the
+        // same order, as the Mac's and iOS's shared ExerciseRowEditor.
+        var hold = new TextBox { Width = 44, Text = (existing?.HoldSeconds ?? 0).ToString() };
+        var restBetweenReps = new TextBox
+        {
+            Width = 44,
+            Text = (existing?.RestBetweenRepsSeconds ?? 0).ToString(),
+        };
+        var restBetweenSets = new TextBox
+        {
+            Width = 44,
+            Text = (existing?.RestBetweenSetsSeconds ?? 0).ToString(),
+        };
+        var timing = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        timing.Children.Add(InlineLabel("Hold"));
+        timing.Children.Add(hold);
+        timing.Children.Add(InlineLabel("Rest"));
+        timing.Children.Add(restBetweenReps);
+        timing.Children.Add(InlineLabel("Set rest"));
+        timing.Children.Add(restBetweenSets);
+
+        var timingCaption = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = Theme.Brush(palette.SecondaryForeground),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+
         var body = new StackPanel();
         body.Children.Add(headerRow);
         body.Children.Add(SmallLabel("Name"));
@@ -419,6 +503,8 @@ internal sealed class ReminderEditorWindow : Window
         body.Children.Add(SmallLabel("Instructions"));
         body.Children.Add(instructions);
         body.Children.Add(counts);
+        body.Children.Add(timing);
+        body.Children.Add(timingCaption);
 
         var container = new Border
         {
@@ -440,7 +526,15 @@ internal sealed class ReminderEditorWindow : Window
             Instructions = instructions,
             Sets = sets,
             Reps = reps,
+            Hold = hold,
+            RestBetweenReps = restBetweenReps,
+            RestBetweenSets = restBetweenSets,
+            TimingCaption = timingCaption,
         };
+        // A rest only means something between held reps, so both rest fields
+        // follow the hold, and the caption says which state the row is in.
+        hold.TextChanged += (_, _) => UpdateTimingState(row);
+        UpdateTimingState(row);
         remove.Click += (_, _) =>
         {
             _exerciseRows.Remove(row);
@@ -451,6 +545,50 @@ internal sealed class ReminderEditorWindow : Window
         _exerciseRowsHost?.Children.Add(container);
         RenumberExerciseRows();
         return row;
+    }
+
+    /// <summary>
+    /// Opens the import dialog and appends what it returns.
+    ///
+    /// Switching the type to Exercise seeds one blank row for typing into.
+    /// Importing is the alternative to typing, so that untouched placeholder is
+    /// replaced rather than left above the imported rows. Anything the person
+    /// actually filled in stays — the same rule as the Mac's ExerciseEditor.
+    /// </summary>
+    private void ImportExercises()
+    {
+        var window = new ExerciseImportWindow(_ai, imported =>
+        {
+            foreach (var row in _exerciseRows.ToList())
+            {
+                if (row.Name.Text.Trim().Length > 0) continue;
+                _exerciseRows.Remove(row);
+                _exerciseRowsHost?.Children.Remove(row.Container);
+            }
+            foreach (var exercise in imported) AddExerciseRow(exercise);
+            RenumberExerciseRows();
+        })
+        {
+            Owner = this,
+        };
+        window.ShowDialog();
+    }
+
+    /// <summary>
+    /// Enables the rest fields only when the row has a hold, and captions the
+    /// timing row accordingly — the same rule, and the same two sentences, as
+    /// <c>ExerciseRowEditor</c> on the Mac and iOS.
+    /// </summary>
+    private static void UpdateTimingState(ExerciseRow row)
+    {
+        // Text that is not a number yet (mid-typing, or empty) reads as no
+        // hold, so the fields disable rather than flicker on a stray keystroke.
+        var isGuided = int.TryParse(row.Hold.Text, out var hold) && hold > 0;
+        row.RestBetweenReps.IsEnabled = isGuided;
+        row.RestBetweenSets.IsEnabled = isGuided;
+        row.TimingCaption.Text = isGuided
+            ? "Seconds per rep, between reps, and between sets."
+            : "Seconds. Hold 0 leaves this exercise untimed.";
     }
 
     private void RenumberExerciseRows()
@@ -756,6 +894,19 @@ internal sealed class ReminderEditorWindow : Window
                 row.Reps.Focus();
                 return null;
             }
+            // The timing fields carry the numbers a Mac user set, so a blank
+            // or malformed one is refused rather than silently read as 0 —
+            // that would discard a hold instead of asking about it.
+            if (!TryParseSeconds(row.Hold, "hold", i, Exercise.MaxHoldSeconds, out var hold)
+                || !TryParseSeconds(
+                    row.RestBetweenReps, "rest between reps", i, Exercise.MaxRestSeconds,
+                    out var restBetweenReps)
+                || !TryParseSeconds(
+                    row.RestBetweenSets, "rest between sets", i, Exercise.MaxRestSeconds,
+                    out var restBetweenSets))
+            {
+                return null;
+            }
             var exercise = new Exercise
             {
                 Id = row.Id,
@@ -763,6 +914,9 @@ internal sealed class ReminderEditorWindow : Window
                 Instructions = row.Instructions.Text,
                 Sets = sets,
                 Reps = reps,
+                HoldSeconds = hold,
+                RestBetweenRepsSeconds = restBetweenReps,
+                RestBetweenSetsSeconds = restBetweenSets,
             };
             if (!exercise.IsValid)
             {
@@ -780,6 +934,28 @@ internal sealed class ReminderEditorWindow : Window
         // file uses on every platform. Nothing is dropped: every row passed
         // IsValid, the same test Normalized applies.
         return Exercise.Normalized(list);
+    }
+
+    /// <summary>
+    /// One timing field as whole seconds within its editor range, or
+    /// <c>false</c> with the offending field named and focused.
+    /// </summary>
+    private bool TryParseSeconds(
+        TextBox field, string label, int rowIndex, int maximum, out int seconds)
+    {
+        if (!int.TryParse(field.Text, out seconds) || seconds < 0 || seconds > maximum)
+        {
+            MessageBox.Show(
+                this,
+                $"Exercise {rowIndex + 1}: {label} needs to be a whole number of seconds "
+                    + $"from 0 to {maximum}.",
+                "Pauselet"
+            );
+            field.Focus();
+            seconds = 0;
+            return false;
+        }
+        return true;
     }
 
     private bool TryParseTime(out int hour, out int minute)

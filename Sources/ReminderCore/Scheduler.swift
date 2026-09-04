@@ -219,6 +219,124 @@ public enum Scheduler {
         }
     }
 
+
+    // MARK: - Re-anchoring after downtime
+
+    /// How long apart staggered catch-up fires are placed when several
+    /// interval reminders all came due during downtime.
+    ///
+    /// Big enough that two overlays never land on top of each other, small
+    /// enough that the whole backlog is delivered within a few minutes of
+    /// coming back.
+    public static let staggerStep: TimeInterval = 90
+
+    /// The anchor an interval reminder should carry after a stretch of
+    /// downtime ending at `resumeDate` — a pause being lifted, a timed pause
+    /// expiring, or the machine waking up.
+    ///
+    /// This is the fix for reminders collapsing onto a single instant. The
+    /// naive re-anchor (`lastFiredAt = resumeDate` for everything) is what
+    /// welds them together: the next fire is `anchor + interval`, so an
+    /// identical anchor makes every reminder sharing an interval fire at the
+    /// same second, and they never come apart again.
+    ///
+    /// Instead each reminder keeps its *phase* — how far through its interval
+    /// it had got when the downtime began. A reminder with 50 of its 60
+    /// minutes still to run resumes with 50 minutes to run; one with 12 left
+    /// resumes with 12. Their original spacing is preserved exactly, for free,
+    /// without storing anything new.
+    ///
+    /// A reminder whose interval fully elapsed during the downtime has no
+    /// phase left to preserve, so it is genuinely due. Those are the ones that
+    /// would collapse, so the caller stakes out a distinct slot for each via
+    /// `staggerOffset`, spreading them over the next few minutes in a stable
+    /// order rather than firing them all at once.
+    ///
+    /// - Parameters:
+    ///   - reminder: The reminder being re-anchored. Non-interval schedules
+    ///     return `nil`: a wall-clock grid is anchored to the clock, not to
+    ///     the downtime, and re-anchoring it would drag the grid out of phase.
+    ///   - downtimeStart: When the engine stopped honouring fires. Phase is
+    ///     measured against this, since that is the last moment the reminder's
+    ///     countdown was real.
+    ///   - resumeDate: When the engine starts honouring fires again.
+    ///   - staggerOffset: Extra delay for a reminder that went fully overdue,
+    ///     applied only in that case. Callers pass the reminder's index among
+    ///     the overdue ones times `staggerStep`.
+    /// - Returns: The new `lastFiredAt`, or `nil` to leave it untouched.
+    public static func reanchorForDowntime(
+        _ reminder: Reminder,
+        downtimeStart: Date,
+        resumeDate: Date,
+        staggerOffset: TimeInterval = 0
+    ) -> Date? {
+        guard case .interval(let minutes) = reminder.schedule else { return nil }
+        let anchor = reminder.lastFiredAt ?? reminder.createdAt
+        // An anchor already past the resume point belongs to a fire that
+        // happened after the downtime; it is current, so leave it alone.
+        guard anchor < resumeDate else { return nil }
+
+        let length = TimeInterval(max(1, minutes) * 60)
+        let due = anchor.addingTimeInterval(length)
+
+        if due > downtimeStart {
+            // Still mid-interval when the downtime began. Preserve exactly the
+            // remaining time by shifting the anchor forward by the length of
+            // the downtime — the countdown resumes where it left off, and two
+            // reminders that were 38 minutes apart still are.
+            let elapsedDowntime = resumeDate.timeIntervalSince(downtimeStart)
+            guard elapsedDowntime > 0 else { return nil }
+            return anchor.addingTimeInterval(elapsedDowntime)
+        }
+
+        // Fully overdue: no phase survives. Restart the interval from the
+        // resume, offset so this reminder gets a slot of its own.
+        return resumeDate.addingTimeInterval(staggerOffset)
+    }
+
+    /// Applies `reanchorForDowntime` across a whole set of reminders,
+    /// allocating a distinct stagger slot to each one that went fully overdue.
+    ///
+    /// Overdue reminders are ordered by when they were *originally* due, so
+    /// the reminder that had been waiting longest comes back first and the
+    /// order the user is used to seeing is preserved.
+    ///
+    /// - Returns: The new anchor for each reminder that needs one, keyed by ID.
+    public static func reanchorAllForDowntime(
+        _ reminders: [Reminder],
+        downtimeStart: Date,
+        resumeDate: Date,
+        includeReminder: (Reminder) -> Bool = { _ in true }
+    ) -> [UUID: Date] {
+        // Rank the fully-overdue reminders first so each can be given its own
+        // stagger slot; mid-interval ones keep their phase and need no slot.
+        var overdue: [(id: UUID, due: Date)] = []
+        for reminder in reminders where includeReminder(reminder) {
+            guard case .interval(let minutes) = reminder.schedule else { continue }
+            let anchor = reminder.lastFiredAt ?? reminder.createdAt
+            guard anchor < resumeDate else { continue }
+            let due = anchor.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
+            if due <= downtimeStart { overdue.append((reminder.id, due)) }
+        }
+        overdue.sort { $0.due == $1.due ? $0.id.uuidString < $1.id.uuidString : $0.due < $1.due }
+        let slot = Dictionary(
+            uniqueKeysWithValues: overdue.enumerated().map { ($1.id, TimeInterval($0)) }
+        )
+
+        var result: [UUID: Date] = [:]
+        for reminder in reminders where includeReminder(reminder) {
+            if let anchor = reanchorForDowntime(
+                reminder,
+                downtimeStart: downtimeStart,
+                resumeDate: resumeDate,
+                staggerOffset: (slot[reminder.id] ?? 0) * staggerStep
+            ) {
+                result[reminder.id] = anchor
+            }
+        }
+        return result
+    }
+
     // MARK: - The advance step
 
     /// The engine's next action on a reminder: the one decision that
@@ -292,8 +410,15 @@ public enum Scheduler {
         var cursor = now
         if let until = settings.pausedUntil, until > now {
             cursor = until
-            if case .interval = sim.schedule, (sim.lastFiredAt ?? sim.createdAt) < until {
-                sim.lastFiredAt = until
+            // Re-anchor exactly as the engine will when the pause expires,
+            // preserving the reminder's phase, so the projection and the live
+            // engine cannot disagree about when this lands. Without a set to
+            // rank against there is no stagger slot here; the engine assigns
+            // those when the pause actually lifts.
+            if let anchor = reanchorForDowntime(
+                sim, downtimeStart: now, resumeDate: until
+            ) {
+                sim.lastFiredAt = anchor
             }
         }
 

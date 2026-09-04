@@ -258,6 +258,115 @@ public static class Scheduler
     }
 
     /// <summary>
+    /// How long apart staggered catch-up fires are placed when several
+    /// interval reminders all came due during downtime.
+    /// </summary>
+    public static readonly Duration StaggerStep = Duration.FromSeconds(90);
+
+    /// <summary>
+    /// The anchor an interval reminder should carry after a stretch of
+    /// downtime ending at <paramref name="resumeDate"/> — a pause being
+    /// lifted, a timed pause expiring, or the machine waking up.
+    /// </summary>
+    /// <remarks>
+    /// This is the fix for reminders collapsing onto a single instant. The
+    /// naive re-anchor (<c>LastFiredAt = resumeDate</c> for everything) is
+    /// what welds them together: the next fire is <c>anchor + interval</c>, so
+    /// an identical anchor makes every reminder sharing an interval fire at
+    /// the same second, and they never come apart again.
+    /// <para>
+    /// Instead each reminder keeps its <em>phase</em> — how far through its
+    /// interval it had got when the downtime began — so the original spacing
+    /// is preserved without storing anything new. A reminder whose interval
+    /// fully elapsed has no phase left, so the caller stakes out a distinct
+    /// slot for each of those via <paramref name="staggerOffset"/>.
+    /// </para>
+    /// <para>
+    /// Non-interval schedules return <c>null</c>: a wall-clock grid is
+    /// anchored to the clock, not to the downtime.
+    /// </para>
+    /// </remarks>
+    public static Instant? ReanchorForDowntime(
+        Reminder reminder,
+        Instant downtimeStart,
+        Instant resumeDate,
+        Duration staggerOffset = default)
+    {
+        if (reminder.Schedule is not Schedule.Interval interval) return null;
+        var anchor = reminder.LastFiredAt ?? reminder.CreatedAt;
+        // An anchor already past the resume point belongs to a fire that
+        // happened after the downtime; it is current, so leave it alone.
+        if (anchor >= resumeDate) return null;
+
+        var length = Duration.FromMinutes(Math.Max(1, interval.Minutes));
+        var due = anchor + length;
+
+        if (due > downtimeStart)
+        {
+            // Still mid-interval when the downtime began. Preserve exactly the
+            // remaining time by shifting the anchor forward by the length of
+            // the downtime, so two reminders that were 38 minutes apart still
+            // are.
+            var elapsedDowntime = resumeDate - downtimeStart;
+            if (elapsedDowntime <= Duration.Zero) return null;
+            return anchor + elapsedDowntime;
+        }
+
+        // Fully overdue: no phase survives. Restart the interval from the
+        // resume, offset so this reminder gets a slot of its own.
+        return resumeDate + staggerOffset;
+    }
+
+    /// <summary>
+    /// Applies <see cref="ReanchorForDowntime"/> across a whole set of
+    /// reminders, allocating a distinct stagger slot to each one that went
+    /// fully overdue, ordered by when it was originally due so the reminder
+    /// that waited longest comes back first.
+    /// </summary>
+    /// <returns>The new anchor for each reminder that needs one, keyed by ID.</returns>
+    public static Dictionary<Guid, Instant> ReanchorAllForDowntime(
+        IReadOnlyList<Reminder> reminders,
+        Instant downtimeStart,
+        Instant resumeDate,
+        Func<Reminder, bool>? includeReminder = null)
+    {
+        var include = includeReminder ?? (_ => true);
+
+        var overdue = new List<(Guid Id, Instant Due)>();
+        foreach (var reminder in reminders)
+        {
+            if (!include(reminder)) continue;
+            if (reminder.Schedule is not Schedule.Interval interval) continue;
+            var anchor = reminder.LastFiredAt ?? reminder.CreatedAt;
+            if (anchor >= resumeDate) continue;
+            var due = anchor + Duration.FromMinutes(Math.Max(1, interval.Minutes));
+            if (due <= downtimeStart) overdue.Add((reminder.Id, due));
+        }
+        overdue.Sort((a, b) =>
+            a.Due == b.Due
+                ? string.CompareOrdinal(a.Id.ToString(), b.Id.ToString())
+                : a.Due.CompareTo(b.Due));
+
+        var slot = new Dictionary<Guid, int>();
+        for (var i = 0; i < overdue.Count; i++) slot[overdue[i].Id] = i;
+
+        var result = new Dictionary<Guid, Instant>();
+        foreach (var reminder in reminders)
+        {
+            if (!include(reminder)) continue;
+            var offset = slot.TryGetValue(reminder.Id, out var rank)
+                ? StaggerStep * rank
+                : Duration.Zero;
+            if (ReanchorForDowntime(reminder, downtimeStart, resumeDate, offset)
+                is { } anchor)
+            {
+                result[reminder.Id] = anchor;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// One decision of the firing policy: when the engine next acts on a
     /// reminder, what it stamps, and whether the user hears it. Produced by
     /// <see cref="NextStep"/>, applied once by <c>Tick()</c> and repeatedly by
@@ -316,9 +425,12 @@ public static class Scheduler
         if (settings.PausedUntil is { } until && until > now)
         {
             cursor = until;
-            if (sim.Schedule is Schedule.Interval && (sim.LastFiredAt ?? sim.CreatedAt) < until)
+            // Re-anchor exactly as the engine will when the pause expires,
+            // preserving the reminder's phase, so the projection and the live
+            // engine cannot disagree about when this lands.
+            if (ReanchorForDowntime(sim, now, until) is { } anchor)
             {
-                sim = sim with { LastFiredAt = until };
+                sim = sim with { LastFiredAt = anchor };
             }
         }
 

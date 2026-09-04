@@ -18,16 +18,34 @@ internal sealed class SettingsWindow : Window
 {
     private readonly ReminderEngine _engine;
     private readonly OverlayPresenter _overlays;
+    /// <summary>
+    /// Owns the API key and any request in flight. Shared with the import
+    /// dialog the editor opens, so both agree on whether AI import is
+    /// available without each reading the secret store.
+    /// </summary>
+    private readonly AIImportController _ai;
     private readonly DateTimeZone _zone = DateTimeZoneProviders.Tzdb.GetSystemDefault();
 
     private ListView? _reminderList;
     private ListView? _historyList;
+    private StackPanel? _adherenceHost;
+    private TextBlock? _historyEmptyState;
+    /// <summary>
+    /// The synthesizer behind the Voice Coach Test button, kept so a second
+    /// press interrupts the first rather than talking over it. Created on
+    /// first use, so opening Settings on a machine with no speech stack costs
+    /// nothing.
+    /// </summary>
+    private SpeechCoach? _testSpeech;
     private bool _loadingPreferences;
 
-    public SettingsWindow(ReminderEngine engine, OverlayPresenter overlays)
+    public SettingsWindow(
+        ReminderEngine engine, OverlayPresenter overlays, AIImportController ai)
     {
         _engine = engine;
         _overlays = overlays;
+        _ai = ai;
+        _ai.Model = Core.AIImportModel.Resolve(engine.Settings.AiImportModel);
 
         Title = "Pauselet";
         Width = 760;
@@ -54,7 +72,12 @@ internal sealed class SettingsWindow : Window
         Content = tabs;
 
         _engine.PropertyChanged += OnEngineChanged;
-        Closed += (_, _) => _engine.PropertyChanged -= OnEngineChanged;
+        Closed += (_, _) =>
+        {
+            _engine.PropertyChanged -= OnEngineChanged;
+            _testSpeech?.Dispose();
+            _testSpeech = null;
+        };
     }
 
     private void OnEngineChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -180,6 +203,7 @@ internal sealed class SettingsWindow : Window
     {
         var editor = new ReminderEditorWindow(
             existing,
+            _ai,
             onSave: reminder =>
             {
                 if (existing is null)
@@ -303,6 +327,12 @@ internal sealed class SettingsWindow : Window
             value => UpdateSettings(s => s with { SoundEnabled = value })
         ));
 
+        stack.Children.Add(SectionHeader("Exercise Import"));
+        stack.Children.Add(BuildAIImportSection(settings));
+
+        stack.Children.Add(SectionHeader("Voice Coach"));
+        stack.Children.Add(BuildVoiceCoachSection(settings));
+
         stack.Children.Add(SectionHeader("Notifications"));
         stack.Children.Add(new TextBlock
         {
@@ -360,6 +390,306 @@ internal sealed class SettingsWindow : Window
         {
             // A missing handler association is not ours to fix.
         }
+    }
+
+    /// <summary>
+    /// Interpreting pasted exercise text with AI. (Mirrors AIImportSettings.swift.)
+    ///
+    /// Entirely optional: with no key stored, the importer still works using
+    /// the built-in parser and the app makes no network requests at all. That
+    /// is why the copy here is explicit about what gets sent where — it is the
+    /// only part of the app that leaves the machine.
+    /// </summary>
+    private UIElement BuildAIImportSection(Core.Settings settings)
+    {
+        var stack = new StackPanel();
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Optional. Pasted exercise text is read on this PC; adding a key lets "
+                + "you send it to OpenAI instead, which handles unusual wording better. "
+                + "Only text you explicitly choose to interpret is ever sent, and your "
+                + "key is encrypted for your Windows account — never written to data.json.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 520,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+        });
+
+        // Everything below the key field only makes sense once one is stored.
+        var configured = new StackPanel();
+        var status = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 520,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+
+        var keyRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        keyRow.Children.Add(new TextBlock
+        {
+            Text = "OpenAI API key",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+            Foreground = Theme.Brush(Theme.Current.Foreground),
+        });
+        // A PasswordBox, not a TextBox: the key must not be shoulder-readable,
+        // and it is held here only until Save hands it to the secret store.
+        var keyField = new PasswordBox { Width = 260 };
+        keyRow.Children.Add(keyField);
+
+        var save = new Button
+        {
+            Content = "Save",
+            Padding = new Thickness(12, 4, 12, 4),
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+        var remove = new Button
+        {
+            Content = "Remove",
+            Padding = new Thickness(12, 4, 12, 4),
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+        keyRow.Children.Add(save);
+        keyRow.Children.Add(remove);
+        stack.Children.Add(keyRow);
+        stack.Children.Add(status);
+
+        void RefreshConfiguredState()
+        {
+            configured.Visibility = _ai.IsConfigured ? Visibility.Visible : Visibility.Collapsed;
+            remove.Visibility = _ai.IsConfigured ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        save.Click += (_, _) =>
+        {
+            var error = _ai.Store(keyField.Password);
+            // Never leave the secret sitting in a control once it is stored.
+            keyField.Clear();
+            status.Text = error ?? (_ai.IsConfigured
+                ? "A key is stored, encrypted for your Windows account."
+                : "");
+            status.Foreground = Theme.Brush(
+                error is null ? Theme.Current.SecondaryForeground : Theme.Current.Foreground);
+            RefreshConfiguredState();
+        };
+        remove.Click += (_, _) =>
+        {
+            var error = _ai.Store(null);
+            keyField.Clear();
+            status.Text = error ?? "";
+            RefreshConfiguredState();
+        };
+
+        var modelRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        modelRow.Children.Add(new TextBlock
+        {
+            Text = "Model",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+            Foreground = Theme.Brush(Theme.Current.Foreground),
+        });
+        var modelPicker = new ComboBox { Width = 260 };
+        foreach (var model in Core.AIImportModel.All)
+        {
+            modelPicker.Items.Add(new ComboBoxItem { Content = model.Title, Tag = model.Id });
+        }
+        var currentModel = Core.AIImportModel.Resolve(settings.AiImportModel);
+        modelPicker.SelectedIndex = Core.AIImportModel.All
+            .ToList()
+            .FindIndex(model => model.Id == currentModel.Id);
+
+        var modelDetail = new TextBlock
+        {
+            Text = currentModel.Detail,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 520,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 4, 0, 0),
+            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+        };
+        modelPicker.SelectionChanged += (_, _) =>
+        {
+            if (_loadingPreferences) return;
+            var id = (modelPicker.SelectedItem as ComboBoxItem)?.Tag as string;
+            var chosen = Core.AIImportModel.Resolve(id);
+            modelDetail.Text = chosen.Detail;
+            _ai.Model = chosen;
+            // null in settings means "the default", so the stored file does not
+            // pin a model the user never chose.
+            UpdateSettings(s => s with
+            {
+                AiImportModel = chosen.Id == Core.AIImportModel.Default.Id ? null : chosen.Id,
+            });
+        };
+        modelRow.Children.Add(modelPicker);
+
+        var test = new Button
+        {
+            Content = "Test",
+            Padding = new Thickness(12, 4, 12, 4),
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Check the key and model by interpreting one short phrase",
+        };
+        var testStatus = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 520,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 4, 0, 0),
+            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+        };
+        test.Click += async (_, _) =>
+        {
+            if (_ai.IsTesting) return;
+            test.IsEnabled = false;
+            testStatus.Text = "Testing…";
+            _ai.Model = Core.AIImportModel.Resolve(_engine.Settings.AiImportModel);
+            await _ai.TestKeyAsync();
+            testStatus.Text = _ai.LastTestResult switch
+            {
+                { Succeeded: true } => "The key works.",
+                { Message: { } message } => message,
+                _ => "",
+            };
+            test.IsEnabled = true;
+        };
+        modelRow.Children.Add(test);
+
+        configured.Children.Add(modelRow);
+        configured.Children.Add(modelDetail);
+        configured.Children.Add(testStatus);
+        stack.Children.Add(configured);
+
+        RefreshConfiguredState();
+        if (_ai.IsConfigured)
+        {
+            status.Text = "A key is stored, encrypted for your Windows account.";
+        }
+        return stack;
+    }
+
+    /// <summary>
+    /// Whether the exercise coach talks, which system voice it uses, and a way
+    /// to hear it before an exercise does. (Mirrors VoiceCoachSettings.swift.)
+    ///
+    /// Voices are read once when the tab is built: enumerating them is not
+    /// free, and the list only changes when the user installs one in Windows'
+    /// speech settings.
+    /// </summary>
+    private UIElement BuildVoiceCoachSection(Core.Settings settings)
+    {
+        // What the Test button says — the coach's first real cue.
+        const string sampleCue = "Set 1, rep 1. Hold for 5 seconds.";
+
+        var stack = new StackPanel();
+        var details = new StackPanel
+        {
+            Margin = new Thickness(22, 0, 0, 0),
+            Visibility = settings.VoiceCoachEnabled ? Visibility.Visible : Visibility.Collapsed,
+        };
+
+        stack.Children.Add(CheckRow(
+            "Speak exercise cues", settings.VoiceCoachEnabled,
+            value =>
+            {
+                UpdateSettings(s => s with { VoiceCoachEnabled = value });
+                details.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            },
+            help: "Reads out each set, rep, hold and rest while the exercise "
+                + "takeover coaches you through an exercise. Only exercises with "
+                + "a hold time are coached; the others keep their tick box."
+        ));
+
+        var voices = VoiceCatalog.InstalledVoices();
+
+        var voiceRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        voiceRow.Children.Add(new TextBlock
+        {
+            Text = "Voice",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+            Foreground = Theme.Brush(Theme.Current.Foreground),
+        });
+
+        var voicePicker = new ComboBox { Width = 260 };
+        // The empty tag stands for "no preference": the best installed voice,
+        // re-resolved on every utterance so uninstalling one degrades rather
+        // than silences.
+        voicePicker.Items.Add(new ComboBoxItem { Content = "Best available", Tag = "" });
+        foreach (var voice in voices)
+        {
+            voicePicker.Items.Add(new ComboBoxItem { Content = voice.Label, Tag = voice.Id });
+        }
+        voicePicker.SelectedIndex = Math.Max(0, voices
+            .ToList()
+            .FindIndex(voice => voice.Id == settings.VoiceCoachVoiceIdentifier) + 1);
+        voicePicker.SelectionChanged += (_, _) =>
+        {
+            if (_loadingPreferences) return;
+            var id = (voicePicker.SelectedItem as ComboBoxItem)?.Tag as string;
+            UpdateSettings(s => s with
+            {
+                VoiceCoachVoiceIdentifier = string.IsNullOrEmpty(id) ? null : id,
+            });
+        };
+        voiceRow.Children.Add(voicePicker);
+
+        var test = new Button
+        {
+            Content = "Test",
+            Padding = new Thickness(12, 4, 12, 4),
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Say a sample cue with the chosen voice",
+        };
+        test.Click += (_, _) =>
+        {
+            var current = _engine.Settings;
+            _testSpeech ??= new SpeechCoach();
+            _testSpeech.Speak(
+                sampleCue, current.VoiceCoachVoiceIdentifier, current.VoiceCoachRate);
+        };
+        voiceRow.Children.Add(test);
+        details.Children.Add(voiceRow);
+
+        details.Children.Add(NumberRow(
+            "Speaking pace (percent of normal)", settings.VoiceCoachRate, 30, 70,
+            value => UpdateSettings(s => s with { VoiceCoachRate = value })
+        ));
+        details.Children.Add(new TextBlock
+        {
+            Text = voices.Count == 0
+                ? "No English speech voices are installed. Add one in Windows "
+                    + "Settings › Time & language › Speech."
+                : "English voices only. Add or remove voices in Windows Settings › "
+                    + "Time & language › Speech.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 520,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 6, 0, 0),
+            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+        });
+
+        stack.Children.Add(details);
+        return stack;
     }
 
     private static TextBlock SectionHeader(string text) => new()
@@ -502,16 +832,45 @@ internal sealed class SettingsWindow : Window
 
     private sealed record HistoryRowModel(string When, string Title, string Outcome);
 
+    /// <summary>The window the history tab reports over; 7 days as on the Mac.</summary>
+    private static readonly (string Label, int Days)[] HistoryWindows =
+        [("24 hours", 1), ("7 days", 7), ("30 days", 30)];
+
+    private int _historyWindowDays = 7;
+
     private UIElement BuildHistoryTab()
     {
         var layout = new DockPanel { Margin = new Thickness(12) };
+
+        // The window picker and Clear share the top row, as on the Mac. WPF
+        // has no segmented control, so the three windows are radio buttons
+        // styled as toggles — one choice, visibly exclusive.
+        var toolbar = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+        var windowPicker = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var (label, days) in HistoryWindows)
+        {
+            var option = new RadioButton
+            {
+                Content = label,
+                GroupName = "HistoryWindow",
+                IsChecked = days == _historyWindowDays,
+                Margin = new Thickness(0, 0, 14, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            option.Checked += (_, _) =>
+            {
+                _historyWindowDays = days;
+                ReloadHistory();
+            };
+            windowPicker.Children.Add(option);
+        }
+        toolbar.Children.Add(windowPicker);
 
         var clear = new Button
         {
             Content = "Clear History",
             Padding = new Thickness(12, 5, 12, 5),
-            Margin = new Thickness(0, 10, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Right,
         };
         clear.Click += (_, _) =>
         {
@@ -521,8 +880,27 @@ internal sealed class SettingsWindow : Window
             );
             if (answer == MessageBoxResult.Yes) _engine.ClearHistory();
         };
-        DockPanel.SetDock(clear, Dock.Bottom);
-        layout.Children.Add(clear);
+        DockPanel.SetDock(clear, Dock.Right);
+        toolbar.Children.Add(clear);
+        DockPanel.SetDock(toolbar, Dock.Top);
+        layout.Children.Add(toolbar);
+
+        // Adherence above the log: the question the app exists to answer —
+        // are you actually doing them? — before the event by event detail.
+        _adherenceHost = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+        DockPanel.SetDock(_adherenceHost, Dock.Top);
+        layout.Children.Add(_adherenceHost);
+
+        // Shown instead of the log when nothing fired in the window, so an
+        // empty table never reads as a broken one.
+        _historyEmptyState = new TextBlock
+        {
+            Text = "No activity in this period",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+            Visibility = Visibility.Collapsed,
+        };
 
         _historyList = new ListView();
         var view = new GridView();
@@ -530,7 +908,11 @@ internal sealed class SettingsWindow : Window
         view.Columns.Add(Column("Reminder", nameof(HistoryRowModel.Title), 260));
         view.Columns.Add(Column("Outcome", nameof(HistoryRowModel.Outcome), 110));
         _historyList.View = view;
-        layout.Children.Add(_historyList);
+
+        var body = new Grid();
+        body.Children.Add(_historyList);
+        body.Children.Add(_historyEmptyState);
+        layout.Children.Add(body);
 
         ReloadHistory();
         return layout;
@@ -539,13 +921,113 @@ internal sealed class SettingsWindow : Window
     private void ReloadHistory()
     {
         if (_historyList is null) return;
-        _historyList.ItemsSource = _engine.Events
+
+        var since = SystemClock.Instance.GetCurrentInstant()
+            - NodaTime.Duration.FromDays(_historyWindowDays);
+        var recent = _engine.Events
+            .Where(e => e.Date >= since)
             .Reverse()
+            // The Mac caps the log at 200 rows; a longer one is scrolling, not
+            // reading, and the adherence figures above already summarize it.
+            .Take(200)
             .Select(e => new HistoryRowModel(
                 e.Date.InZone(_zone).ToDateTimeUnspecified().ToString("g"),
                 e.ReminderTitle,
                 e.EventOutcome.ToString().ToLowerInvariant()))
             .ToList();
+
+        _historyList.ItemsSource = recent;
+        var isEmpty = recent.Count == 0;
+        _historyList.Visibility = isEmpty ? Visibility.Collapsed : Visibility.Visible;
+        if (_historyEmptyState is not null)
+        {
+            _historyEmptyState.Visibility = isEmpty ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        ReloadAdherence(since, isEmpty);
+    }
+
+    /// <summary>
+    /// One bar per reminder that fired in the window, showing completed ÷
+    /// fired. Reminders with nothing in the window are left out rather than
+    /// shown at 0%, which would read as a failure instead of a silence.
+    /// </summary>
+    private void ReloadAdherence(Instant since, bool isEmpty)
+    {
+        if (_adherenceHost is null) return;
+        _adherenceHost.Children.Clear();
+        if (isEmpty) return;
+
+        var rows = _engine.Reminders
+            .Select(reminder => (reminder, adherence: _engine.Adherence(reminder.Id, since)))
+            .Where(row => row.adherence is not null)
+            .ToList();
+        if (rows.Count == 0) return;
+
+        _adherenceHost.Children.Add(new TextBlock
+        {
+            Text = "Adherence",
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Theme.Brush(Theme.Current.Foreground),
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+
+        foreach (var (reminder, adherence) in rows)
+        {
+            _adherenceHost.Children.Add(AdherenceRow(reminder, adherence!.Value));
+        }
+    }
+
+    /// <summary>Icon, title, a progress bar and the percentage — the Mac's AdherenceRow.</summary>
+    private static UIElement AdherenceRow(Reminder reminder, double adherence)
+    {
+        var palette = Theme.Current;
+        var row = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
+
+        var icon = Ui.Glyph(reminder.SymbolName, 13, Theme.Brush(palette.Accent));
+        icon.Width = 20;
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(icon, Dock.Left);
+        row.Children.Add(icon);
+
+        var percent = new TextBlock
+        {
+            Text = $"{(int)(adherence * 100)}%",
+            FontSize = 11,
+            FontWeight = FontWeights.Medium,
+            Width = 40,
+            TextAlignment = TextAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Theme.Brush(palette.Foreground),
+        };
+        DockPanel.SetDock(percent, Dock.Right);
+        row.Children.Add(percent);
+
+        var bar = new ProgressBar
+        {
+            Minimum = 0,
+            Maximum = 1,
+            Value = adherence,
+            Width = 120,
+            Height = 6,
+            Margin = new Thickness(8, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Theme.Brush(palette.Accent),
+        };
+        DockPanel.SetDock(bar, Dock.Right);
+        row.Children.Add(bar);
+
+        // Last, so it takes the space the icon, bar and percentage leave.
+        row.Children.Add(new TextBlock
+        {
+            Text = reminder.Title,
+            FontSize = 12,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Theme.Brush(palette.Foreground),
+        });
+        return row;
     }
 
     // MARK: - About tab
