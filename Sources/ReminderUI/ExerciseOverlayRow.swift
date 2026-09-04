@@ -106,8 +106,18 @@ public struct ExerciseOverlayRow: View {
             + (showsCancel ? Self.pillSpacing + Self.cancelPillWidth : 0)
     }
 
+    // The pills are sized for the platform they sit on: the Mac overlay is
+    // 620pt wide and can spare the room, while a phone row has roughly a third
+    // of that, and every point the pills reserve is taken from the exercise
+    // name. `CoachPillStyle` gives the iOS pills tighter horizontal padding to
+    // suit these widths, and a 44pt minimum height so they stay tappable.
+    #if os(macOS)
     private static let startPillWidth: CGFloat = 68
     private static let cancelPillWidth: CGFloat = 78
+    #else
+    private static let startPillWidth: CGFloat = 58
+    private static let cancelPillWidth: CGFloat = 66
+    #endif
     private static let pillSpacing: CGFloat = 8
     private static let rowInset: CGFloat = 18
 
@@ -118,15 +128,20 @@ public struct ExerciseOverlayRow: View {
                     .frame(width: 30)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(exercise.name)
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .strikethrough(isFinished)
-                        Text(summaryText)
-                            .font(.system(size: 15, weight: .regular, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(isActive ? Self.doneColor : .white.opacity(0.6))
+                    // Name and summary sit side by side where there is room —
+                    // the Mac's wide overlay — and stack on a phone, where the
+                    // reserved pill widths leave a narrow column. Side by side
+                    // in that column, the two texts share the shortfall and a
+                    // name like "Chin tucks" breaks after every character.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            nameText
+                            summaryTextView
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            nameText
+                            summaryTextView
+                        }
                     }
                     if !exercise.instructions.isEmpty {
                         Text(exercise.instructions)
@@ -199,6 +214,24 @@ public struct ExerciseOverlayRow: View {
         .accessibilityAddTraits(isFinished ? [.isSelected] : [])
     }
 
+    private var nameText: some View {
+        Text(exercise.name)
+            .font(.system(size: 20, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .strikethrough(isFinished)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var summaryTextView: some View {
+        Text(summaryText)
+            .font(.system(size: 15, weight: .regular, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(isActive ? Self.doneColor : .white.opacity(0.6))
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     /// Clicking the row: the tick box for an untimed exercise, Start for a
     /// guided one that is waiting, nothing otherwise.
     private func rowAction() {
@@ -266,8 +299,17 @@ public struct CoachPillStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold, design: .rounded))
+            #if os(macOS)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
+            #else
+            // Narrower horizontally to leave the exercise name room. The
+            // explicit minimum height is what guarantees the 44pt touch
+            // target — padding alone leaves the pill a few points short.
+            .padding(.horizontal, 8)
+            .padding(.vertical, 11)
+            .frame(minHeight: 44)
+            #endif
             .frame(maxWidth: .infinity)
             .foregroundStyle(
                 emphasis == .filled ? Color(red: 0.03, green: 0.12, blue: 0.13) : .white

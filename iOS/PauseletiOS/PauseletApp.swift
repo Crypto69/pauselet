@@ -20,6 +20,8 @@ struct PauseletApp: App {
             RootView()
                 .environmentObject(model)
                 .environmentObject(model.engine)
+                .environmentObject(model.speech)
+                .environmentObject(model.ai)
         }
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(phase)

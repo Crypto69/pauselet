@@ -28,9 +28,19 @@ struct RootView: View {
             }
         }
         .fullScreenCover(item: $model.takeover) { item in
-            TakeoverView(item: item) { action in
+            TakeoverView(
+                item: item,
+                settings: model.engine.settings,
+                speech: model.speech
+            ) { action in
                 model.acknowledgeTakeover(item, action: action)
             }
+            // A cover gets a fresh environment; the takeover's coach needs the
+            // model (to know when the app leaves the foreground) and the
+            // shared synthesizer handed to it explicitly.
+            .environmentObject(model)
+            .environmentObject(model.engine)
+            .environmentObject(model.speech)
         }
     }
 }

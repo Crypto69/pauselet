@@ -90,6 +90,10 @@ struct SettingsScreen: View {
                 }
             }
 
+            VoiceCoachSection()
+
+            AIImportSection()
+
             Section("Permissions") {
                 LabeledContent("Notifications") {
                     Text(notificationStatusText)
@@ -124,8 +128,13 @@ struct SettingsScreen: View {
                         .textSelection(.enabled)
                         .multilineTextAlignment(.trailing)
                 }
+                // Kept accurate now that AI import exists: the claim is
+                // still true of everything the app stores, and the one
+                // exception is named rather than glossed over.
                 Text("All reminders and history stay on this device. There is "
-                     + "no account, no sync, and no network code in the app.")
+                     + "no account and no sync. The only thing that ever "
+                     + "leaves is exercise text you explicitly choose to "
+                     + "interpret with AI, above.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

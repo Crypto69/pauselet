@@ -60,6 +60,45 @@ time-sensitive notifications automatically.
   (`recordExternalFire`), absorbs anything stale (`absorbBacklogFromDowntime`),
   and re-schedules.
 
+## Exercise reminders
+
+An Exercise reminder carries a list of exercises rather than a message alone,
+and iOS is at parity with the Mac on all of it:
+
+- **Editing** — all six fields (name, instructions, sets, reps, hold, and both
+  rests) via the shared `ExerciseRowEditor`, plus swipe-to-delete and
+  drag-to-reorder.
+- **Import from text** — paste what a physiotherapist wrote, press **Read
+  Text**, correct anything the parser got wrong in the preview rows, then
+  **Add**. The parser is `ExerciseImporter` in the shared core, so a paragraph
+  produces the same rows here as it does on the Mac. Nothing is added until you
+  confirm.
+- **AI import** *(optional)* — with an OpenAI key in Settings › Exercise
+  Import, **Interpret with AI** handles wording the local parser cannot. The
+  key lives in the keychain (`ThisDeviceOnly`, so it never syncs to iCloud),
+  never in `data.json`. With no key stored the app makes no network requests at
+  all, and the AI result still goes through the same preview.
+- **The guided voice coach** — an exercise with a hold time is coached rather
+  than ticked: Start runs the shared `ExerciseSession` timeline, a ring counts
+  the current hold or rest down, and with the voice on each phase is spoken
+  before it is timed. Untimed exercises keep a plain tick box.
+
+Two iOS-specific behaviours in the coach, both deliberate:
+
+- **Audio session** — cues use `.playback` with `.duckOthers`, so they drop
+  music rather than stopping it, and are audible on Silent. The Ring/Silent
+  switch is ignored for the same reason the critical tier ignores it.
+- **Backgrounding pauses the session.** Leaving the app — including locking
+  the screen — pauses a running hold instead of letting it complete unseen,
+  mirroring the Mac's pause-on-sleep. Coaching someone through a hold they
+  cannot see is worse than waiting for them, so there is no background-audio
+  mode.
+
+**Not on iOS:** the Mac's Spotify integration. Music is a desk feature driven
+by AppleScript, which has no iOS equivalent; a phone already has a music app a
+tap away. `Music.swift` still round-trips the per-reminder choice, so a file
+written on a Mac keeps its music settings when opened here.
+
 ## Targets
 
 | Target | What it is |

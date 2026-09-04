@@ -3,6 +3,7 @@ import Combine
 import BackgroundTasks
 import UserNotifications
 import ReminderCore
+import ReminderAI
 
 /// Owns the engine and every iOS delivery surface, and keeps the two worlds —
 /// the live in-app engine and the system's pre-scheduled notifications and
@@ -23,6 +24,13 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     let engine: ReminderEngine
     let notifications: NotificationScheduler
     let alarms: CriticalAlarmController
+    /// The one speech synthesizer in the app, so the coach and the Settings
+    /// Test button share a voice path — and so a cue is never spoken twice.
+    let speech: SpeechCoach
+    /// The API key and any interpretation in flight. Optional at runtime: with
+    /// no key stored the importer uses the local parser and the app makes no
+    /// network requests at all.
+    let ai: AIImportController
 
     // MARK: - In-app surfaces
 
@@ -76,7 +84,10 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
         self.engine = engine
         self.notifications = NotificationScheduler(engine: engine)
         self.alarms = CriticalAlarmController(engine: engine)
+        self.speech = SpeechCoach()
+        self.ai = AIImportController()
         super.init()
+        ai.model = AIImportModel.resolve(engine.settings.aiImportModel)
         engine.setPresenter(self)
         notifications.model = self
         alarms.model = self

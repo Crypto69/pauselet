@@ -34,6 +34,11 @@ targets:
         product: ReminderCore
       - package: Reminder
         product: ReminderUI
+      # The only network path in the app, and the keychain store the API key
+      # lives in. Optional at runtime: with no key stored the importer uses the
+      # local parser and nothing leaves the phone.
+      - package: Reminder
+        product: ReminderAI
       - target: PauseletWidgets
     info:
       path: PauseletiOS/Info.plist
@@ -105,6 +110,8 @@ targets:
         product: ReminderCore
       - package: Reminder
         product: ReminderUI
+      - package: Reminder
+        product: ReminderAI
 
   PauseletUITests:
     type: bundle.ui-testing
@@ -124,6 +131,14 @@ schemes:
     test:
       config: Debug
       gatherCoverageData: false
+      # `ScreenshotCaptureTests` skips itself unless this is 1, so ordinary
+      # runs stay fast. It is declared here because an override passed as
+      # `xcodebuild ... TEST_RUNNER_CAPTURE_SCREENSHOTS=1` only reaches the UI
+      # test runner's environment when the key already exists in the scheme.
+      environmentVariables:
+        - variable: CAPTURE_SCREENSHOTS
+          value: "0"
+          isEnabled: true
       targets:
         - PauseletTests
         - PauseletUITests
