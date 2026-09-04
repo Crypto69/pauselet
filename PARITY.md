@@ -4,8 +4,9 @@
 
 The macOS app gained two significant features this week — a guided **voice
 coach** for exercise reminders, and **importing exercises from pasted text**
-(parsed locally, or interpreted by OpenAI). Neither has any user-facing
-presence on iOS or Windows yet.
+(parsed locally, or interpreted by OpenAI). Neither had any user-facing
+presence on iOS or Windows when this was written. Both are now on iOS; neither
+is on Windows.
 
 This document says exactly where each port stands, what is left, and in what
 order to do it. Everything below was checked against the code, not against the
@@ -57,6 +58,8 @@ translated.
   `ExerciseOverlayRow` already accepts `coachState`, `onStart` and `onCancel`
   (`Sources/ReminderUI/ExerciseOverlayRow.swift:40-42`) — the iOS call site
   simply omits them, so wiring the coach in later needs no change to the row.
+  *(This last part proved half right: the row's API needed nothing, but its
+  layout did — see iOS-2 below.)*
 - History with adherence, quiet hours, snooze, sounds and the critical tier
   (AlarmKit) are all in place.
 
@@ -131,9 +134,23 @@ decisions this section asked for were made explicitly:
   pause-on-sleep. Deliberately *not* background audio: coaching a hold nobody
   can see is worse than waiting.
 
-`ExerciseCoachTests` (17 cases) covers the driver: suggestion, row captions,
+`ExerciseCoachTests` (16 cases) covers the driver: suggestion, row captions,
 the announcement gate freezing the clock, one-utterance-after-a-clock-jump, and
 that a backgrounded hold does not tick away.
+
+**One shared file had to change.** `ExerciseOverlayRow` reserves fixed widths
+at the row's trailing edge for the Start and Cancel pills, sized for the Mac's
+620pt overlay. A phone row is roughly a third that wide, and in what was left
+the name and summary — laid out side by side — shared the shortfall until
+"Chin tucks" broke after every character. The two now sit side by side where
+there is room and stack where there is not (`ViewThatFits`), and the pill
+widths are per-platform (Mac 68/78, iOS 58/66) with a 44pt minimum height on
+iOS so they stay tappable. The Mac keeps its original numbers behind
+`#if os(macOS)` and its snapshots render unchanged.
+
+Worth knowing before **Win-4**: this is a property of a narrow row, not of
+SwiftUI. Any coach UI that puts two pills on the same line as the exercise name
+has the same problem to solve.
 
 ### iOS-3 — AI import — ✅ **done**
 
@@ -163,7 +180,7 @@ To add it:
 and `PauseletTests`; `KeychainSecretStore` and `OpenAIExerciseInterpreter` were
 used verbatim, as predicted. The key field and model picker live in
 `Views/AIImportSettings.swift`, and `AIImportController.swift` mirrors the
-Mac's. `AIImportControllerTests` (11 cases) covers the key's life in the store
+Mac's. `AIImportControllerTests` (12 cases) covers the key's life in the store
 and proves no request is made without one.
 
 One thing this section did not anticipate: the iOS Settings screen claimed
@@ -326,11 +343,15 @@ Steps 1–2 are each a day or less. Steps 3–4 are the substantial work.
 
 - `Windows/HANDOFF.md` and `Windows/TESTING.md` both say **195** core tests;
   the actual count is **197**. `TESTING.md:254` and the CI workflow header say
-  **168**, which is staler still.
+  **168**, which is staler still. (Unchanged by the iOS work — no C# was
+  touched.)
+- For reference, the counts after iOS landed: **264** `swift test`, **304**
+  unit plus **7** UI on the iOS simulator (up from 275 unit).
 - `iOS Implementation Plan.md` at the repo root predates both new features, so
   it has no phase for either, and every box is unchecked despite the work
   having landed. Either update it or retire it — as it stands it misleads.
-  **Still outstanding.**
+  **Still outstanding**, and more misleading than before now that iOS is
+  finished.
 - ~~`iOS/README.md` never mentions the coach, import, or music.~~ **Done:** it
   now has an "Exercise reminders" section covering editing, import, AI import
   and the coach, including the two iOS-specific coach behaviours (audio session
