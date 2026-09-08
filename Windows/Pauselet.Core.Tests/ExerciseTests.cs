@@ -33,9 +33,9 @@ public class ExerciseTests
     public void GuidedExerciseSummaryAndValidation()
     {
         var chinTucks = new Exercise { Name = "Chin tucks", Sets = 3, Reps = 10, HoldSeconds = 5 };
-        Assert.True(chinTucks.IsGuided);
+        Assert.True(chinTucks.HasHold);
         Assert.Equal("3 × 10 · hold 5 s", chinTucks.Summary);
-        Assert.False(new Exercise { Name = "Squats" }.IsGuided);
+        Assert.False(new Exercise { Name = "Squats" }.HasHold);
         Assert.False(new Exercise { Name = "Squats", HoldSeconds = -1 }.IsValid);
         Assert.False(new Exercise { Name = "Squats", RestBetweenRepsSeconds = -1 }.IsValid);
         Assert.False(new Exercise { Name = "Squats", RestBetweenSetsSeconds = -1 }.IsValid);
@@ -53,6 +53,103 @@ public class ExerciseTests
         Assert.Equal(0, exercise.HoldSeconds);
         Assert.Equal(Exercise.MaxRestSeconds, exercise.RestBetweenRepsSeconds);
         Assert.Equal(30, exercise.RestBetweenSetsSeconds);
+    }
+
+    /// <summary>
+    /// A pasted "99999999999 reps" must not become a timeline with that many
+    /// phases, and an absurd count must not overflow the list row's summary.
+    /// </summary>
+    [Fact]
+    public void CountsAreClampedAndTheSummaryCannotOverflow()
+    {
+        var kept = Exercise.Normalized([
+            new Exercise { Name = "Squats", Sets = int.MaxValue, Reps = int.MaxValue },
+            new Exercise { Name = "Bridges", Sets = 3, Reps = 10 },
+        ])!;
+        Assert.Equal(Exercise.MaxSets, kept[0].Sets);
+        Assert.Equal(Exercise.MaxReps, kept[0].Reps);
+        Assert.Equal(3, kept[1].Sets);
+        Assert.Equal(10, kept[1].Reps);
+        Assert.Equal(1 + Exercise.MaxSets * Exercise.MaxReps, ExerciseTimeline.For(kept[0])!.Phases.Count);
+
+        var raw = new List<Exercise>
+        {
+            new() { Name = "A", Sets = int.MaxValue }, new() { Name = "B", Sets = int.MaxValue },
+        };
+        Assert.Equal("2 exercises · 40 sets", Exercise.SummaryOf(raw));
+    }
+
+    [Fact]
+    public void StarterSetContainsNoExerciseReminders() =>
+        Assert.All(DefaultReminders.StarterSet(), reminder => Assert.False(reminder.IsExercise));
+
+    /// <summary>Port of the Swift VoiceCoachSettingsTests: absent keys decode to the defaults.</summary>
+    [Fact]
+    public void SettingsWithoutVoiceCoachKeysDecodeToDefaults()
+    {
+        const string legacy = """
+        {
+          "schemaVersion": 1,
+          "reminders": [],
+          "settings": {
+            "quietHours": {
+              "isEnabled": false, "startHour": 22, "startMinute": 0,
+              "endHour": 7, "endMinute": 0, "allowsCritical": true
+            },
+            "isPaused": false,
+            "snoozeMinutes": 5,
+            "subtleDisplaySeconds": 8,
+            "launchAtLogin": false,
+            "showsNextReminderInMenuBar": true,
+            "soundEnabled": true
+          },
+          "events": []
+        }
+        """;
+        var settings = AppDataJson.Decode(Encoding.UTF8.GetBytes(legacy)).Settings;
+        Assert.False(settings.VoiceCoachEnabled);
+        Assert.Null(settings.VoiceCoachVoiceIdentifier);
+        Assert.Equal(45, settings.VoiceCoachRate);
+    }
+
+    /// <summary>The voice identifier is on disk only when one was chosen.</summary>
+    [Fact]
+    public void VoiceIdentifierRoundTripsAndIsOmittedWhenNull()
+    {
+        var silent = Encoding.UTF8.GetString(AppDataJson.Encode(new AppData()));
+        Assert.Contains("\"voiceCoachEnabled\" : false", silent);
+        Assert.Contains("\"voiceCoachRate\" : 45", silent);
+        Assert.DoesNotContain("voiceCoachVoiceIdentifier", silent);
+
+        var chosen = new Settings
+        {
+            VoiceCoachEnabled = true, VoiceCoachVoiceIdentifier = "Microsoft Zira Desktop",
+        };
+        var bytes = AppDataJson.Encode(new AppData { Settings = chosen });
+        Assert.Contains("\"voiceCoachVoiceIdentifier\" : \"Microsoft Zira Desktop\"", Encoding.UTF8.GetString(bytes));
+        Assert.Equal(chosen, AppDataJson.Decode(bytes).Settings);
+    }
+
+    /// <summary>Port of the Swift testRestBetweenExercisesIsStoredOnlyWhenSet.</summary>
+    [Fact]
+    public void RestBetweenExercisesIsStoredOnlyWhenSet()
+    {
+        var reminder = new Reminder
+        {
+            Title = "Physio", Schedule = new Schedule.Interval(60),
+            Exercises = [new Exercise { Name = "Squats" }, new Exercise { Name = "Bridges" }],
+        };
+        var without = System.Text.Encoding.UTF8.GetString(
+            AppDataJson.Encode(new AppData { Reminders = [reminder] }));
+        Assert.DoesNotContain("restBetweenExercisesSeconds", without);
+        Assert.Null(AppDataJson.Decode(System.Text.Encoding.UTF8.GetBytes(without))
+            .Reminders[0].RestBetweenExercisesSeconds);
+
+        var withRest = reminder with { RestBetweenExercisesSeconds = 30 };
+        var bytes = AppDataJson.Encode(new AppData { Reminders = [withRest] });
+        Assert.Contains("\"restBetweenExercisesSeconds\" : 30", System.Text.Encoding.UTF8.GetString(bytes));
+        Assert.Equal(30, AppDataJson.Decode(bytes).Reminders[0].RestBetweenExercisesSeconds);
+        Assert.NotEqual(reminder, withRest);
     }
 
     [Fact]
@@ -147,6 +244,47 @@ public class ExerciseTests
     /// the engine reacts to a decode failure by falling back to the starter
     /// set, which would silently wipe every reminder the user has.
     /// </summary>
+    /// <summary>
+    /// A hand-edited <c>"music": null</c> loads as no music, as it does on the
+    /// Mac, rather than being treated as a corrupt file.
+    /// </summary>
+    [Fact]
+    public void ANullMusicKeyDecodesAsNoMusic()
+    {
+        const string json = """
+        {
+          "schemaVersion": 1,
+          "reminders": [{
+            "id": "9E1B4A2C-1F3D-4B5E-8A7C-0D2E3F4A5B6C",
+            "title": "Tilt Back",
+            "message": "",
+            "schedule": { "interval": { "minutes": 60 } },
+            "priority": "normal",
+            "isEnabled": true,
+            "symbolName": "bell",
+            "music": null,
+            "createdAt": 1700000000
+          }],
+          "settings": {
+            "quietHours": {
+              "isEnabled": false, "startHour": 22, "startMinute": 0,
+              "endHour": 7, "endMinute": 0, "allowsCritical": true
+            },
+            "isPaused": false,
+            "snoozeMinutes": 5,
+            "subtleDisplaySeconds": 8,
+            "launchAtLogin": false,
+            "showsNextReminderInMenuBar": true,
+            "soundEnabled": true
+          },
+          "events": []
+        }
+        """;
+
+        var data = AppDataJson.Decode(Encoding.UTF8.GetBytes(json));
+        Assert.Equal(MusicChoice.None, Assert.Single(data.Reminders).Music);
+    }
+
     [Fact]
     public void DataWrittenBeforeExercisesExistedStillDecodes()
     {

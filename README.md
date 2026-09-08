@@ -97,7 +97,8 @@ mid-stretch:
 |---|---|
 | **Return** | Mark it done |
 | **S** | Snooze |
-| **1–9** | Tick an exercise off, or start the coach on that row |
+| **1–9** | Start the coach on that row |
+| **A** | Start all: run every exercise still to do, in order |
 | **Space** | Start or pause the voice coach |
 | **N** | Next |
 | **X** | Stop the coach |
@@ -107,13 +108,17 @@ The on-screen hint changes to match what the current overlay can actually do.
 ## Exercise reminders
 
 An exercise reminder carries a list of exercises rather than a single message.
-When it fires it takes over the screen and lists the programme with a tick box
-for each exercise, so the whole thing is in front of you while you work
-through it, with a running "3 of 5 done" count.
+When it fires it takes over the screen and lists the programme with Start and
+Cancel on each exercise, so the whole thing is in front of you while you work
+through it, with a running "3 of 5 done" count. **Start All** runs every
+exercise still to do in order, with a rest between them that you set in the
+editor, so a whole programme needs one press rather than one per exercise.
 
 Each exercise has a name, optional instructions, sets and reps, and — when the
 movement is held rather than repeated — a hold time and rest periods between
-reps and between sets.
+reps and between sets. Sets default to one; say "3 sets" when you mean more.
+Exercises can be reordered in the editor with the arrows beside each row (drag
+to reorder on iOS).
 
 ### Adding exercises by pasting text
 
@@ -162,17 +167,21 @@ costs well under a tenth of a cent either way.
 
 ### The voice coach
 
-An exercise with a hold time can be coached rather than just listed. Press
-start on the takeover and Pauselet walks you through the programme set by set
-and rep by rep, speaking each cue aloud so you can keep your eyes off the
+Every exercise can be coached rather than just listed. Press Start on a row
+(or Start All for the whole programme) and Pauselet walks you through it set by
+set and rep by rep, speaking each cue aloud so you can keep your eyes off the
 screen and your form intact:
 
 > "Set 1, rep 1. Hold for 5 seconds." … "Three. Two. One." … "Rest." …
 > "Exercise complete."
 
-There is a short lead-in before the first rep, a spoken countdown inside holds
-long enough to warrant one, and rests announced between reps and between sets.
-Pause, resume, or skip at any point with Space, N and X.
+A movement with a hold time has each rep counted down; one without is paced at
+three seconds a rep, counted aloud, so it runs through on its own. There is a
+short lead-in before the first rep, a spoken countdown inside holds long enough
+to warrant one, and rests announced between reps, between sets, and — when
+running all — between exercises ("Pelvic tilts complete. Rest for 30 seconds.
+Next, Chin tucks."). Pause, resume, or skip at any point with Space, N and X;
+cancelling the exercise being coached moves straight on to the next.
 
 The clock follows real time rather than counting ticks, so a hold is not
 shortened if the machine stalls, and the timer freezes while a cue is spoken so
@@ -182,7 +191,7 @@ mark each phase change and the end of an exercise, following the global sound
 setting.
 
 On a multi-display setup the takeover appears on every screen but the coach is
-shared, so cues are spoken once and ticking a row shows up everywhere.
+shared, so cues are spoken once and a finished exercise shows up everywhere.
 
 The coach is off by default — a talking computer should be a choice. Turn it on
 in **Settings → Preferences → Voice Coach**, where you can pick any installed

@@ -154,6 +154,11 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// empty array read from disk is kept as-is so the file re-encodes
     /// byte-identically.
     public var exercises: [Exercise]?
+    /// Seconds of rest between one exercise finishing and the next one
+    /// starting when the takeover runs the whole list in sequence. `nil`
+    /// means none; only meaningful on an exercise reminder, and never stored
+    /// as 0 — the editor collapses that to `nil`.
+    public var restBetweenExercisesSeconds: Int?
     /// When the reminder last fired. Drives interval scheduling.
     public var lastFiredAt: Date?
     /// When the reminder was last acknowledged (completed or dismissed).
@@ -175,6 +180,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         displaySeconds: Int? = nil,
         music: MusicChoice = .none,
         exercises: [Exercise]? = nil,
+        restBetweenExercisesSeconds: Int? = nil,
         lastFiredAt: Date? = nil,
         lastAcknowledgedAt: Date? = nil,
         snoozedUntil: Date? = nil,
@@ -192,10 +198,28 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.displaySeconds = displaySeconds
         self.music = music
         self.exercises = exercises
+        self.restBetweenExercisesSeconds = restBetweenExercisesSeconds
         self.lastFiredAt = lastFiredAt
         self.lastAcknowledgedAt = lastAcknowledgedAt
         self.snoozedUntil = snoozedUntil
         self.createdAt = createdAt
+    }
+
+    /// `edited` with this reminder's runtime state kept: what the engine
+    /// stamps (`lastFiredAt`, `lastAcknowledgedAt`, `snoozedUntil`), the
+    /// enabled switch, and `createdAt`. An editor composes its result from the
+    /// copy it opened with; while it was open the engine may have fired,
+    /// snoozed or acknowledged the reminder, and saving must not rewind that
+    /// — the reminder would fire again on the next tick.
+    public func applyingEdits(from edited: Reminder) -> Reminder {
+        var copy = edited
+        copy.id = id
+        copy.isEnabled = isEnabled
+        copy.lastFiredAt = lastFiredAt
+        copy.lastAcknowledgedAt = lastAcknowledgedAt
+        copy.snoozedUntil = snoozedUntil
+        copy.createdAt = createdAt
+        return copy
     }
 
     /// Decodes `music` and `exercises` as optional so a data file written
@@ -221,6 +245,9 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         displaySeconds = try container.decodeIfPresent(Int.self, forKey: .displaySeconds)
         music = try container.decodeIfPresent(MusicChoice.self, forKey: .music) ?? .none
         exercises = try container.decodeIfPresent([Exercise].self, forKey: .exercises)
+        restBetweenExercisesSeconds = try container.decodeIfPresent(
+            Int.self, forKey: .restBetweenExercisesSeconds
+        )
         lastFiredAt = try container.decodeIfPresent(Date.self, forKey: .lastFiredAt)
         lastAcknowledgedAt = try container.decodeIfPresent(
             Date.self, forKey: .lastAcknowledgedAt
@@ -291,9 +318,15 @@ public struct QuietHours: Codable, Equatable, Sendable {
     /// True when `date` falls inside the quiet window. Handles windows that
     /// wrap past midnight (e.g. 22:00 → 07:00).
     public func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
-        guard isEnabled else { return false }
         let comps = calendar.dateComponents([.hour, .minute], from: date)
         guard let hour = comps.hour, let minute = comps.minute else { return false }
+        return covers(hour: hour, minute: minute)
+    }
+
+    /// True when a wall-clock time of day falls inside the quiet window —
+    /// what a daily or weekly reminder at that time would hit every day.
+    public func covers(hour: Int, minute: Int) -> Bool {
+        guard isEnabled else { return false }
         let now = hour * 60 + minute
         let start = startHour * 60 + startMinute
         let end = endHour * 60 + endMinute

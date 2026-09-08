@@ -266,7 +266,7 @@ public sealed class OpenAIExerciseInterpreter : IExerciseInterpreter
 
         Rules:
         - Extract only what the text states. Never invent or infer timings.
-        - When a value is not stated use these defaults: sets 3, reps 10, holdSeconds 0, restBetweenRepsSeconds 0, restBetweenSetsSeconds 0.
+        - When a value is not stated use these defaults: sets 1, reps 10, holdSeconds 0, restBetweenRepsSeconds 0, restBetweenSetsSeconds 0.
         - All durations are in whole seconds. Convert minutes.
         - "name" is a short exercise name, without counts or timings.
         - "instructions" is any remaining guidance on how to perform it, verbatim where possible, or an empty string.
@@ -347,14 +347,18 @@ public sealed class OpenAIExerciseInterpreter : IExerciseInterpreter
             }
             foreach (var item in output.EnumerateArray())
             {
-                if (!item.TryGetProperty("content", out var contents)
+                // TryGetProperty throws on anything but an object; a reply
+                // with the wrong shape is unreadable, not a crash.
+                if (item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("content", out var contents)
                     || contents.ValueKind != JsonValueKind.Array)
                 {
                     continue;
                 }
                 foreach (var content in contents.EnumerateArray())
                 {
-                    if (content.TryGetProperty("text", out var value)
+                    if (content.ValueKind == JsonValueKind.Object
+                        && content.TryGetProperty("text", out var value)
                         && value.ValueKind == JsonValueKind.String
                         && value.GetString() is { Length: > 0 } found)
                     {
@@ -407,7 +411,7 @@ public sealed class OpenAIExerciseInterpreter : IExerciseInterpreter
                 {
                     Name = name.GetString() ?? "",
                     Instructions = Text(row, "instructions") ?? "",
-                    Sets = Integer(row, "sets") ?? 3,
+                    Sets = Integer(row, "sets") ?? 1,
                     Reps = Integer(row, "reps") ?? 10,
                     HoldSeconds = Integer(row, "holdSeconds") ?? 0,
                     RestBetweenRepsSeconds = Integer(row, "restBetweenRepsSeconds") ?? 0,
@@ -433,7 +437,13 @@ public sealed class OpenAIExerciseInterpreter : IExerciseInterpreter
         return value.ValueKind switch
         {
             JsonValueKind.Number when value.TryGetInt32(out var number) => number,
-            JsonValueKind.Number when value.TryGetDouble(out var real) => (int)real,
+            // An unchecked cast of 1e23 is garbage; clamp to the range
+            // Exercise.Normalized will then bring into bounds.
+            JsonValueKind.Number when value.TryGetDouble(out var real) =>
+                double.IsNaN(real) ? null
+                : real >= int.MaxValue ? int.MaxValue
+                : real <= int.MinValue ? int.MinValue
+                : (int)real,
             JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
             _ => null,
         };

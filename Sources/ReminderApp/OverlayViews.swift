@@ -8,42 +8,45 @@ import ReminderUI
 /// Design intent: this interrupts someone who is concentrating, so it should be
 /// calm rather than alarming — dark, soft, and unhurried. For a reminder with an
 /// activity duration it runs a countdown, which turns "stop working" into a
-/// concrete, finite thing to do. An exercise reminder lists its exercises with
-/// a tick box each, between the title and the buttons; a guided exercise can
-/// be coached set by set from there, with the countdown in a panel where the
-/// activity ring would be.
+/// concrete, finite thing to do. An exercise reminder lists its exercises
+/// between the title and the buttons; any of them can be coached set by set
+/// from there, or all of them in sequence, with the countdown in a panel
+/// where the activity ring would be.
 struct CriticalOverlayView: View {
     let reminder: Reminder
-    /// Shared by every display's copy of this view: ticks, the running
-    /// session and its clock live there, so the displays agree and the cues
-    /// are spoken once.
+    /// Shared by every display's copy of this view: what is done, the
+    /// running session and its clock live there, so the displays agree and
+    /// the cues are spoken once.
     @ObservedObject var coach: ExerciseCoach
     let onComplete: () -> Void
     let onSnooze: () -> Void
 
-    @State private var remaining: Int
-    @State private var hasStarted = false
+    /// The activity timer, shared like the coach so every display shows the
+    /// same seconds and the finishing chime plays once.
+    @ObservedObject var countdown: ActivityCountdown
     @State private var appeared = false
 
+    /// - Parameter countdown: `nil` (snapshots) gets a silent countdown of
+    ///   this view's own.
     init(
         reminder: Reminder,
         coach: ExerciseCoach,
+        countdown: ActivityCountdown? = nil,
         onComplete: @escaping () -> Void,
         onSnooze: @escaping () -> Void
     ) {
         self.reminder = reminder
         self.coach = coach
+        self.countdown = countdown ?? ActivityCountdown(
+            seconds: reminder.activityDurationSeconds ?? 0, playsChime: false
+        )
         self.onComplete = onComplete
         self.onSnooze = onSnooze
-        _remaining = State(initialValue: reminder.activityDurationSeconds ?? 0)
     }
 
-    private var hasCountdown: Bool { (reminder.activityDurationSeconds ?? 0) > 0 }
+    private var hasCountdown: Bool { countdown.isAvailable }
 
-    private var progress: Double {
-        guard let total = reminder.activityDurationSeconds, total > 0 else { return 0 }
-        return 1 - (Double(remaining) / Double(total))
-    }
+    private var progress: Double { countdown.progress }
 
     var body: some View {
         ZStack {
@@ -88,13 +91,13 @@ struct CriticalOverlayView: View {
                     if hasCountdown {
                         // The activity timer keeps running behind the coach;
                         // one line keeps it honest without two rings.
-                        Text("Timer · \(timeString(remaining)) \(remaining > 0 ? "remaining" : "complete")")
+                        Text("Timer · \(timeString(countdown.remaining)) \(countdown.remaining > 0 ? "remaining" : "complete")")
                             .font(.system(size: 12))
                             .monospacedDigit()
                             .foregroundStyle(.white.opacity(0.5))
                     }
                 } else if hasCountdown {
-                    countdown
+                    countdownRing
                 }
 
                 if coach.session == nil, coach.suggestedExerciseID != nil {
@@ -109,6 +112,18 @@ struct CriticalOverlayView: View {
                 }
 
                 HStack(spacing: 14) {
+                    if coach.session == nil, coach.canStartAll {
+                        // Runs every exercise still to do, in order, with the
+                        // reminder's rest between them.
+                        Button(action: coach.startAll) {
+                            Text("Start All")
+                                .frame(minWidth: 108)
+                                .padding(.vertical, 11)
+                        }
+                        .buttonStyle(OverlayButtonStyle(kind: .secondary))
+                        .keyboardShortcut("a", modifiers: [])
+                    }
+
                     Button(action: onSnooze) {
                         Text("Snooze")
                             .frame(minWidth: 108)
@@ -118,7 +133,7 @@ struct CriticalOverlayView: View {
                     .keyboardShortcut("s", modifiers: [])
 
                     Button(action: onComplete) {
-                        Text(hasCountdown && hasStarted && remaining > 0 ? "Finish Early" : "Done")
+                        Text(countdown.hasStarted && countdown.remaining > 0 ? "Finish Early" : "Done")
                             .frame(minWidth: 108)
                             .padding(.vertical, 11)
                     }
@@ -137,19 +152,11 @@ struct CriticalOverlayView: View {
         }
         .onAppear {
             withAnimation(.easeOut(duration: 0.45)) { appeared = true }
-            if hasCountdown { hasStarted = true }
-        }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            guard hasCountdown, hasStarted, remaining > 0 else { return }
-            remaining -= 1
-            if remaining == 0 {
-                // The activity is finished; let the user see that before it closes.
-                Sounds.play(named: "Glass")
-            }
+            countdown.start()
         }
     }
 
-    /// The exercises, with a tick each. Takes its natural height when the
+    /// The exercises, with Start and Cancel on each. Takes its natural height when the
     /// screen has room and scrolls otherwise — the siblings above and below
     /// are fixed-size, so whatever is left over is the list's. The scrolling
     /// form fades its last visible row and says so in the caption, since a
@@ -199,12 +206,9 @@ struct CriticalOverlayView: View {
     }
 
     private var keyboardHint: String {
-        if coach.hasGuidedExercises {
-            return "Return when you're done · S to snooze · 1–9 to start or tick a row · "
+        reminder.isExercise
+            ? "Return when you're done · S to snooze · A to start all · 1–9 to start a row · "
                 + "Space to start or pause the coach · N next · X stop"
-        }
-        return reminder.isExercise
-            ? "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
             : "Press Return when you're done · S to snooze"
     }
 
@@ -225,14 +229,11 @@ struct CriticalOverlayView: View {
                 let row = ExerciseOverlayRow(
                     exercise: exercise,
                     index: index,
-                    isDone: coach.completedExerciseIDs.contains(exercise.id),
                     showsIndex: index < 9,
                     coachState: coach.rowState(for: exercise.id),
                     onStart: { coach.start(exercise.id) },
                     onCancel: { coach.cancel(exercise.id) }
-                ) {
-                    coach.toggle(exercise.id)
-                }
+                )
                 if index < 9 {
                     row.keyboardShortcut(
                         KeyEquivalent(Character(String(index + 1))), modifiers: []
@@ -293,10 +294,10 @@ struct CriticalOverlayView: View {
             .opacity(isPaused ? 0.55 : 1)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(isComplete ? "Exercise complete" : (phase?.title ?? ""))
+                Text(isComplete ? session.timeline.completionTitle : (phase?.title ?? ""))
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
-                Text(session.timeline.exerciseName)
+                Text(phase?.exerciseName ?? session.timeline.entries.last?.name ?? "")
                     .font(.system(size: 15, weight: .regular, design: .rounded))
                     .foregroundStyle(.white.opacity(0.6))
 
@@ -306,6 +307,11 @@ struct CriticalOverlayView: View {
                             Button("Start Next", action: coach.startSuggested)
                                 .buttonStyle(OverlayButtonStyle(kind: .secondary))
                                 .keyboardShortcut(.space, modifiers: [])
+                        }
+                        if coach.canStartAll {
+                            Button("Start All", action: coach.startAll)
+                                .buttonStyle(OverlayButtonStyle(kind: .secondary))
+                                .keyboardShortcut("a", modifiers: [])
                         }
                     } else {
                         Button(isPaused ? "Resume" : "Pause", action: coach.togglePause)
@@ -337,7 +343,7 @@ struct CriticalOverlayView: View {
         )
     }
 
-    private var countdown: some View {
+    private var countdownRing: some View {
         VStack(spacing: 16) {
             ZStack {
                 Circle()
@@ -352,11 +358,11 @@ struct CriticalOverlayView: View {
                     .animation(.linear(duration: 1), value: progress)
 
                 VStack(spacing: 2) {
-                    Text(timeString(remaining))
+                    Text(timeString(countdown.remaining))
                         .font(.system(size: 40, weight: .medium, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(.white)
-                    Text(remaining > 0 ? "remaining" : "complete")
+                    Text(countdown.remaining > 0 ? "remaining" : "complete")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.5))
                 }

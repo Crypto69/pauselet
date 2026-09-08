@@ -156,6 +156,16 @@ questions are substantially answered.
     inline and offered **no interval presets at all**; it now offers the
     shared eleven. Its icon picker leads with the shared catalog and keeps the
     Windows-only extras after it.
+12. **Start all, paced reps and reordering (2026-09-07) are unseen on
+    Windows.** Every exercise is now coached (no hold = 3 s per rep, counted
+    aloud), so the overlay's rows lost their tick boxes: each is a `Border`
+    with Start/Skip pills, 1–9 starts the row, **A** starts all, and a
+    "Start all" button sits left of Snooze while nothing is running. The coach
+    panel gained a completed state (headline from `CompletionTitle`, "Start
+    next"/"Start all" in place of Pause/Skip/Stop). The editor gained ▲/▼ per
+    row and a "Rest between exercises" field shown once there are two rows.
+    Core mirrors are tested (294 green); the app compiles for `win-arm64`
+    with `EnableWindowsTargeting`; none of it has been rendered.
 
 ## VM verification session (2026-08-24, headless via prlctl)
 

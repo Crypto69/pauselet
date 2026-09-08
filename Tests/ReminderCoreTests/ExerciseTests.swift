@@ -30,10 +30,10 @@ final class ExerciseTests: XCTestCase {
         XCTAssertFalse(Exercise(name: "Squats", restBetweenSetsSeconds: -1).isValid)
     }
 
-    func testIsGuidedMeansAHoldTime() {
-        XCTAssertFalse(Exercise(name: "Squats").isGuided)
-        XCTAssertFalse(Exercise(name: "Squats", restBetweenRepsSeconds: 10).isGuided)
-        XCTAssertTrue(Exercise(name: "Chin tucks", holdSeconds: 5).isGuided)
+    func testHasHoldMeansAHoldTime() {
+        XCTAssertFalse(Exercise(name: "Squats").hasHold)
+        XCTAssertFalse(Exercise(name: "Squats", restBetweenRepsSeconds: 10).hasHold)
+        XCTAssertTrue(Exercise(name: "Chin tucks", holdSeconds: 5).hasHold)
     }
 
     func testNormalizationClampsTimingIntoRange() throws {
@@ -200,7 +200,7 @@ final class ExerciseTests: XCTestCase {
         XCTAssertEqual(exercises[0].holdSeconds, 0)
         XCTAssertEqual(exercises[0].restBetweenRepsSeconds, 0)
         XCTAssertEqual(exercises[0].restBetweenSetsSeconds, 0)
-        XCTAssertFalse(exercises[0].isGuided)
+        XCTAssertFalse(exercises[0].hasHold)
     }
 
     func testExercisesRoundTripThroughTheStore() throws {
@@ -403,5 +403,51 @@ final class ExerciseTests: XCTestCase {
             at: directory, withIntermediateDirectories: true
         )
         return directory
+    }
+
+    // MARK: - Rest between exercises
+
+    /// The rest the takeover takes between exercises when it runs them all:
+    /// on disk only when set, and absent from files written before it existed.
+    func testRestBetweenExercisesIsStoredOnlyWhenSet() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let decoder = JSONDecoder()
+
+        var reminder = Reminder(
+            title: "Physio", schedule: .interval(minutes: 60),
+            exercises: [Exercise(name: "Squats"), Exercise(name: "Bridges")]
+        )
+        let without = String(decoding: try encoder.encode(reminder), as: UTF8.self)
+        XCTAssertFalse(without.contains("restBetweenExercisesSeconds"))
+        XCTAssertNil(try decoder.decode(Reminder.self, from: Data(without.utf8))
+            .restBetweenExercisesSeconds)
+
+        reminder.restBetweenExercisesSeconds = 30
+        let with = try encoder.encode(reminder)
+        XCTAssertTrue(String(decoding: with, as: UTF8.self)
+            .contains("\"restBetweenExercisesSeconds\":30"))
+        XCTAssertEqual(try decoder.decode(Reminder.self, from: with).restBetweenExercisesSeconds, 30)
+    }
+
+    /// A pasted "99999999999 reps" must not become a timeline with that many
+    /// phases, and an absurd count in a hand-edited file must not trap the
+    /// list row's summary.
+    func testCountsAreClampedAndTheSummaryCannotOverflow() throws {
+        let kept = try XCTUnwrap(Exercise.normalized([
+            Exercise(name: "Squats", sets: Int.max, reps: 99_999_999_999),
+            Exercise(name: "Bridges", sets: 3, reps: 10),
+        ]))
+        XCTAssertEqual(kept[0].sets, Exercise.setsRange.upperBound)
+        XCTAssertEqual(kept[0].reps, Exercise.repsRange.upperBound)
+        XCTAssertEqual(kept[1].sets, 3)
+        XCTAssertEqual(kept[1].reps, 10)
+        XCTAssertEqual(
+            ExerciseTimeline(exercise: kept[0])?.phases.count,
+            1 + Exercise.setsRange.upperBound * Exercise.repsRange.upperBound
+        )
+
+        let raw = [Exercise(name: "A", sets: Int.max), Exercise(name: "B", sets: Int.max)]
+        XCTAssertEqual(Exercise.summary(of: raw), "2 exercises · 40 sets")
     }
 }

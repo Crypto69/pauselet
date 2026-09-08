@@ -56,6 +56,14 @@ final class OverlayPanel: NSPanel {
 final class OverlayPresenter: NSObject, ReminderPresenting {
     /// Critical overlays, one per display so the prompt cannot be missed.
     private var criticalPanels: [OverlayPanel] = []
+    /// One clock and one chime for the takeover's activity timer, shared by
+    /// every display's panel.
+    private var criticalCountdown: ActivityCountdown?
+    /// What the panels currently show, so a display change can re-cover the
+    /// new set of screens around the same coach and countdown.
+    private var criticalDisplay:
+        (reminder: Reminder, settings: ReminderCore.Settings, isPreview: Bool)?
+    private var screenObserver: NSObjectProtocol?
     private var criticalQueue:
         [(reminder: Reminder, settings: ReminderCore.Settings, queuedAt: Date)] = []
     /// Whether this app was active before the takeover activated it, so focus
@@ -64,7 +72,8 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
     private var subtlePanel: OverlayPanel?
     private var subtleQueue: [(
-        reminder: Reminder, settings: ReminderCore.Settings, minimumSeconds: Int
+        reminder: Reminder, settings: ReminderCore.Settings, minimumSeconds: Int,
+        startsMusic: Bool
     )] = []
     private var subtleDismissTask: Task<Void, Never>?
 
@@ -88,20 +97,35 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         // the card's 8-second lifetime — it gets a sticky minimum instead.
         notifier.fallbackPresenter = { [weak self] reminder, settings in
             let minimum = reminder.priority >= .important ? 60 : 0
-            self?.showSubtle(reminder, settings: settings, minimumSeconds: minimum)
+            // Its music started when the notification was posted.
+            self?.showSubtle(
+                reminder, settings: settings, minimumSeconds: minimum, startsMusic: false
+            )
+        }
+        // Displays come and go mid-takeover: a lid closes, a monitor is
+        // unplugged. Without this an orphaned panel is relocated by AppKit
+        // onto the wrong screen at the wrong size, or a new display is left
+        // uncovered.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.relayoutCritical() }
         }
     }
 
     func present(_ reminder: Reminder, settings: ReminderCore.Settings) {
         // Music is independent of the tier: a subtle nudge can start a playlist
         // just as a critical takeover can. It runs on a background queue, so
-        // the launch wait never delays the surface appearing below.
-        music.play(for: reminder, settings: settings)
-
+        // the launch wait never delays the surface appearing below. It starts
+        // when the reminder actually reaches the screen: one that queues
+        // behind a takeover already up must not restart the playlist now and
+        // then appear in silence later.
         switch reminder.priority {
         case .subtle:
             showSubtle(reminder, settings: settings)
         case .normal, .important:
+            music.play(for: reminder, settings: settings)
             notifier.post(reminder, settings: settings)
         case .critical:
             showCritical(reminder, settings: settings)
@@ -180,18 +204,49 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         if settings.playsSound(for: reminder.priority) {
             Sounds.play(named: reminder.soundName ?? "Submarine")
         }
+        // A preview's music was started by `preview` itself.
+        if !isPreview { music.play(for: reminder, settings: settings) }
 
         speech.voiceIdentifier = settings.voiceCoachVoiceIdentifier
         speech.rate = settings.voiceCoachRate
         let coach = ExerciseCoach(
             exercises: reminder.exercises ?? [],
+            restBetweenExercisesSeconds: reminder.restBetweenExercisesSeconds ?? 0,
             settings: settings,
             speech: settings.voiceCoachEnabled ? speech : nil
         )
         criticalCoach = coach
+        let countdown = ActivityCountdown(
+            seconds: reminder.activityDurationSeconds ?? 0,
+            playsChime: settings.playsSound(for: .critical)
+        )
+        criticalCountdown = countdown
+        criticalDisplay = (reminder, settings, isPreview)
 
-        // One panel per screen: on a multi-display desk the user may not be
-        // looking at the main display.
+        showCriticalPanels(
+            reminder, settings: settings, coach: coach, countdown: countdown, isPreview: isPreview
+        )
+
+        // Activate and take key so the advertised Return / S shortcuts really
+        // work — a keyboard or switch user must be able to acknowledge this
+        // without a pointer. Stealing focus is acceptable here and only here:
+        // the takeover's entire purpose is to interrupt.
+        NSApp.activate(ignoringOtherApps: true)
+        let keyPanel = criticalPanels.first { $0.screen == NSScreen.main }
+            ?? criticalPanels.first
+        keyPanel?.makeKeyAndOrderFront(nil)
+    }
+
+    /// One panel per screen: on a multi-display desk the user may not be
+    /// looking at the main display. Every panel shows the same coach and
+    /// countdown.
+    private func showCriticalPanels(
+        _ reminder: Reminder,
+        settings: ReminderCore.Settings,
+        coach: ExerciseCoach,
+        countdown: ActivityCountdown,
+        isPreview: Bool
+    ) {
         for screen in NSScreen.screens {
             let panel = OverlayPanel(
                 contentRect: screen.frame, isInteractive: true, takesKeyboardFocus: true
@@ -199,6 +254,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             let view = CriticalOverlayView(
                 reminder: reminder,
                 coach: coach,
+                countdown: countdown,
                 onComplete: { [weak self] in
                     guard let self else { return }
                     if !isPreview { self.engine?.complete(id: reminder.id) }
@@ -220,12 +276,23 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             panel.orderFrontRegardless()
             criticalPanels.append(panel)
         }
+    }
 
-        // Activate and take key so the advertised Return / S shortcuts really
-        // work — a keyboard or switch user must be able to acknowledge this
-        // without a pointer. Stealing focus is acceptable here and only here:
-        // the takeover's entire purpose is to interrupt.
-        NSApp.activate(ignoringOtherApps: true)
+    /// The display set changed while a takeover is up: cover the current
+    /// screens again around the same coach and countdown. Focus is left
+    /// alone — the takeover already has it, or never did.
+    private func relayoutCritical() {
+        guard !criticalPanels.isEmpty, let current = criticalDisplay,
+              let coach = criticalCoach, let countdown = criticalCountdown
+        else { return }
+        for panel in criticalPanels {
+            panel.orderOut(nil)
+        }
+        criticalPanels.removeAll()
+        showCriticalPanels(
+            current.reminder, settings: current.settings,
+            coach: coach, countdown: countdown, isPreview: current.isPreview
+        )
         let keyPanel = criticalPanels.first { $0.screen == NSScreen.main }
             ?? criticalPanels.first
         keyPanel?.makeKeyAndOrderFront(nil)
@@ -270,6 +337,9 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         // the takeover would be the app talking to an empty screen.
         criticalCoach?.shutDown()
         criticalCoach = nil
+        criticalCountdown?.stop()
+        criticalCountdown = nil
+        criticalDisplay = nil
         for panel in criticalPanels {
             panel.orderOut(nil)
         }
@@ -284,11 +354,14 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
     // MARK: - Subtle hint
 
+    /// - Parameter startsMusic: Off for a notification-tier reminder that fell
+    ///   back to the card, whose music started when it was posted.
     fileprivate func showSubtle(
         _ reminder: Reminder,
         settings: ReminderCore.Settings,
         isPreview: Bool = false,
-        minimumSeconds: Int = 0
+        minimumSeconds: Int = 0,
+        startsMusic: Bool = true
     ) {
         if subtlePanel != nil {
             if isPreview {
@@ -298,13 +371,13 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
                 // current card is acknowledged or times out — after a wake
                 // from sleep several subtle reminders land on the same tick,
                 // and replacing would silently lose all but the last.
-                subtleQueue.append((reminder, settings, minimumSeconds))
+                subtleQueue.append((reminder, settings, minimumSeconds, startsMusic))
                 return
             }
         }
         displaySubtle(
             reminder, settings: settings,
-            isPreview: isPreview, minimumSeconds: minimumSeconds
+            isPreview: isPreview, minimumSeconds: minimumSeconds, startsMusic: startsMusic
         )
     }
 
@@ -312,9 +385,12 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         _ reminder: Reminder,
         settings: ReminderCore.Settings,
         isPreview: Bool,
-        minimumSeconds: Int
+        minimumSeconds: Int,
+        startsMusic: Bool
     ) {
         guard let screen = NSScreen.main else { return }
+        // A preview's music was started by `preview` itself.
+        if !isPreview, startsMusic { music.play(for: reminder, settings: settings) }
 
         let view = SubtleHintView(reminder: reminder) { [weak self] in
             guard let self else { return }
@@ -372,7 +448,8 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             subtleQueue.removeFirst()
             displaySubtle(
                 next.reminder, settings: next.settings,
-                isPreview: false, minimumSeconds: next.minimumSeconds
+                isPreview: false, minimumSeconds: next.minimumSeconds,
+                startsMusic: next.startsMusic
             )
         }
     }

@@ -18,6 +18,8 @@ struct ReminderEditor: View {
 
     private let existing: Reminder?
     private let onSave: (Reminder) -> Void
+    /// For the quiet-hours warning under a daily or weekly time.
+    private let settings: ReminderCore.Settings
 
     @State private var title: String
     @State private var message: String
@@ -37,6 +39,7 @@ struct ReminderEditor: View {
     @State private var music: MusicChoice
     @State private var type: ReminderType
     @State private var exercises: [Exercise]
+    @State private var restBetweenExercisesSeconds: Int
 
     enum ReminderType: String, CaseIterable, Identifiable {
         case standard, exercise
@@ -63,8 +66,13 @@ struct ReminderEditor: View {
         }
     }
 
-    init(reminder: Reminder?, onSave: @escaping (Reminder) -> Void) {
+    init(
+        reminder: Reminder?,
+        settings: ReminderCore.Settings = ReminderCore.Settings(),
+        onSave: @escaping (Reminder) -> Void
+    ) {
         self.existing = reminder
+        self.settings = settings
         self.onSave = onSave
 
         _title = State(initialValue: reminder?.title ?? "")
@@ -77,6 +85,9 @@ struct ReminderEditor: View {
         _music = State(initialValue: reminder?.music ?? .none)
         _type = State(initialValue: reminder?.isExercise == true ? .exercise : .standard)
         _exercises = State(initialValue: reminder?.exercises ?? [])
+        _restBetweenExercisesSeconds = State(
+            initialValue: reminder?.restBetweenExercisesSeconds ?? 0
+        )
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
@@ -174,7 +185,10 @@ struct ReminderEditor: View {
                     }
 
                     if type == .exercise {
-                        ExerciseListSection(exercises: $exercises)
+                        ExerciseListSection(
+                            exercises: $exercises,
+                            restBetweenExercisesSeconds: $restBetweenExercisesSeconds
+                        )
                     }
 
                     Section("Schedule") {
@@ -211,6 +225,11 @@ struct ReminderEditor: View {
                         Text(composedSchedule.summary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if let warning = quietHoursWarning {
+                            Label(warning, systemImage: "moon.zzz")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     }
 
                     Section("Importance") {
@@ -402,10 +421,32 @@ struct ReminderEditor: View {
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
         reminder.music = normalizedMusic
         reminder.exercises = normalizedExercises
+        // A rest only exists between exercises: stored as nil for an ordinary
+        // reminder, for none, and for a single exercise (the field is hidden
+        // then, so a stale value must not be saved behind the user's back).
+        reminder.restBetweenExercisesSeconds =
+            (normalizedExercises?.count ?? 0) > 1 && restBetweenExercisesSeconds > 0
+                ? min(restBetweenExercisesSeconds, Exercise.restRange.upperBound)
+                : nil
         reminder.activityDurationSeconds = hasActivityDuration
             ? activityMinutes * 60
             : nil
         return reminder
+    }
+
+    /// A daily or weekly time inside quiet hours is skipped every time it
+    /// comes round; better said here than discovered from a silent history.
+    private var quietHoursWarning: String? {
+        guard scheduleKind != .interval,
+              Scheduler.wallClockTimeIsSilenced(
+                hour: timeHour, minute: timeMinute, priority: effectivePriority, settings: settings
+              )
+        else { return nil }
+        let quiet = settings.quietHours
+        return String(
+            format: "Falls inside quiet hours (%02d:%02d–%02d:%02d), so it will be skipped.",
+            quiet.startHour, quiet.startMinute, quiet.endHour, quiet.endMinute
+        )
     }
 
     private func save() {

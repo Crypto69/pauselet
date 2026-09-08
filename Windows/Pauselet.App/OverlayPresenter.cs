@@ -78,6 +78,9 @@ internal sealed class OverlayPresenter : IReminderPresenting
     {
         _criticalQueue.Clear();
         _subtleQueue.Clear();
+        // The coach goes with the takeover; left running it would keep
+        // speaking and chiming with nothing on screen.
+        ShutDownCoach();
         CloseCriticalWindows();
         CloseSubtleCard();
     }
@@ -221,6 +224,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
             _criticalWindows.Add(window);
             window.Show();
         }
+        _criticalWindows.FirstOrDefault(w => w.IsPrimaryScreen)?.TryActivate();
     }
 
     /// <summary>
@@ -271,8 +275,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
 
     /// <summary>
     /// The coach for an exercise takeover, or <c>null</c> for an ordinary one.
-    /// The voice is attached only when the setting is on and the exercises
-    /// include a guided one, so a list of plain tick boxes never talks.
+    /// The voice is attached only when the setting is on.
     /// </summary>
     private static ExerciseCoach? BuildCoach(Reminder reminder, Core.Settings settings)
     {
@@ -280,19 +283,28 @@ internal sealed class OverlayPresenter : IReminderPresenting
         {
             return null;
         }
-        var wantsVoice = settings.VoiceCoachEnabled
-            && exercises.Any(exercise => exercise.IsGuided);
         ISpeechCoaching? speech = null;
-        if (wantsVoice)
+        if (settings.VoiceCoachEnabled)
         {
-            var coachVoice = new SpeechCoach
+            try
             {
-                VoiceIdentifier = settings.VoiceCoachVoiceIdentifier,
-                Rate = settings.VoiceCoachRate,
-            };
-            speech = coachVoice;
+                speech = new SpeechCoach
+                {
+                    VoiceIdentifier = settings.VoiceCoachVoiceIdentifier,
+                    Rate = settings.VoiceCoachRate,
+                };
+            }
+            catch (Exception exception)
+            {
+                // No audio endpoint, or a broken speech stack: a silent coach
+                // is the right fallback. Letting this escape would abort the
+                // takeover after the engine had already stamped the fire.
+                Log.Error("voice coach unavailable", exception);
+                speech = null;
+            }
         }
-        return new ExerciseCoach(exercises, settings, speech);
+        return new ExerciseCoach(
+            exercises, reminder.RestBetweenExercisesSeconds ?? 0, settings, speech);
     }
 
     /// <summary>

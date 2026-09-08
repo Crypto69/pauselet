@@ -273,6 +273,136 @@ public class SpacingPreservationTests
     }
 
     /// <summary>
+    /// A reminder added while paused has only been idle since it was added.
+    /// Resume must shift it by that, not by the whole pause.
+    /// </summary>
+    [Fact]
+    public void ResumeShiftsAnAnchorSetDuringThePauseOnlyFromThatPoint()
+    {
+        var start = Date(2026, 3, 10, 9, 0);
+        var hourly = new Reminder
+        {
+            Title = "Hourly", Schedule = new Schedule.Interval(60), CreatedAt = start, LastFiredAt = start,
+        };
+        var (engine, clock, _) = MakeEngine([hourly], now: Date(2026, 3, 10, 9, 30));
+
+        engine.SetPaused(true);  // 30 minutes left on the hourly.
+        clock.Set(Date(2026, 3, 10, 10, 30));
+        engine.Add(new Reminder { Title = "Added while paused", Schedule = new Schedule.Interval(20) });
+        clock.Set(Date(2026, 3, 10, 11, 0));
+        engine.Resume();
+
+        var fires = engine.Reminders.ToDictionary(
+            r => r.Title, r => Scheduler.NextFireDate(r, clock.Now, Utc)!.Value);
+        Assert.Equal(Date(2026, 3, 10, 11, 30), fires["Hourly"]);
+        Assert.Equal(Date(2026, 3, 10, 11, 20), fires["Added while paused"]);
+    }
+
+    /// <summary>
+    /// Relaunching while paused: nothing was owed, so the launch backlog has
+    /// nothing to absorb, records no miss, and resume still preserves the
+    /// phase the pause found.
+    /// </summary>
+    [Fact]
+    public void RelaunchingWhilePausedAbsorbsNothingAndResumeKeepsThePhase()
+    {
+        var reminder = new Reminder
+        {
+            Title = "Hourly", Schedule = new Schedule.Interval(60),
+            CreatedAt = Date(2026, 3, 10, 8, 0), LastFiredAt = Date(2026, 3, 10, 8, 30),
+        };
+        var store = new InMemoryDataStore(new AppData { Reminders = [reminder] });
+        var clock = new MutableDateProvider(Date(2026, 3, 10, 9, 0));
+        var first = new ReminderEngine(store, clock, new RecordingPresenter(), Utc);
+        first.SetPaused(true);  // 30 minutes left.
+
+        clock.Set(Date(2026, 3, 11, 14, 0));
+        var relaunched = new ReminderEngine(store, clock, new RecordingPresenter(), Utc);
+        Assert.Empty(relaunched.AbsorbBacklogFromDowntime());
+        Assert.Empty(relaunched.Events);
+        Assert.Equal(Date(2026, 3, 10, 8, 30), relaunched.Reminders[0].LastFiredAt);
+
+        clock.Set(Date(2026, 3, 11, 15, 0));
+        relaunched.Resume();
+        Assert.Equal(
+            Date(2026, 3, 11, 15, 30),
+            Scheduler.NextFireDate(relaunched.Reminders[0], clock.Now, Utc));
+    }
+
+    /// <summary>
+    /// The tick's own sleep catch-up: the first overdue reminder fires on
+    /// waking and the others follow StaggerStep apart, in the order they were
+    /// due, instead of all being stamped with the same instant.
+    /// </summary>
+    [Fact]
+    public void WakingFromSleepThroughTheTickKeepsRemindersApart()
+    {
+        var start = Date(2026, 3, 10, 9, 0);
+        var (engine, clock, _) = MakeEngine(StaggeredHourlyTrio(start), now: Date(2026, 3, 10, 9, 50));
+
+        clock.Set(Date(2026, 3, 10, 17, 0));
+        Assert.Equal(3, engine.Tick().Count);
+
+        var fires = NextFires(engine, clock.Now);
+        Assert.Equal(3, fires.Distinct().Count());
+        Assert.Equal(fires.OrderBy(f => f).ToList(), fires);
+        Assert.Equal(Date(2026, 3, 10, 18, 0), fires[^1]);
+        Assert.Equal(Scheduler.StaggerStep * 2, fires[^1] - fires[0]);
+
+        clock.Set(fires[0]);
+        Assert.Equal(["Lean Back"], engine.Tick().Select(r => r.Title).ToList());
+        Assert.Equal(clock.Now, engine.Reminders[0].LastFiredAt);
+    }
+
+    /// <summary>
+    /// Pausing again while already paused must keep the original start.
+    /// </summary>
+    [Fact]
+    public void PausingAgainWhilePausedKeepsTheOriginalStart()
+    {
+        var reminder = new Reminder
+        {
+            Title = "Hourly", Schedule = new Schedule.Interval(60),
+            CreatedAt = Date(2026, 3, 10, 9, 0), LastFiredAt = Date(2026, 3, 10, 9, 15),
+        };
+        var (engine, clock, _) = MakeEngine([reminder], now: Date(2026, 3, 10, 10, 0));
+
+        engine.SetPaused(true);
+        clock.Set(Date(2026, 3, 10, 11, 0));
+        engine.PauseFor(30);
+        Assert.Equal(Date(2026, 3, 10, 10, 0), engine.Settings.PausedAt);
+
+        clock.Set(Date(2026, 3, 10, 11, 30));
+        engine.Tick();
+        Assert.Equal([Date(2026, 3, 10, 11, 45)], NextFires(engine, clock.Now));
+    }
+
+    /// <summary>
+    /// The projection during a timed pause must not drift as the pause wears on.
+    /// </summary>
+    [Fact]
+    public void ProjectionIsStableThroughoutATimedPause()
+    {
+        var reminder = new Reminder
+        {
+            Title = "Hourly", Schedule = new Schedule.Interval(60),
+            CreatedAt = Date(2026, 3, 10, 9, 0), LastFiredAt = Date(2026, 3, 10, 9, 50),
+        };
+        var (engine, clock, _) = MakeEngine([reminder], now: Date(2026, 3, 10, 10, 0));
+        engine.PauseFor(120);
+
+        Instant Projected() => Projection.ProjectedFires(
+            engine.Reminders[0], clock.Now, 1, engine.Settings, Utc)[0].FireDate;
+        Assert.Equal(Date(2026, 3, 10, 12, 50), Projected());
+        clock.Set(Date(2026, 3, 10, 11, 0));
+        Assert.Equal(Date(2026, 3, 10, 12, 50), Projected());
+
+        clock.Set(Date(2026, 3, 10, 12, 0));
+        engine.Tick();
+        Assert.Equal([Date(2026, 3, 10, 12, 50)], NextFires(engine, clock.Now));
+    }
+
+    /// <summary>
     /// Repeated pausing must never drag reminders together — the property the
     /// old code violated.
     /// </summary>

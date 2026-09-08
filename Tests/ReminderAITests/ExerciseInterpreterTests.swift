@@ -97,7 +97,7 @@ final class ExerciseInterpreterTests: XCTestCase {
     func testMissingFieldsFallBackToTheEditorDefaults() throws {
         let payload = #"{"exercises": [{"name": "Squats"}]}"#
         let exercise = try XCTUnwrap(try OpenAIExerciseInterpreter.decode(Data(payload.utf8)).first)
-        XCTAssertEqual(exercise.sets, 3)
+        XCTAssertEqual(exercise.sets, 1, "One set unless the text says otherwise")
         XCTAssertEqual(exercise.reps, 10)
         XCTAssertEqual(exercise.holdSeconds, 0)
     }
@@ -133,6 +133,22 @@ final class ExerciseInterpreterTests: XCTestCase {
         XCTAssertEqual(normalized[0].holdSeconds, Exercise.holdRange.upperBound, "Clamped")
         XCTAssertEqual(normalized[1].restBetweenSetsSeconds, 0, "Negative rest clamped to zero")
         XCTAssertTrue(normalized.allSatisfy(\.isValid))
+    }
+
+    /// A number too large for `Int` used to trap in `Int(Double)`; it must
+    /// decode and be brought into range instead.
+    func testAnAbsurdlyLargeCountDoesNotCrash() throws {
+        let payload = #"""
+        {"exercises": [
+          {"name": "Squats", "sets": 100000000000000000000000, "reps": 1e30},
+          {"name": "Negative", "sets": 3, "reps": -1e30}
+        ]}
+        """#
+        let decoded = try OpenAIExerciseInterpreter.decode(Data(payload.utf8))
+        let normalized = try XCTUnwrap(Exercise.normalized(decoded))
+        XCTAssertEqual(normalized.map(\.name), ["Squats"], "A negative count is not performable")
+        XCTAssertEqual(normalized[0].sets, Exercise.setsRange.upperBound)
+        XCTAssertEqual(normalized[0].reps, Exercise.repsRange.upperBound)
     }
 
     func testAnEmptyExerciseListDecodesToNothing() throws {

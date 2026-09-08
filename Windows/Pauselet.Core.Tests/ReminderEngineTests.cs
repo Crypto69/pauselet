@@ -287,6 +287,62 @@ public class ReminderEngineTests
         Assert.Single(engine.Tick());
     }
 
+    /// <summary>
+    /// The editor composes its result from the copy it opened with. If the
+    /// reminder fired while the editor was open, Save must not rewind that
+    /// stamp — or the reminder fires again on the next tick.
+    /// </summary>
+    [Fact]
+    public void ApplyEditsKeepsStampsSetWhileTheEditorWasOpen()
+    {
+        var start = Date(2026, 3, 10, 9, 0);
+        var reminder = new Reminder
+        {
+            Title = "Water", Schedule = new Schedule.Interval(60), CreatedAt = start, LastFiredAt = start,
+        };
+        var (engine, clock, presenter, _) = MakeEngine([reminder], now: start);
+
+        var opened = engine.Reminders[0];
+        clock.AdvanceSeconds(60 * 60);
+        Assert.Single(engine.Tick());
+        engine.Snooze(reminder.Id, 5);
+
+        engine.ApplyEdits(opened with { Title = "Drink water", Priority = Priority.Important });
+
+        var saved = engine.Reminders[0];
+        Assert.Equal("Drink water", saved.Title);
+        Assert.Equal(Priority.Important, saved.Priority);
+        Assert.Equal(clock.Now, saved.LastFiredAt);
+        Assert.NotNull(saved.SnoozedUntil);
+        Assert.Empty(engine.Tick());
+        Assert.Single(presenter.Presented);
+    }
+
+    /// <summary>
+    /// A snooze that crosses midnight is still the slot's fire: the anchor
+    /// must stay on the slot's day or an "every 2 days" grid slips a day.
+    /// </summary>
+    [Fact]
+    public void SnoozingAWallClockFireAcrossMidnightKeepsTheGridInPhase()
+    {
+        var reminder = new Reminder
+        {
+            Title = "Night meds", Schedule = new Schedule.DailyAt(23, 50, 2),
+            CreatedAt = Date(2026, 3, 8, 12, 0), LastFiredAt = Date(2026, 3, 10, 23, 50),
+        };
+        var (engine, clock, presenter, _) = MakeEngine([reminder], now: Date(2026, 3, 10, 23, 50));
+
+        engine.Snooze(reminder.Id, 15);
+        clock.AdvanceSeconds(15 * 60);
+        Assert.Single(engine.Tick());
+        Assert.Single(presenter.Presented);
+
+        Assert.Equal(Date(2026, 3, 10, 23, 50), engine.Reminders[0].LastFiredAt);
+        Assert.Equal(
+            Date(2026, 3, 12, 23, 50),
+            Scheduler.NextFireDate(engine.Reminders[0], clock.Now, Utc));
+    }
+
     [Fact]
     public void DismissRecordsHistoryWithoutResettingSchedule()
     {

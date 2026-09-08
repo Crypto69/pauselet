@@ -36,6 +36,7 @@ struct ReminderEditorView: View {
     @State private var displaySeconds: Int
     @State private var type: ReminderType
     @State private var exercises: [Exercise]
+    @State private var restBetweenExercisesSeconds: Int
 
     enum ReminderType: String, CaseIterable, Identifiable {
         case standard, exercise
@@ -75,6 +76,9 @@ struct ReminderEditorView: View {
         _displaySeconds = State(initialValue: reminder?.displaySeconds ?? 8)
         _type = State(initialValue: reminder?.isExercise == true ? .exercise : .standard)
         _exercises = State(initialValue: reminder?.exercises ?? [])
+        _restBetweenExercisesSeconds = State(
+            initialValue: reminder?.restBetweenExercisesSeconds ?? 0
+        )
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
@@ -174,7 +178,10 @@ struct ReminderEditorView: View {
                 }
 
                 if type == .exercise {
-                    ExerciseListSection(exercises: $exercises)
+                    ExerciseListSection(
+                            exercises: $exercises,
+                            restBetweenExercisesSeconds: $restBetweenExercisesSeconds
+                        )
                 }
 
                 Section("Schedule") {
@@ -203,6 +210,11 @@ struct ReminderEditorView: View {
                     Text(composedSchedule.summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let warning = quietHoursWarning {
+                        Label(warning, systemImage: "moon.zzz")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Section("Importance") {
@@ -387,6 +399,24 @@ struct ReminderEditorView: View {
         composed(from: existing ?? Reminder(title: "", schedule: composedSchedule))
     }
 
+    /// A daily or weekly time inside quiet hours is skipped every time it
+    /// comes round; better said here than discovered from a silent history.
+    private var quietHoursWarning: String? {
+        guard scheduleKind != .interval else { return nil }
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: time)
+        guard let hour = comps.hour, let minute = comps.minute,
+              Scheduler.wallClockTimeIsSilenced(
+                hour: hour, minute: minute, priority: effectivePriority,
+                settings: model.engine.settings
+              )
+        else { return nil }
+        let quiet = model.engine.settings.quietHours
+        return String(
+            format: "Falls inside quiet hours (%02d:%02d–%02d:%02d), so it will be skipped.",
+            quiet.startHour, quiet.startMinute, quiet.endHour, quiet.endMinute
+        )
+    }
+
     private func composed(from base: Reminder) -> Reminder {
         var reminder = base
         let trimmed = title.trimmingCharacters(in: .whitespaces)
@@ -401,6 +431,13 @@ struct ReminderEditorView: View {
         // Tidied (trimmed, line endings unified, empty collapsed to nil) so
         // the same list serializes identically on every platform.
         reminder.exercises = type == .exercise ? Exercise.normalized(exercises) : nil
+        // A rest only exists between exercises: nil for an ordinary reminder,
+        // for none, and for a single exercise (the field is hidden then, so a
+        // stale value must not be saved behind the user's back).
+        reminder.restBetweenExercisesSeconds =
+            (reminder.exercises?.count ?? 0) > 1 && restBetweenExercisesSeconds > 0
+                ? min(restBetweenExercisesSeconds, Exercise.restRange.upperBound)
+                : nil
         return reminder
     }
 

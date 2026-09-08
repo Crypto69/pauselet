@@ -31,6 +31,13 @@ internal sealed class TrayController : IDisposable
     private readonly Action _quit;
     private readonly TaskbarIcon _icon;
     private FlyoutWindow? _flyout;
+    /// <summary>
+    /// When the flyout last closed by losing focus. The taskbar takes the
+    /// foreground on mouse-down, so a click on the icon meant to dismiss the
+    /// flyout closes it *before* the mouse-up that toggles it — which would
+    /// reopen it at once.
+    /// </summary>
+    private DateTime _flyoutDeactivatedAt = DateTime.MinValue;
     private SettingsWindow? _settingsWindow;
 
     public TrayController(ReminderEngine engine, OverlayPresenter overlays, Action quit)
@@ -110,7 +117,12 @@ internal sealed class TrayController : IDisposable
             _flyout = null;
             return;
         }
+        if (DateTime.UtcNow - _flyoutDeactivatedAt < TimeSpan.FromMilliseconds(400))
+        {
+            return;  // This click is the one that just dismissed it.
+        }
         _flyout = new FlyoutWindow(_engine, OpenSettings, _quit);
+        _flyout.Deactivated += (_, _) => _flyoutDeactivatedAt = DateTime.UtcNow;
         _flyout.Closed += (_, _) => _flyout = null;
         _flyout.Show();
         _flyout.Activate();

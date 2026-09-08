@@ -197,15 +197,20 @@ final class NotificationScheduler: NSObject {
     /// app is frontmost, so it lands in Notification Center exactly as a
     /// background delivery would have, and to hand an unacknowledged critical
     /// takeover to the lock screen when the app leaves the foreground.
-    func postImmediate(_ reminder: Reminder, settings: ReminderCore.Settings) {
+    /// - Returns: The request identifier, so the caller can take the
+    ///   notification down again.
+    @discardableResult
+    func postImmediate(_ reminder: Reminder, settings: ReminderCore.Settings) -> String {
         let item = liveItem(for: reminder, settings: settings)
         let content = makeContent(for: item)
-        let request = UNNotificationRequest(
-            identifier: "\(Self.livePrefix)\(reminder.id.uuidString)-\(Date().timeIntervalSince1970)",
-            content: content,
-            trigger: nil
-        )
+        let identifier = "\(Self.livePrefix)\(reminder.id.uuidString)-\(Date().timeIntervalSince1970)"
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         center.add(request)
+        return identifier
+    }
+
+    func removeDelivered(identifiers: [String]) {
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
     /// Posts a one-off preview. Carries no reminder ID, so its buttons can
@@ -328,7 +333,9 @@ extension NotificationScheduler: UNUserNotificationCenterDelegate {
             default:
                 return
             }
-            await self.model?.handleNotificationResponse(reminderID: id, action: action)
+            await self.model?.handleNotificationResponse(
+                reminderID: id, action: action, requestIdentifier: identifier
+            )
         }
     }
 }

@@ -22,8 +22,7 @@ struct VoiceCoachSection: View {
                 title: "Speak exercise cues",
                 help: "Reads out each set, rep, hold and rest while the "
                     + "exercise takeover coaches you through an exercise. "
-                    + "Only exercises with a hold time are coached; the "
-                    + "others keep their tick box."
+                    + "Reps without a hold are counted at a steady pace."
             ) {
                 Toggle("", isOn: binding(\.voiceCoachEnabled)).labelsHidden()
             }

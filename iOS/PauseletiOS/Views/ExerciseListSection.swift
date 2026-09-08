@@ -4,10 +4,14 @@ import ReminderUI
 
 /// The editor's list of exercises for an Exercise reminder: one
 /// `ExerciseRowEditor` per exercise, swipe to delete, drag to reorder in edit
-/// mode, and buttons to add another or import a whole programme from pasted
-/// text.
+/// mode, the rest the coach takes between exercises when it runs them all,
+/// and buttons to add another or import a whole programme from pasted text.
 struct ExerciseListSection: View {
     @Binding var exercises: [Exercise]
+    /// The reminder's rest between one exercise and the next when the whole
+    /// list runs in sequence. Only shown once there are two exercises for it
+    /// to sit between.
+    @Binding var restBetweenExercisesSeconds: Int
     @EnvironmentObject private var ai: AIImportController
     @State private var isImporting = false
 
@@ -22,6 +26,21 @@ struct ExerciseListSection: View {
             }
             .onMove { source, destination in
                 exercises.move(fromOffsets: source, toOffset: destination)
+            }
+
+            if exercises.count > 1 {
+                VStack(alignment: .leading, spacing: 4) {
+                    CountField(
+                        label: "Rest between exercises (s)",
+                        value: $restBetweenExercisesSeconds,
+                        range: Exercise.restRange
+                    )
+                    Text("Seconds between one exercise and the next when you Start All.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+                .accessibilityIdentifier("editorRestBetweenExercises")
             }
 
             Button {

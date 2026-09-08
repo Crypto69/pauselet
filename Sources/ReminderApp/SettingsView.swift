@@ -104,15 +104,16 @@ struct RemindersTab: View {
         // A sheet gets a fresh environment, so the objects the editor reads are
         // passed in explicitly rather than inherited from this view.
         .sheet(item: $editing) { reminder in
-            ReminderEditor(reminder: reminder) { updated in
-                engine.update(updated)
+            ReminderEditor(reminder: reminder, settings: engine.settings) { updated in
+                // Keeps whatever the engine stamped while the sheet was open.
+                engine.applyEdits(updated)
             }
             .environmentObject(engine)
             .environmentObject(music)
             .environmentObject(ai)
         }
         .sheet(isPresented: $isCreating) {
-            ReminderEditor(reminder: nil) { created in
+            ReminderEditor(reminder: nil, settings: engine.settings) { created in
                 engine.add(created)
             }
             .environmentObject(engine)

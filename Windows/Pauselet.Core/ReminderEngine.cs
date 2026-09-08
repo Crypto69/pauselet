@@ -117,7 +117,7 @@ public sealed class ReminderEngine : ObservableObject
         _store = store;
         _dateProvider = dateProvider ?? new SystemDateProvider();
         _presenter = presenter;
-        _zone = zone ?? DateTimeZoneProviders.Tzdb.GetSystemDefault();
+        _zone = zone ?? SystemZone.Current;
         LoadFromStore();
     }
 
@@ -217,6 +217,19 @@ public sealed class ReminderEngine : ObservableObject
         RefreshNextUp();
     }
 
+    /// <summary>
+    /// What an editor's Save calls: the user-editable fields of
+    /// <paramref name="edited"/> applied to the stored reminder, whose runtime
+    /// state (fire, snooze and acknowledgement stamps set while the editor was
+    /// open) is kept. See <see cref="Reminder.ApplyingEdits"/>.
+    /// </summary>
+    public void ApplyEdits(Reminder edited)
+    {
+        var current = _reminders.FirstOrDefault(r => r.Id == edited.Id);
+        if (current is null) return;
+        Update(current.ApplyingEdits(edited));
+    }
+
     public void Delete(Guid id)
     {
         _reminders.RemoveAll(r => r.Id == id);
@@ -266,6 +279,16 @@ public sealed class ReminderEngine : ObservableObject
     public IReadOnlyList<Reminder> AbsorbBacklogFromDowntime()
     {
         var current = Now;
+        ExpireTimedPauseIfNeeded(current);
+        // While paused nothing was owed, so there is nothing to absorb: the
+        // anchors are frozen where the pause found them, and Resume() will
+        // shift them by exactly the pause. Moving them here would record a
+        // miss that never happened and then double-count the pause on resume.
+        if (Scheduler.IsPaused(_settings, current))
+        {
+            RefreshNextUp();
+            return [];
+        }
         var cutoff = current.Minus(DowntimeGrace);
         var absorbed = new List<Reminder>();
 
@@ -509,8 +532,10 @@ public sealed class ReminderEngine : ObservableObject
             return [];
         }
 
-        var fired = new List<Reminder>();
+        var firedIndices = new List<int>();
         var skippedAny = false;
+        var lapsed = new List<(int Index, Instant Due)>();
+        var cutoff = current.Minus(DowntimeGrace);
         for (var index = 0; index < _reminders.Count; index++)
         {
             // The whole firing policy — what the stamp is, whether a slot that
@@ -524,6 +549,17 @@ public sealed class ReminderEngine : ObservableObject
                 continue;
             }
 
+            // Judged before the stamp moves, the way the launch backlog judges
+            // staleness: by when the running engine would have delivered it.
+            var reminder = _reminders[index];
+            if (reminder.Schedule is Schedule.Interval && reminder.SnoozedUntil is null
+                && Scheduler.PendingFireDate(reminder, _zone) is { } pending
+                && Scheduler.DeliveryMoment(pending, reminder.Priority, _settings, _zone) is { } moment
+                && moment <= cutoff)
+            {
+                lapsed.Add((index, moment));
+            }
+
             _reminders[index] = step.Apply(_reminders[index]);
             if (step.StepOutcome == Scheduler.FireStep.Outcome.Skip)
             {
@@ -532,9 +568,11 @@ public sealed class ReminderEngine : ObservableObject
             }
             else
             {
-                fired.Add(_reminders[index]);
+                firedIndices.Add(index);
             }
         }
+        SpreadLapsedStamps(lapsed, current);
+        var fired = firedIndices.Select(index => _reminders[index]).ToList();
 
         if (fired.Count > 0)
         {
@@ -554,6 +592,44 @@ public sealed class ReminderEngine : ObservableObject
 
         RefreshNextUp();
         return fired;
+    }
+
+    /// <summary>
+    /// Machine sleep, seen from the tick: several interval reminders lapsed
+    /// unmeasured and all come due on the first tick after waking. Every one
+    /// of them fires — the user may be sitting right there — but stamping
+    /// them all with this same instant would weld reminders that were minutes
+    /// apart onto one second for good. So the stamps are spread a little way
+    /// back from <paramref name="current"/>, in the order the fires were due,
+    /// and the next round comes back spaced out again. Only fires overdue by
+    /// more than <see cref="DowntimeGrace"/> count; the spacing never exceeds
+    /// <see cref="Scheduler.StaggerStep"/> and never makes a reminder due
+    /// again at once. (Mirrors spreadLapsedStamps in ReminderEngine.swift.)
+    /// </summary>
+    private void SpreadLapsedStamps(List<(int Index, Instant Due)> lapsed, Instant current)
+    {
+        if (lapsed.Count <= 1) return;
+        var shortest = Duration.MaxValue;
+        foreach (var item in lapsed)
+        {
+            if (_reminders[item.Index].Schedule is Schedule.Interval interval)
+            {
+                var length = Duration.FromMinutes(Math.Max(1, interval.Minutes));
+                if (length < shortest) shortest = length;
+            }
+        }
+        var spacing = Duration.Min(Scheduler.StaggerStep, shortest / lapsed.Count);
+        var ordered = lapsed.OrderBy(item => item.Due)
+            .ThenBy(item => _reminders[item.Index].Id.ToString("D").ToUpperInvariant(), StringComparer.Ordinal)
+            .ToList();
+        // The one that had waited longest gets the oldest stamp, so it is
+        // also the first to come back.
+        for (var slot = 0; slot < ordered.Count; slot++)
+        {
+            var index = ordered[slot].Index;
+            var back = spacing * (ordered.Count - 1 - slot);
+            _reminders[index] = _reminders[index] with { LastFiredAt = current - back };
+        }
     }
 
     /// <summary>
@@ -724,7 +800,10 @@ public sealed class ReminderEngine : ObservableObject
         {
             IsPaused = paused,
             PausedUntil = null,
-            PausedAt = paused ? Now : null,
+            // Pausing again while already paused keeps the original start:
+            // that is when the countdowns stopped, and the phase preserved at
+            // resume is measured from it.
+            PausedAt = paused ? (_settings.PausedAt ?? Now) : null,
         };
         if (paused) _presenter?.DismissAll();
         Persist();
@@ -736,7 +815,7 @@ public sealed class ReminderEngine : ObservableObject
         _settings = _settings with
         {
             IsPaused = true,
-            PausedAt = Now,
+            PausedAt = _settings.PausedAt ?? Now,
             PausedUntil = Now.Plus(Duration.FromMinutes(minutes)),
         };
         _presenter?.DismissAll();

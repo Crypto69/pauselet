@@ -22,7 +22,7 @@ internal sealed class FlyoutWindow : Window
     private readonly Action _openSettings;
     private readonly Action _quit;
     private readonly DispatcherTimer _ticker;
-    private readonly DateTimeZone _zone = DateTimeZoneProviders.Tzdb.GetSystemDefault();
+    private readonly DateTimeZone _zone = SystemZone.Current;
 
     private readonly StackPanel _root;
 
@@ -61,9 +61,11 @@ internal sealed class FlyoutWindow : Window
         };
 
         // Drives the countdown text without the engine having to publish per
-        // second.
+        // second. The tree is only rebuilt when something it shows has
+        // changed: rebuilding every second threw away the list's scroll
+        // position and any click that straddled a tick.
         _ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _ticker.Tick += (_, _) => Rebuild();
+        _ticker.Tick += (_, _) => RebuildIfChanged();
         _ticker.Start();
         Closed += (_, _) => _ticker.Stop();
     }
@@ -113,18 +115,58 @@ internal sealed class FlyoutWindow : Window
         };
     }
 
+    private string _shown = "";
+    private ScrollViewer? _scroll;
+
+    /// <summary>
+    /// Everything the flyout renders that can change with time, as one
+    /// string; a tick that leaves it the same leaves the tree alone.
+    /// </summary>
+    private string Signature(Instant now, bool isPaused)
+    {
+        var parts = new System.Text.StringBuilder();
+        parts.Append(isPaused).Append('|');
+        parts.Append(_engine.Settings.PausedUntil is { } until
+            ? Scheduler.CountdownText(now, until) : "").Append('|');
+        parts.Append(_engine.NextUp?.Reminder.Id).Append('|');
+        foreach (var reminder in _engine.Reminders)
+        {
+            var next = Scheduler.NextFireDate(reminder, now, _zone);
+            parts.Append(reminder.Id).Append(':').Append(reminder.Title).Append(':')
+                .Append(reminder.IsEnabled).Append(':')
+                .Append(next is { } date ? Scheduler.CountdownText(now, date) : "-").Append(';');
+        }
+        return parts.ToString();
+    }
+
+    private void RebuildIfChanged()
+    {
+        var now = SystemClock.Instance.GetCurrentInstant();
+        if (Signature(now, Scheduler.IsPaused(_engine.Settings, now)) == _shown) return;
+        Rebuild();
+    }
+
     private void Rebuild()
     {
         var palette = Theme.Current;
         var now = SystemClock.Instance.GetCurrentInstant();
         var isPaused = Scheduler.IsPaused(_engine.Settings, now);
+        var offset = _scroll?.VerticalOffset ?? 0;
 
         _root.Children.Clear();
         _root.Children.Add(BuildHeader(palette, now, isPaused));
         _root.Children.Add(Divider(palette));
-        _root.Children.Add(BuildList(palette, now, isPaused));
+        _scroll = BuildList(palette, now, isPaused);
+        _root.Children.Add(_scroll);
         _root.Children.Add(Divider(palette));
         _root.Children.Add(BuildFooter(palette));
+        _shown = Signature(now, isPaused);
+        // The list keeps its place across a rebuild.
+        if (offset > 0)
+        {
+            var scroll = _scroll;
+            scroll.Loaded += (_, _) => scroll.ScrollToVerticalOffset(offset);
+        }
         // A row count change (toggle, delete elsewhere) changes our height.
         if (IsLoaded) PositionNearTray();
     }
@@ -210,7 +252,7 @@ internal sealed class FlyoutWindow : Window
         return grid;
     }
 
-    private UIElement BuildList(Theme.Palette palette, Instant now, bool isPaused)
+    private ScrollViewer BuildList(Theme.Palette palette, Instant now, bool isPaused)
     {
         var list = new StackPanel();
 

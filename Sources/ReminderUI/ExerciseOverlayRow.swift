@@ -1,8 +1,7 @@
 import SwiftUI
 import ReminderCore
 
-/// How a guided exercise's row presents the coach. An untimed exercise has
-/// no state and keeps its plain tick box.
+/// How an exercise's row presents the coach.
 public enum ExerciseRowCoachState: Equatable, Sendable {
     /// Waiting, with a quiet Start.
     case idle
@@ -17,14 +16,13 @@ public enum ExerciseRowCoachState: Equatable, Sendable {
 }
 
 /// One exercise on the full-screen takeover: the name with "3 × 10" and the
-/// instructions, with either a tick box (untimed) or Start and Cancel pills
-/// (guided). Done and cancelled rows dim rather than hide, so what has
-/// happened stays legible. None of it is stored: it is working memory for
-/// the session.
+/// instructions, with Start and Cancel pills. Done and cancelled rows dim
+/// rather than hide, so what has happened stays legible. None of it is
+/// stored: it is working memory for the session.
 ///
-/// A guided row never has a tick box. The coach marks it done when the last
-/// set is over, and Cancel is the way to say "not this one" — two controls
-/// with two meanings, rather than a tick that could mean either.
+/// There is no tick box. The coach marks a row done when the last set is
+/// over, and Cancel is the way to say "not this one" — two controls with two
+/// meanings, rather than a tick that could mean either.
 ///
 /// One implementation for the Mac overlay and the iOS takeover, which share
 /// the same dark design. The index badge is the Mac's keyboard hint (1–9
@@ -32,15 +30,10 @@ public enum ExerciseRowCoachState: Equatable, Sendable {
 public struct ExerciseOverlayRow: View {
     public let exercise: Exercise
     public let index: Int
-    /// The tick box on an untimed row. Ignored for a guided row, whose
-    /// `coachState` carries completion.
-    public let isDone: Bool
     public let showsIndex: Bool
-    /// `nil` for an untimed exercise.
-    public let coachState: ExerciseRowCoachState?
-    public let onStart: (() -> Void)?
-    public let onCancel: (() -> Void)?
-    public let onToggle: () -> Void
+    public let coachState: ExerciseRowCoachState
+    public let onStart: () -> Void
+    public let onCancel: () -> Void
 
     /// The teal the takeover uses for progress: ticked rows and the countdown
     /// ring on both platforms draw from here.
@@ -49,33 +42,25 @@ public struct ExerciseOverlayRow: View {
     public init(
         exercise: Exercise,
         index: Int,
-        isDone: Bool,
         showsIndex: Bool = true,
-        coachState: ExerciseRowCoachState? = nil,
-        onStart: (() -> Void)? = nil,
-        onCancel: (() -> Void)? = nil,
-        onToggle: @escaping () -> Void
+        coachState: ExerciseRowCoachState,
+        onStart: @escaping () -> Void,
+        onCancel: @escaping () -> Void
     ) {
         self.exercise = exercise
         self.index = index
-        self.isDone = isDone
         self.showsIndex = showsIndex
         self.coachState = coachState
         self.onStart = onStart
         self.onCancel = onCancel
-        self.onToggle = onToggle
     }
-
-    private var isGuided: Bool { coachState != nil }
 
     private var isActive: Bool {
         if case .active = coachState { return true }
         return false
     }
 
-    private var isFinished: Bool {
-        isGuided ? coachState == .completed : isDone
-    }
+    private var isFinished: Bool { coachState == .completed }
 
     private var isCancelled: Bool { coachState == .cancelled }
 
@@ -83,18 +68,18 @@ public struct ExerciseOverlayRow: View {
     private var isDimmed: Bool { isFinished || isCancelled }
 
     private var showsStart: Bool {
-        guard onStart != nil else { return false }
         switch coachState {
         case .idle, .suggested, .cancelled: return true
-        case .active, .completed, nil: return false
+        case .active, .completed: return false
         }
     }
 
+    /// Cancel stays available while the exercise is being coached: "not this
+    /// one" then hands the run over to the next exercise (or ends it).
     private var showsCancel: Bool {
-        guard onCancel != nil else { return false }
         switch coachState {
-        case .idle, .suggested: return true
-        case .active, .completed, .cancelled, nil: return false
+        case .idle, .suggested, .active: return true
+        case .completed, .cancelled: return false
         }
     }
 
@@ -190,7 +175,7 @@ public struct ExerciseOverlayRow: View {
         .buttonStyle(.plain)
         .overlay(alignment: .trailing) {
             HStack(spacing: Self.pillSpacing) {
-                if showsStart, let onStart {
+                if showsStart {
                     Button("Start", action: onStart)
                         .buttonStyle(CoachPillStyle(
                             emphasis: coachState == .suggested ? .filled : .ghost
@@ -198,7 +183,7 @@ public struct ExerciseOverlayRow: View {
                         .frame(width: Self.startPillWidth)
                         .accessibilityLabel("Start \(exercise.name)")
                 }
-                if showsCancel, let onCancel {
+                if showsCancel {
                     Button("Cancel", action: onCancel)
                         .buttonStyle(CoachPillStyle(emphasis: .ghost))
                         .frame(width: Self.cancelPillWidth)
@@ -232,20 +217,15 @@ public struct ExerciseOverlayRow: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// Clicking the row: the tick box for an untimed exercise, Start for a
-    /// guided one that is waiting, nothing otherwise.
+    /// Clicking the row: Start while it is waiting, nothing otherwise.
     private func rowAction() {
-        guard isGuided else { return onToggle() }
-        if showsStart { onStart?() }
+        if showsStart { onStart() }
     }
 
     @ViewBuilder
     private var leadingGlyph: some View {
         let (name, color): (String, Color) = {
             switch coachState {
-            case nil:
-                return (isDone ? "checkmark.circle.fill" : "circle",
-                        isDone ? Self.doneColor : Color.white.opacity(0.4))
             case .completed:
                 return ("checkmark.circle.fill", Self.doneColor)
             case .cancelled:
@@ -271,7 +251,7 @@ public struct ExerciseOverlayRow: View {
 
     private var accessibilityText: String {
         var text = "\(exercise.name), \(exercise.sets) sets of \(exercise.reps)"
-        if exercise.isGuided {
+        if exercise.hasHold {
             text += ", hold \(ExerciseTimeline.seconds(exercise.holdSeconds))"
         }
         return text
@@ -286,7 +266,7 @@ public struct ExerciseOverlayRow: View {
     }
 }
 
-/// The small Start and Cancel pills on a guided row. Lives here rather than
+/// The small Start and Cancel pills on a row. Lives here rather than
 /// in the app so the iOS takeover can use the same one.
 public struct CoachPillStyle: ButtonStyle {
     public enum Emphasis { case filled, ghost }

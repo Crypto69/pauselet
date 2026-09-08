@@ -56,7 +56,7 @@ public class ExerciseImporterTests
     public void UnstatedCountsKeepTheEditorDefaults()
     {
         var exercise = ParseOne("Shoulder rolls");
-        Assert.Equal(3, exercise.Sets);
+        Assert.Equal(1, exercise.Sets);
         Assert.Equal(10, exercise.Reps);
         Assert.Equal(0, exercise.HoldSeconds);
     }
@@ -97,8 +97,8 @@ public class ExerciseImporterTests
     [Fact]
     public void AHoldMakesTheExerciseGuided()
     {
-        Assert.True(ParseOne("Chin tucks 3 x 10 hold 5 seconds").IsGuided);
-        Assert.False(ParseOne("Shoulder rolls 3 x 10").IsGuided);
+        Assert.True(ParseOne("Chin tucks 3 x 10 hold 5 seconds").HasHold);
+        Assert.False(ParseOne("Shoulder rolls 3 x 10").HasHold);
     }
 
     // MARK: - Rest
@@ -273,7 +273,7 @@ public class ExerciseImporterTests
         var exercise = ParseOne("Wall slides 3 times for 15 seconds");
         Assert.Equal(3, exercise.Reps);
         Assert.Equal(15, exercise.HoldSeconds);
-        Assert.Equal(3, exercise.Sets);
+        Assert.Equal(1, exercise.Sets);
     }
 
     // MARK: - Nothing to import
@@ -292,6 +292,62 @@ public class ExerciseImporterTests
     }
 
     // MARK: - The output is always editor-legal
+
+    // MARK: - Phrasings from real handouts that used to mis-parse
+
+    [Fact]
+    public void TimedSetsAreHoldsNotReps()
+    {
+        Assert.Equal("Plank | 3×1 | 30 | 0 | 0", Describe(ParseOne("Plank: 3 sets of 30 seconds")));
+        Assert.Equal("Plank | 3×1 | 30 | 0 | 0", Describe(ParseOne("Plank 3 x 30 seconds")));
+        Assert.Equal("Side plank | 2×1 | 60 | 0 | 0", Describe(ParseOne("Side plank, 2 sets of 1 minute")));
+    }
+
+    [Fact]
+    public void RestPhrasesWithTheVerbAfterTheNumber()
+    {
+        Assert.Equal(
+            "Bridges | 3×10 | 0 | 0 | 30",
+            Describe(ParseOne("Bridges 3 sets of 10 with 30 seconds rest between sets")));
+        Assert.Equal(
+            "Bridges | 3×10 | 0 | 0 | 60",
+            Describe(ParseOne("Bridges 3 sets of 10, 1 minute rest between sets")));
+        Assert.Equal(
+            "Calf raises | 2×12 | 0 | 5 | 0",
+            Describe(ParseOne("Calf raises 2 x 12, 5 seconds pause between reps")));
+    }
+
+    [Fact]
+    public void HoldWithFillerWordsIsStillAHold()
+    {
+        var exercise = ParseOne("Chin tucks. Hold this position for 10 seconds. Repeat 10 times.");
+        Assert.Equal(10, exercise.HoldSeconds);
+        Assert.Equal(10, exercise.Reps);
+        Assert.Equal(20, ParseOne("Hamstring stretch, hold the stretch for 20 seconds").HoldSeconds);
+    }
+
+    [Fact]
+    public void SetCountSurvivesTheTimesForForm()
+    {
+        Assert.Equal(
+            "Glute squeeze | 3×10 | 5 | 0 | 0",
+            Describe(ParseOne("3 sets of 10 times for 5 seconds glute squeeze")));
+    }
+
+    [Fact]
+    public void UnitsNeedAWordBoundary()
+    {
+        var exercise = ParseOne("Bridge, hold 5 more seconds");
+        Assert.Equal(5, exercise.HoldSeconds);
+        Assert.Equal("Bridge", exercise.Name);
+    }
+
+    [Fact]
+    public void TrailingCrossIsARepCount()
+    {
+        Assert.Equal("Wall slides | 1×15 | 0 | 0 | 0", Describe(ParseOne("Wall slides x 15")));
+        Assert.Equal("Wall slides | 1×15 | 0 | 0 | 0", Describe(ParseOne("Wall slides × 15")));
+    }
 
     [Fact]
     public void EveryParsedExerciseIsValid()

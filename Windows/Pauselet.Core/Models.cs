@@ -203,6 +203,13 @@ public sealed record Reminder
     /// is kept as-is so the file re-encodes byte-identically.
     /// </summary>
     public IReadOnlyList<Exercise>? Exercises { get; init; }
+    /// <summary>
+    /// Seconds of rest between one exercise finishing and the next one
+    /// starting when the takeover runs the whole list in sequence.
+    /// <c>null</c> means none; only meaningful on an exercise reminder, and
+    /// never stored as 0 — the editor collapses that to <c>null</c>.
+    /// </summary>
+    public int? RestBetweenExercisesSeconds { get; init; }
     /// <summary>When the reminder last fired. Drives interval scheduling.</summary>
     public Instant? LastFiredAt { get; init; }
     /// <summary>When the reminder was last acknowledged (completed or dismissed).</summary>
@@ -245,10 +252,29 @@ public sealed record Reminder
         && DisplaySeconds == other.DisplaySeconds
         && Music == other.Music
         && ExercisesEqual(other.Exercises)
+        && RestBetweenExercisesSeconds == other.RestBetweenExercisesSeconds
         && LastFiredAt == other.LastFiredAt
         && LastAcknowledgedAt == other.LastAcknowledgedAt
         && SnoozedUntil == other.SnoozedUntil
         && CreatedAt == other.CreatedAt;
+
+    /// <summary>
+    /// <paramref name="edited"/> with this reminder's runtime state kept: what
+    /// the engine stamps (LastFiredAt, LastAcknowledgedAt, SnoozedUntil), the
+    /// enabled switch, and CreatedAt. An editor composes its result from the
+    /// copy it opened with; while it was open the engine may have fired,
+    /// snoozed or acknowledged the reminder, and saving must not rewind that.
+    /// (Mirrors Reminder.applyingEdits(from:) in Models.swift.)
+    /// </summary>
+    public Reminder ApplyingEdits(Reminder edited) => edited with
+    {
+        Id = Id,
+        IsEnabled = IsEnabled,
+        LastFiredAt = LastFiredAt,
+        LastAcknowledgedAt = LastAcknowledgedAt,
+        SnoozedUntil = SnoozedUntil,
+        CreatedAt = CreatedAt,
+    };
 
     private bool ExercisesEqual(IReadOnlyList<Exercise>? other)
     {
@@ -301,9 +327,18 @@ public sealed record QuietHours
     /// </summary>
     public bool Contains(Instant date, DateTimeZone zone)
     {
-        if (!IsEnabled) return false;
         var local = date.InZone(zone);
-        var now = local.Hour * 60 + local.Minute;
+        return Covers(local.Hour, local.Minute);
+    }
+
+    /// <summary>
+    /// True when a wall-clock time of day falls inside the quiet window —
+    /// what a daily or weekly reminder at that time would hit every day.
+    /// </summary>
+    public bool Covers(int hour, int minute)
+    {
+        if (!IsEnabled) return false;
+        var now = hour * 60 + minute;
         var start = StartHour * 60 + StartMinute;
         var end = EndHour * 60 + EndMinute;
         if (start == end) return false;

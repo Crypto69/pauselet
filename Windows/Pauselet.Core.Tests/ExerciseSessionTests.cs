@@ -5,9 +5,10 @@ using Xunit;
 namespace Pauselet.Core.Tests;
 
 /// <summary>
-/// The guided-exercise programme: what a timeline contains, what the coach
-/// says when, and how the session cursor follows wall time through pause,
-/// resume and skip. (Mirrors ExerciseSessionTests.swift, case for case.)
+/// The coached programme: what a timeline contains for one exercise and for
+/// a run of them, what the coach says when, and how the session cursor
+/// follows wall time through pause, resume and skip. (Mirrors
+/// ExerciseSessionTests.swift, case for case.)
 /// </summary>
 public class ExerciseSessionTests
 {
@@ -33,11 +34,38 @@ public class ExerciseSessionTests
 
     // MARK: - Timeline
 
+    /// <summary>
+    /// An exercise with no hold is still coached: each rep gets the fixed
+    /// tempo instead of a hold, so a whole programme can run unattended.
+    /// </summary>
     [Fact]
-    public void UntimedExerciseHasNoTimeline()
+    public void ExerciseWithoutAHoldIsPacedRepByRep()
     {
-        Assert.Null(ExerciseTimeline.For(new Exercise { Name = "Squats" }));
-        Assert.Null(ExerciseTimeline.For(new Exercise { Name = "Squats", HoldSeconds = 0 }));
+        var timeline = Timeline(new Exercise
+        {
+            Name = "Squats", Sets = 1, Reps = 3, RestBetweenRepsSeconds = 2,
+        });
+
+        Assert.Equal(
+        [
+            ExercisePhase.Kind.GetReady, ExercisePhase.Kind.Rep, ExercisePhase.Kind.RestBetweenReps,
+            ExercisePhase.Kind.Rep, ExercisePhase.Kind.RestBetweenReps, ExercisePhase.Kind.Rep,
+        ], timeline.Phases.Select(phase => phase.PhaseKind).ToArray());
+        Assert.Equal(ExerciseTimeline.RepSeconds, timeline.Phases[1].Duration);
+        Assert.Equal("Set 1 · Rep 1", timeline.Phases[1].Title);
+        Assert.Equal("Go", timeline.Phases[1].Label);
+        Assert.Equal("Set 1, rep 1.", timeline.Phases[1].Cue);
+        Assert.Equal("Rep 2.", timeline.Phases[3].Cue);
+        Assert.Equal(3 + 3 * 3 + 2 * 2, timeline.TotalDuration);
+        Assert.DoesNotContain(timeline.Cues, cue => cue.Text == "Three.");
+    }
+
+    [Fact]
+    public void NothingRunnableHasNoTimeline()
+    {
+        Assert.Null(ExerciseTimeline.For(new Exercise { Name = "Squats", Sets = 0 }));
+        Assert.Null(ExerciseTimeline.For([]));
+        Assert.Null(ExerciseTimeline.For([new Exercise { Name = "Squats", Reps = 0 }]));
     }
 
     [Fact]
@@ -138,23 +166,17 @@ public class ExerciseSessionTests
     public void CueTextPerPhaseKind()
     {
         var timeline = Timeline(TwoByThree);
-        const string name = "Chin tucks";
 
-        Assert.Equal("Chin tucks. Get ready.", ExerciseTimeline.Cue(timeline.Phases[0], name));
-        Assert.Equal(
-            "Set 1, rep 1. Hold for 5 seconds.", ExerciseTimeline.Cue(timeline.Phases[1], name));
-        Assert.Equal("Rest.", ExerciseTimeline.Cue(timeline.Phases[2], name));
-        Assert.Equal("Rep 2. Hold.", ExerciseTimeline.Cue(timeline.Phases[3], name));
-        Assert.Equal(
-            "Set 1 done. Rest for 10 seconds.", ExerciseTimeline.Cue(timeline.Phases[6], name));
-        Assert.Equal(
-            "Set 2, rep 1. Hold for 5 seconds.", ExerciseTimeline.Cue(timeline.Phases[7], name));
+        Assert.Equal("Chin tucks. Get ready.", timeline.Phases[0].Cue);
+        Assert.Equal("Set 1, rep 1. Hold for 5 seconds.", timeline.Phases[1].Cue);
+        Assert.Equal("Rest.", timeline.Phases[2].Cue);
+        Assert.Equal("Rep 2. Hold.", timeline.Phases[3].Cue);
+        Assert.Equal("Set 1 done. Rest for 10 seconds.", timeline.Phases[6].Cue);
+        Assert.Equal("Set 2, rep 1. Hold for 5 seconds.", timeline.Phases[7].Cue);
 
         var oneSecond = Timeline(
             new Exercise { Name = "Blink", Sets = 1, Reps = 1, HoldSeconds = 1 });
-        Assert.Equal(
-            "Set 1, rep 1. Hold for 1 second.",
-            ExerciseTimeline.Cue(oneSecond.Phases[1], "Blink"));
+        Assert.Equal("Set 1, rep 1. Hold for 1 second.", oneSecond.Phases[1].Cue);
     }
 
     [Fact]
@@ -197,6 +219,132 @@ public class ExerciseSessionTests
                 timeline.Cues.Count(cue => cue.At == phase.Start) == 1,
                 $"{phase.KindName} {phase.Set} {phase.Rep} {phase.Start}");
         }
+    }
+
+    [Fact]
+    public void EveryPhaseNamesItsExercise()
+    {
+        var exercise = TwoByThree;
+        var timeline = Timeline(exercise);
+
+        Assert.Equal([exercise.Id], timeline.Entries.Select(entry => entry.Id).ToArray());
+        Assert.Equal(0, timeline.Entries[0].Start);
+        Assert.Equal(timeline.TotalDuration, timeline.Entries[0].End);
+        Assert.Equal("Exercise complete", timeline.CompletionTitle);
+        foreach (var phase in timeline.Phases)
+        {
+            Assert.Equal(exercise.Id, phase.ExerciseId);
+            Assert.Equal("Chin tucks", phase.ExerciseName);
+        }
+    }
+
+    // MARK: - A run of exercises
+
+    /// <summary>
+    /// Two exercises with 10 s between them: the first, the rest (which
+    /// belongs to the second), the second's lead-in, the second.
+    /// </summary>
+    [Fact]
+    public void SequencePutsTheRestBetweenExercisesBeforeTheNextLeadIn()
+    {
+        var tucks = new Exercise { Name = "Chin tucks", Sets = 1, Reps = 2, HoldSeconds = 5 };
+        var shifts = new Exercise { Name = "Weight shifts", Sets = 1, Reps = 2 };
+        var timeline = ExerciseTimeline.For([tucks, shifts], restBetweenExercisesSeconds: 10);
+        Assert.NotNull(timeline);
+
+        var phases = timeline!.Phases
+            .Select(phase => $"{phase.KindName} {(int)phase.Start} {(int)phase.Duration}")
+            .ToArray();
+        Assert.Equal(
+        [
+            "getReady 0 3",
+            "hold 3 5",
+            "hold 8 5",
+            "restBetweenExercises 13 10",
+            "getReady 23 3",
+            "rep 26 3",
+            "rep 29 3",
+        ], phases);
+        Assert.Equal(shifts.Id, timeline.Phases[3].ExerciseId);
+        Assert.Equal("Up next", timeline.Phases[3].Title);
+        Assert.Equal("Rest", timeline.Phases[3].Label);
+
+        Assert.Equal([tucks.Id, shifts.Id], timeline.Entries.Select(entry => entry.Id).ToArray());
+        Assert.Equal(13, timeline.Entries[0].End);
+        Assert.Equal(23, timeline.Entries[1].Start);
+        Assert.Equal(32, timeline.Entries[1].End);
+        Assert.Equal(32, timeline.TotalDuration);
+        Assert.Equal("All exercises complete", timeline.CompletionTitle);
+    }
+
+    [Fact]
+    public void SequenceCuesSignOffTheExerciseBefore()
+    {
+        var tucks = new Exercise { Name = "Chin tucks", Sets = 1, Reps = 1, HoldSeconds = 5 };
+        var shifts = new Exercise { Name = "Weight shifts", Sets = 1, Reps = 1 };
+        var rows = new Exercise { Name = "Rows", Sets = 1, Reps = 1 };
+
+        var withRest = ExerciseTimeline.For([tucks, shifts], restBetweenExercisesSeconds: 30)!;
+        Assert.Equal(
+            "Chin tucks complete. Rest for 30 seconds. Next, Weight shifts.",
+            withRest.Phases[2].Cue);
+        Assert.Equal("Weight shifts. Get ready.", withRest.Phases[3].Cue);
+        Assert.Equal("All exercises complete.", withRest.Cues[^1].Text);
+
+        var noRest = ExerciseTimeline.For([tucks, shifts, rows])!;
+        Assert.Equal(
+        [
+            ExercisePhase.Kind.GetReady, ExercisePhase.Kind.Hold, ExercisePhase.Kind.GetReady,
+            ExercisePhase.Kind.Rep, ExercisePhase.Kind.GetReady, ExercisePhase.Kind.Rep,
+        ], noRest.Phases.Select(phase => phase.PhaseKind).ToArray());
+        Assert.Equal("Chin tucks complete. Weight shifts. Get ready.", noRest.Phases[2].Cue);
+        Assert.Equal("Weight shifts complete. Rows. Get ready.", noRest.Phases[4].Cue);
+    }
+
+    [Fact]
+    public void FinishedExercisesAndTheStartOfTheNext()
+    {
+        var tucks = new Exercise { Name = "Chin tucks", Sets = 1, Reps = 2, HoldSeconds = 5 };
+        var shifts = new Exercise { Name = "Weight shifts", Sets = 1, Reps = 2 };
+        var timeline = ExerciseTimeline.For([tucks, shifts], restBetweenExercisesSeconds: 10)!;
+
+        Assert.Empty(timeline.FinishedExerciseIds(12.9));
+        Assert.Equal([tucks.Id], timeline.FinishedExerciseIds(13).ToArray());
+        Assert.Equal([tucks.Id], timeline.FinishedExerciseIds(31.9).ToArray());
+        Assert.Equal([tucks.Id, shifts.Id], timeline.FinishedExerciseIds(32).ToArray());
+
+        Assert.Equal(23, timeline.StartOfExerciseAfter(tucks.Id));
+        Assert.Equal(32, timeline.StartOfExerciseAfter(shifts.Id));
+        Assert.Equal(32, timeline.StartOfExerciseAfter(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void SequenceLeavesOutWhatCannotRun()
+    {
+        var tucks = new Exercise { Name = "Chin tucks", Sets = 1, Reps = 1, HoldSeconds = 5 };
+        var broken = new Exercise { Name = "Nothing", Sets = 0, Reps = 0 };
+        var timeline = ExerciseTimeline.For([broken, tucks])!;
+
+        Assert.Equal([tucks.Id], timeline.Entries.Select(entry => entry.Id).ToArray());
+        Assert.Equal("Chin tucks. Get ready.", timeline.Phases[0].Cue);
+    }
+
+    [Fact]
+    public void JumpMovesTheCursorAndClampsToTheSession()
+    {
+        var session = Session();
+
+        session.Jump(32, At(4));
+        Assert.Equal(32, session.Elapsed(At(4)));
+        Assert.Equal("Set 2 · Rep 1", session.PhaseAt(At(4))?.Title);
+        Assert.Equal(33, session.Elapsed(At(5)));
+
+        session.Jump(1000, At(5));
+        Assert.True(session.IsFinished(At(5)));
+
+        session.Stop(At(5));
+        session.Jump(0, At(5));
+        Assert.True(session.IsFinished(At(5)));
     }
 
     // MARK: - Session

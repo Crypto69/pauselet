@@ -154,6 +154,7 @@ public final class FileDataStore: DataStoring, @unchecked Sendable {
             return event
         }
         copy.settings.pausedUntil = data.settings.pausedUntil?.roundedToSecond
+        copy.settings.pausedAt = data.settings.pausedAt?.roundedToSecond
         return copy
     }
 

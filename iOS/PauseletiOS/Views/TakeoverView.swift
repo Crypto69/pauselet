@@ -10,13 +10,14 @@ import ReminderUI
 /// so it is calm rather than alarming — dark, soft, and unhurried. A reminder
 /// with an activity duration runs a countdown, which turns "stop working"
 /// into a concrete, finite thing to do. An exercise reminder lists its
-/// exercises with a tick each; the buttons stay pinned beneath however long
-/// the list is.
+/// exercises with Start and Cancel on each; the buttons stay pinned beneath
+/// however long the list is.
 ///
-/// An exercise with a hold time is *coached* rather than ticked: Start runs
-/// the shared `ExerciseSession` timeline, a ring counts the current hold or
-/// rest down, and — with the voice coach on — each phase is spoken before it
-/// is timed. Untimed exercises keep their plain tick box.
+/// Every exercise is *coached* rather than ticked: Start runs the shared
+/// `ExerciseSession` timeline, a ring counts the current hold, rep or rest
+/// down, and — with the voice coach on — each phase is spoken before it is
+/// timed. Start All runs the whole list in sequence with the reminder's rest
+/// between exercises.
 struct TakeoverView: View {
     let item: AppModel.TakeoverItem
     let onAction: (AppModel.TakeoverAction) -> Void
@@ -51,6 +52,7 @@ struct TakeoverView: View {
         }
         _coach = StateObject(wrappedValue: ExerciseCoach(
             exercises: item.reminder.exercises ?? [],
+            restBetweenExercisesSeconds: item.reminder.restBetweenExercisesSeconds ?? 0,
             settings: settings,
             speech: settings.voiceCoachEnabled ? speech : nil
         ))
@@ -102,11 +104,20 @@ struct TakeoverView: View {
 
                     if let session = coach.session {
                         coachPanel(session)
-                    } else if coach.hasGuidedExercises, coach.suggestedExerciseID != nil {
-                        Button("Start", action: coach.startSuggested)
-                            .buttonStyle(TakeoverButtonStyle(kind: .primary))
-                            .frame(maxWidth: 200)
-                            .accessibilityIdentifier("takeoverCoachStart")
+                    } else if coach.suggestedExerciseID != nil {
+                        HStack(spacing: 12) {
+                            Button("Start", action: coach.startSuggested)
+                                .buttonStyle(TakeoverButtonStyle(kind: .primary))
+                                .accessibilityIdentifier("takeoverCoachStart")
+                            if coach.canStartAll {
+                                // Runs every exercise still to do, in order,
+                                // with the reminder's rest between them.
+                                Button("Start All", action: coach.startAll)
+                                    .buttonStyle(TakeoverButtonStyle(kind: .secondary))
+                                    .accessibilityIdentifier("takeoverCoachStartAll")
+                            }
+                        }
+                        .frame(maxWidth: coach.canStartAll ? 320 : 200)
                     }
 
                     if let exercises = reminder.exercises, !exercises.isEmpty {
@@ -184,10 +195,13 @@ struct TakeoverView: View {
         // lives with the view rather than being recreated on every body pass.
         .task(id: hasStarted) {
             guard hasCountdown, hasStarted else { return }
+            // Derived from the clock rather than counted per sleep, so the
+            // minutes spent with the phone locked mid-tilt still count.
+            let deadline = Date().addingTimeInterval(TimeInterval(remaining))
             while !Task.isCancelled, remaining > 0 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !Task.isCancelled else { return }
-                remaining -= 1
+                remaining = max(0, Int(deadline.timeIntervalSinceNow.rounded(.up)))
                 if remaining == 0 {
                     // The activity is finished; let the user hear that before
                     // it closes.
@@ -212,14 +226,11 @@ struct TakeoverView: View {
                 ExerciseOverlayRow(
                     exercise: exercise,
                     index: index,
-                    isDone: coach.completedExerciseIDs.contains(exercise.id),
                     showsIndex: false,
                     coachState: coach.rowState(for: exercise.id),
                     onStart: { coach.start(exercise.id) },
                     onCancel: { coach.cancel(exercise.id) }
-                ) {
-                    coach.toggle(exercise.id)
-                }
+                )
                 .accessibilityIdentifier("takeoverExercise-\(index)")
             }
         }
@@ -285,14 +296,14 @@ struct TakeoverView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(coachAccessibilityLabel(
                 phase: phase, remaining: remainingSeconds,
-                isPaused: isPaused, isComplete: isComplete
+                isPaused: isPaused, completionTitle: isComplete ? session.timeline.completionTitle : nil
             ))
 
             VStack(spacing: 6) {
-                Text(isComplete ? "Exercise complete" : (phase?.title ?? ""))
+                Text(isComplete ? session.timeline.completionTitle : (phase?.title ?? ""))
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
-                Text(session.timeline.exerciseName)
+                Text(phase?.exerciseName ?? session.timeline.entries.last?.name ?? "")
                     .font(.system(size: 15, weight: .regular, design: .rounded))
                     .foregroundStyle(.white.opacity(0.6))
             }
@@ -304,6 +315,11 @@ struct TakeoverView: View {
                         Button("Start Next", action: coach.startSuggested)
                             .buttonStyle(CoachPillStyle(emphasis: .filled))
                             .accessibilityIdentifier("coachStartNext")
+                    }
+                    if coach.canStartAll {
+                        Button("Start All", action: coach.startAll)
+                            .buttonStyle(CoachPillStyle(emphasis: .ghost))
+                            .accessibilityIdentifier("coachStartAll")
                     }
                 } else {
                     Button(isPaused ? "Resume" : "Pause", action: coach.togglePause)
@@ -335,10 +351,12 @@ struct TakeoverView: View {
         .padding(.horizontal, 24)
     }
 
+    /// `completionTitle` is the panel's headline once the run is over — the
+    /// same words VoiceOver should read, whether one exercise or all of them.
     private func coachAccessibilityLabel(
-        phase: ExercisePhase?, remaining: Int, isPaused: Bool, isComplete: Bool
+        phase: ExercisePhase?, remaining: Int, isPaused: Bool, completionTitle: String?
     ) -> String {
-        if isComplete { return "Exercise complete" }
+        if let completionTitle { return completionTitle }
         let where_ = phase.map { "\($0.title), \($0.label)" } ?? ""
         let time = "\(ExerciseTimeline.seconds(remaining)) remaining"
         return isPaused ? "Paused. \(where_), \(time)" : "\(where_), \(time)"

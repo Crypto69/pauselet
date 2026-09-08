@@ -117,6 +117,7 @@ public sealed class FileDataStore : IDataStoring
         Settings = data.Settings with
         {
             PausedUntil = data.Settings.PausedUntil?.RoundedToSecond(),
+            PausedAt = data.Settings.PausedAt?.RoundedToSecond(),
         },
     };
 

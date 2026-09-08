@@ -3,48 +3,80 @@ using NodaTime;
 namespace Pauselet.Core;
 
 /// <summary>
-/// One step of a guided exercise — a hold, a rest, or the lead-in — with its
-/// place on the session's clock. (Mirrors ExerciseSession.swift.)
+/// One step of a coached programme — a hold or a paced rep, a rest, or the
+/// lead-in before an exercise — with its place on the session's clock and
+/// the exercise it belongs to. (Mirrors ExerciseSession.swift.)
 /// </summary>
 public sealed record ExercisePhase
 {
     public enum Kind
     {
         GetReady,
+        /// <summary>One held repetition of an exercise with a hold time.</summary>
         Hold,
+        /// <summary>
+        /// One repetition of an exercise without a hold time, paced at
+        /// <see cref="ExerciseTimeline.RepSeconds"/> so the coach can count it.
+        /// </summary>
+        Rep,
         RestBetweenReps,
         RestBetweenSets,
+        /// <summary>
+        /// The gap between one exercise finishing and the next one's lead-in
+        /// when a whole programme runs in sequence. Belongs to the exercise
+        /// that is coming up.
+        /// </summary>
+        RestBetweenExercises,
     }
 
     public required Kind PhaseKind { get; init; }
-    /// <summary>1-based. For a rest between sets, the set just finished.</summary>
+    /// <summary>
+    /// The exercise this phase belongs to. For a rest between exercises, the
+    /// one about to start.
+    /// </summary>
+    public required Guid ExerciseId { get; init; }
+    public required string ExerciseName { get; init; }
+    /// <summary>
+    /// 1-based. For a rest between sets, the set just finished. 0 for the
+    /// lead-in and for a rest between exercises.
+    /// </summary>
     public required int Set { get; init; }
     /// <summary>
-    /// 1-based. The rep being held, or — for a rest between reps — the rep
-    /// just finished. 0 for the lead-in and for a rest between sets.
+    /// 1-based. The rep being performed, or — for a rest between reps — the
+    /// rep just finished. 0 for the lead-in and for rests between sets or
+    /// exercises.
     /// </summary>
     public required int Rep { get; init; }
     /// <summary>Offset from the start of the session, in seconds.</summary>
     public required double Start { get; init; }
     public required double Duration { get; init; }
+    /// <summary>
+    /// The spoken line for the start of this phase, composed when the
+    /// timeline is built so it can mention the exercise before as well as the
+    /// one at hand ("Pelvic tilts complete. Chin tucks. Get ready.").
+    /// </summary>
+    public required string Cue { get; init; }
 
     public double End => Start + Duration;
 
-    /// <summary>The headline while this phase runs: "Set 1 · Rep 3", "Set 1 done".</summary>
+    /// <summary>The headline while this phase runs: "Set 1 · Rep 3", "Set 1 done", "Up next".</summary>
     public string Title => PhaseKind switch
     {
         Kind.GetReady => "Get ready",
-        Kind.Hold or Kind.RestBetweenReps => $"Set {Set} · Rep {Rep}",
-        _ => $"Set {Set} done",
+        Kind.Hold or Kind.Rep or Kind.RestBetweenReps => $"Set {Set} · Rep {Rep}",
+        Kind.RestBetweenSets => $"Set {Set} done",
+        _ => "Up next",
     };
 
-    /// <summary>What the countdown is counting: "Hold", "Rest".</summary>
+    /// <summary>What the countdown is counting: "Hold", "Go", "Rest".</summary>
     public string Label => PhaseKind switch
     {
         Kind.GetReady => "Get ready",
         Kind.Hold => "Hold",
+        Kind.Rep => "Go",
         Kind.RestBetweenReps => "Rest",
-        _ => "Rest between sets",
+        Kind.RestBetweenSets => "Rest between sets",
+        _ => "Rest",
     };
 
     /// <summary>The Swift enum's raw value, which the phase tests compare against.</summary>
@@ -52,8 +84,10 @@ public sealed record ExercisePhase
     {
         Kind.GetReady => "getReady",
         Kind.Hold => "hold",
+        Kind.Rep => "rep",
         Kind.RestBetweenReps => "restBetweenReps",
-        _ => "restBetweenSets",
+        Kind.RestBetweenSets => "restBetweenSets",
+        _ => "restBetweenExercises",
     };
 }
 
@@ -61,9 +95,11 @@ public sealed record ExercisePhase
 public sealed record ExerciseCue(double At, string Text);
 
 /// <summary>
-/// The whole guided programme for one exercise, computed once when Start is
-/// pressed: a short lead-in, then for every set and rep a hold, with the
-/// rests the exercise asks for in between. Zero-length rests are not emitted.
+/// The whole coached programme for one exercise or a run of them, computed
+/// once when Start is pressed: for each exercise a short lead-in, then for
+/// every set and rep a hold (or a paced rep when there is no hold), with the
+/// rests the exercise asks for in between; and between exercises the rest
+/// the reminder asks for. Zero-length rests are not emitted.
 ///
 /// Pure data, so the Mac, iOS and Windows coaches all run the same programme
 /// and say the same things.
@@ -71,81 +107,140 @@ public sealed record ExerciseCue(double At, string Text);
 public sealed class ExerciseTimeline
 {
     /// <summary>
-    /// Seconds between pressing Start and the first hold — long enough to get
+    /// Seconds between pressing Start and the first rep — long enough to get
     /// into position, short enough not to feel like waiting.
     /// </summary>
     public const double LeadInSeconds = 3;
+    /// <summary>
+    /// Seconds allowed for one rep of an exercise with no hold time, so it
+    /// can be counted through rather than left to the person.
+    /// </summary>
+    public const int RepSeconds = 3;
     /// <summary>
     /// Holds at least this long get a spoken "Three. Two. One." at the end.
     /// Shorter holds do not: the opening cue would still be being spoken.
     /// </summary>
     public const int CountdownMinimumHold = 6;
 
-    public Guid ExerciseId { get; }
-    public string ExerciseName { get; }
+    /// <summary>
+    /// One exercise's span on the clock: from its lead-in to the end of its
+    /// last set. A rest between exercises falls between one entry's
+    /// <see cref="End"/> and the next one's <see cref="Start"/>.
+    /// </summary>
+    public sealed record Entry(Guid Id, string Name, double Start, double End);
+
+    /// <summary>The exercises in the order they run.</summary>
+    public IReadOnlyList<Entry> Entries { get; }
     public IReadOnlyList<ExercisePhase> Phases { get; }
     /// <summary>
     /// Sorted by <see cref="ExerciseCue.At"/>: one for the start of every
-    /// phase, the countdown words inside long holds, and "Exercise complete."
-    /// at <see cref="TotalDuration"/>.
+    /// phase, the countdown words inside long holds, and the closing line at
+    /// <see cref="TotalDuration"/>.
     /// </summary>
     public IReadOnlyList<ExerciseCue> Cues { get; }
 
     public double TotalDuration => Phases.Count == 0 ? 0 : Phases[^1].End;
 
-    private ExerciseTimeline(
-        Guid exerciseId, string exerciseName, IReadOnlyList<ExercisePhase> phases)
+    /// <summary>
+    /// "Exercise complete" for one exercise, "All exercises complete" for a
+    /// run of them: the panel's headline at the end, and the closing cue.
+    /// </summary>
+    public string CompletionTitle =>
+        Entries.Count > 1 ? "All exercises complete" : "Exercise complete";
+
+    private ExerciseTimeline(IReadOnlyList<Entry> entries, IReadOnlyList<ExercisePhase> phases)
     {
-        ExerciseId = exerciseId;
-        ExerciseName = exerciseName;
+        Entries = entries;
         Phases = phases;
-        Cues = BuildCues(phases, exerciseName);
+        Cues = BuildCues(phases, CompletionTitle + ".");
     }
 
-    /// <summary><c>null</c> unless the exercise is guided (has a hold time).</summary>
-    public static ExerciseTimeline? For(Exercise exercise)
+    /// <summary>The programme for one exercise; <c>null</c> when it has no sets or reps.</summary>
+    public static ExerciseTimeline? For(Exercise exercise) => For([exercise]);
+
+    /// <summary>
+    /// The programme for <paramref name="exercises"/> in order, with
+    /// <paramref name="restBetweenExercisesSeconds"/> between one finishing
+    /// and the next one's lead-in. Exercises with no sets or reps are left
+    /// out; <c>null</c> when nothing is left.
+    /// </summary>
+    public static ExerciseTimeline? For(
+        IReadOnlyList<Exercise> exercises, int restBetweenExercisesSeconds = 0)
     {
-        if (!exercise.IsGuided || exercise.Sets < 1 || exercise.Reps < 1) return null;
+        var runnable = exercises.Where(exercise => exercise.Sets >= 1 && exercise.Reps >= 1).ToList();
+        if (runnable.Count == 0) return null;
 
         var phases = new List<ExercisePhase>();
+        var entries = new List<Entry>();
         var cursor = 0.0;
-        void Append(ExercisePhase.Kind kind, int set, int rep, int seconds)
-        {
-            phases.Add(new ExercisePhase
-            {
-                PhaseKind = kind, Set = set, Rep = rep, Start = cursor, Duration = seconds,
-            });
-            cursor += seconds;
-        }
 
-        phases.Add(new ExercisePhase
+        for (var index = 0; index < runnable.Count; index++)
         {
-            PhaseKind = ExercisePhase.Kind.GetReady,
-            Set = 0, Rep = 0, Start = 0, Duration = LeadInSeconds,
-        });
-        cursor = LeadInSeconds;
-
-        for (var set = 1; set <= exercise.Sets; set++)
-        {
-            for (var rep = 1; rep <= exercise.Reps; rep++)
+            var exercise = runnable[index];
+            void Append(ExercisePhase.Kind kind, int set, int rep, int seconds, string cue)
             {
-                Append(ExercisePhase.Kind.Hold, set, rep, exercise.HoldSeconds);
-                if (rep < exercise.Reps && exercise.RestBetweenRepsSeconds > 0)
+                phases.Add(new ExercisePhase
                 {
-                    Append(
-                        ExercisePhase.Kind.RestBetweenReps, set, rep,
-                        exercise.RestBetweenRepsSeconds);
-                }
+                    PhaseKind = kind, ExerciseId = exercise.Id, ExerciseName = exercise.Name,
+                    Set = set, Rep = rep, Start = cursor, Duration = seconds, Cue = cue,
+                });
+                cursor += seconds;
             }
-            if (set < exercise.Sets && exercise.RestBetweenSetsSeconds > 0)
+
+            // The exercise before is signed off at the start of whatever
+            // comes next, so its last rep is not talked over.
+            var preamble = index > 0 ? $"{runnable[index - 1].Name} complete. " : "";
+            if (index > 0 && restBetweenExercisesSeconds > 0)
             {
                 Append(
-                    ExercisePhase.Kind.RestBetweenSets, set, 0,
-                    exercise.RestBetweenSetsSeconds);
+                    ExercisePhase.Kind.RestBetweenExercises, 0, 0, restBetweenExercisesSeconds,
+                    preamble + $"Rest for {Seconds(restBetweenExercisesSeconds)}. Next, {exercise.Name}.");
+                preamble = "";
             }
+
+            var entryStart = cursor;
+            Append(
+                ExercisePhase.Kind.GetReady, 0, 0, (int)LeadInSeconds,
+                preamble + $"{exercise.Name}. Get ready.");
+
+            for (var set = 1; set <= exercise.Sets; set++)
+            {
+                for (var rep = 1; rep <= exercise.Reps; rep++)
+                {
+                    if (exercise.HasHold)
+                    {
+                        Append(
+                            ExercisePhase.Kind.Hold, set, rep, exercise.HoldSeconds,
+                            rep == 1
+                                ? $"Set {set}, rep 1. Hold for {Seconds(exercise.HoldSeconds)}."
+                                : $"Rep {rep}. Hold.");
+                    }
+                    else
+                    {
+                        Append(
+                            ExercisePhase.Kind.Rep, set, rep, RepSeconds,
+                            rep == 1 ? $"Set {set}, rep 1." : $"Rep {rep}.");
+                    }
+                    if (rep < exercise.Reps && exercise.RestBetweenRepsSeconds > 0)
+                    {
+                        Append(
+                            ExercisePhase.Kind.RestBetweenReps, set, rep,
+                            exercise.RestBetweenRepsSeconds, "Rest.");
+                    }
+                }
+                if (set < exercise.Sets && exercise.RestBetweenSetsSeconds > 0)
+                {
+                    Append(
+                        ExercisePhase.Kind.RestBetweenSets, set, 0,
+                        exercise.RestBetweenSetsSeconds,
+                        $"Set {set} done. Rest for {Seconds(exercise.RestBetweenSetsSeconds)}.");
+                }
+            }
+
+            entries.Add(new Entry(exercise.Id, exercise.Name, entryStart, cursor));
         }
 
-        return new ExerciseTimeline(exercise.Id, exercise.Name, phases);
+        return new ExerciseTimeline(entries, phases);
     }
 
     /// <summary>
@@ -164,27 +259,36 @@ public sealed class ExerciseTimeline
         return null;
     }
 
-    /// <summary>The spoken line for the start of <paramref name="phase"/>.</summary>
-    public static string Cue(ExercisePhase phase, string exerciseName) => phase.PhaseKind switch
+    /// <summary>The exercises whose last set has run by <paramref name="offset"/>, in programme order.</summary>
+    public IReadOnlyList<Guid> FinishedExerciseIds(double offset) =>
+        Entries.Where(entry => offset >= entry.End).Select(entry => entry.Id).ToList();
+
+    /// <summary>
+    /// Where the exercise after <paramref name="id"/> begins — its lead-in,
+    /// past any rest between the two — or the end of the session when it is
+    /// the last (or not in the programme). What cancelling the exercise being
+    /// coached jumps to.
+    /// </summary>
+    public double StartOfExerciseAfter(Guid id)
     {
-        ExercisePhase.Kind.GetReady => $"{exerciseName}. Get ready.",
-        ExercisePhase.Kind.Hold when phase.Rep == 1 =>
-            $"Set {phase.Set}, rep 1. Hold for {Seconds((int)phase.Duration)}.",
-        ExercisePhase.Kind.Hold => $"Rep {phase.Rep}. Hold.",
-        ExercisePhase.Kind.RestBetweenReps => "Rest.",
-        _ => $"Set {phase.Set} done. Rest for {Seconds((int)phase.Duration)}.",
-    };
+        for (var index = 0; index < Entries.Count; index++)
+        {
+            if (Entries[index].Id != id) continue;
+            return index + 1 < Entries.Count ? Entries[index + 1].Start : TotalDuration;
+        }
+        return TotalDuration;
+    }
 
     /// <summary>"1 second" / "5 seconds".</summary>
     public static string Seconds(int count) => count == 1 ? "1 second" : $"{count} seconds";
 
     private static IReadOnlyList<ExerciseCue> BuildCues(
-        IReadOnlyList<ExercisePhase> phases, string exerciseName)
+        IReadOnlyList<ExercisePhase> phases, string closing)
     {
         var cues = new List<ExerciseCue>();
         foreach (var phase in phases)
         {
-            cues.Add(new ExerciseCue(phase.Start, Cue(phase, exerciseName)));
+            cues.Add(new ExerciseCue(phase.Start, phase.Cue));
             if (phase.PhaseKind == ExercisePhase.Kind.Hold
                 && (int)phase.Duration >= CountdownMinimumHold)
             {
@@ -195,7 +299,7 @@ public sealed class ExerciseTimeline
         }
         if (phases.Count > 0)
         {
-            cues.Add(new ExerciseCue(phases[^1].End, "Exercise complete."));
+            cues.Add(new ExerciseCue(phases[^1].End, closing));
         }
         // A stable sort, so the countdown words keep their order and a cue on
         // a phase boundary stays ahead of the next phase's own cue.
@@ -358,11 +462,23 @@ public sealed class ExerciseSession
     /// </summary>
     public void Skip(Instant now)
     {
-        if (!IsLive) return;
         var offset = Elapsed(now);
-        _banked = Timeline.PhaseIndexAt(offset) is { } index
-            ? Timeline.Phases[index].End
-            : Timeline.TotalDuration;
+        Jump(
+            Timeline.PhaseIndexAt(offset) is { } index
+                ? Timeline.Phases[index].End
+                : Timeline.TotalDuration,
+            now);
+    }
+
+    /// <summary>
+    /// Moves the cursor to <paramref name="offset"/> on the session's clock —
+    /// the start of a later exercise, say — with the same rules as
+    /// <see cref="Skip"/>.
+    /// </summary>
+    public void Jump(double offset, Instant now)
+    {
+        if (!IsLive) return;
+        _banked = Math.Min(Math.Max(0, offset), Timeline.TotalDuration);
         if (State == SessionState.Running) _runningSince = now;
     }
 

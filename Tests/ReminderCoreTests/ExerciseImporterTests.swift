@@ -43,7 +43,7 @@ final class ExerciseImporterTests: XCTestCase {
 
     func testUnstatedCountsKeepTheEditorDefaults() throws {
         let exercise = try parseOne("Shoulder rolls")
-        XCTAssertEqual(exercise.sets, 3, "The Exercise initializer's default")
+        XCTAssertEqual(exercise.sets, 1, "The Exercise initializer's default: one set unless told otherwise")
         XCTAssertEqual(exercise.reps, 10, "The Exercise initializer's default")
         XCTAssertEqual(exercise.holdSeconds, 0, "Nothing said to hold, so untimed")
     }
@@ -73,8 +73,8 @@ final class ExerciseImporterTests: XCTestCase {
     }
 
     func testAHoldMakesTheExerciseGuided() throws {
-        XCTAssertTrue(try parseOne("Chin tucks 3 x 10 hold 5 seconds").isGuided)
-        XCTAssertFalse(try parseOne("Shoulder rolls 3 x 10").isGuided)
+        XCTAssertTrue(try parseOne("Chin tucks 3 x 10 hold 5 seconds").hasHold)
+        XCTAssertFalse(try parseOne("Shoulder rolls 3 x 10").hasHold)
     }
 
     // MARK: - Rest
@@ -208,10 +208,61 @@ final class ExerciseImporterTests: XCTestCase {
         let exercise = try parseOne("Wall slides 3 times for 15 seconds")
         XCTAssertEqual(exercise.reps, 3, "\"3 times\" counts repetitions")
         XCTAssertEqual(exercise.holdSeconds, 15)
-        XCTAssertEqual(exercise.sets, 3, "No set count was stated, so the default stands")
+        XCTAssertEqual(exercise.sets, 1, "No set count was stated, so the default stands")
     }
 
     // MARK: - Nothing to import
+
+    // MARK: - Phrasings from real handouts that used to mis-parse
+
+    /// "3 sets of 30 seconds" is three held sets, not thirty reps.
+    func testTimedSetsAreHoldsNotReps() throws {
+        XCTAssertEqual(describe(try parseOne("Plank: 3 sets of 30 seconds")), "Plank | 3×1 | 30 | 0 | 0")
+        XCTAssertEqual(describe(try parseOne("Plank 3 x 30 seconds")), "Plank | 3×1 | 30 | 0 | 0")
+        XCTAssertEqual(describe(try parseOne("Side plank, 2 sets of 1 minute")), "Side plank | 2×1 | 60 | 0 | 0")
+    }
+
+    /// The rest verb may follow the number.
+    func testRestPhrasesWithTheVerbAfterTheNumber() throws {
+        XCTAssertEqual(
+            describe(try parseOne("Bridges 3 sets of 10 with 30 seconds rest between sets")),
+            "Bridges | 3×10 | 0 | 0 | 30"
+        )
+        XCTAssertEqual(
+            describe(try parseOne("Bridges 3 sets of 10, 1 minute rest between sets")),
+            "Bridges | 3×10 | 0 | 0 | 60"
+        )
+        XCTAssertEqual(
+            describe(try parseOne("Calf raises 2 x 12, 5 seconds pause between reps")),
+            "Calf raises | 2×12 | 0 | 5 | 0"
+        )
+    }
+
+    func testHoldWithFillerWordsIsStillAHold() throws {
+        let exercise = try parseOne("Chin tucks. Hold this position for 10 seconds. Repeat 10 times.")
+        XCTAssertEqual(exercise.holdSeconds, 10)
+        XCTAssertEqual(exercise.reps, 10)
+        XCTAssertEqual(try parseOne("Hamstring stretch, hold the stretch for 20 seconds").holdSeconds, 20)
+    }
+
+    func testSetCountSurvivesTheTimesForForm() throws {
+        XCTAssertEqual(
+            describe(try parseOne("3 sets of 10 times for 5 seconds glute squeeze")),
+            "Glute squeeze | 3×10 | 5 | 0 | 0"
+        )
+    }
+
+    /// A bare "s" or "m" unit must not eat the first letter of the next word.
+    func testUnitsNeedAWordBoundary() throws {
+        let exercise = try parseOne("Bridge, hold 5 more seconds")
+        XCTAssertEqual(exercise.holdSeconds, 5, "Not 5 minutes")
+        XCTAssertEqual(exercise.name, "Bridge")
+    }
+
+    func testTrailingCrossIsARepCount() throws {
+        XCTAssertEqual(describe(try parseOne("Wall slides x 15")), "Wall slides | 1×15 | 0 | 0 | 0")
+        XCTAssertEqual(describe(try parseOne("Wall slides × 15")), "Wall slides | 1×15 | 0 | 0 | 0")
+    }
 
     func testEmptyTextParsesToNothing() {
         XCTAssertEqual(ExerciseImporter.parse("").count, 0)

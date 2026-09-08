@@ -284,7 +284,14 @@ public enum Scheduler {
             // remaining time by shifting the anchor forward by the length of
             // the downtime — the countdown resumes where it left off, and two
             // reminders that were 38 minutes apart still are.
-            let elapsedDowntime = resumeDate.timeIntervalSince(downtimeStart)
+            //
+            // An anchor set *inside* the downtime (a reminder added or
+            // re-enabled while paused, or re-anchored by the launch backlog on
+            // a relaunch mid-pause) has only been idle since it was set, so
+            // that is where its downtime starts; shifting it by the whole
+            // pause would push it hours or days past its interval.
+            let idleSince = max(downtimeStart, anchor)
+            let elapsedDowntime = resumeDate.timeIntervalSince(idleSince)
             guard elapsedDowntime > 0 else { return nil }
             return anchor.addingTimeInterval(elapsedDowntime)
         }
@@ -415,8 +422,12 @@ public enum Scheduler {
             // engine cannot disagree about when this lands. Without a set to
             // rank against there is no stagger slot here; the engine assigns
             // those when the pause actually lifts.
+            // The downtime began when the pause did, not at the moment of
+            // asking: projecting from `now` would make the answer drift later
+            // as the pause wore on and disagree with what the engine does
+            // when the pause lifts.
             if let anchor = reanchorForDowntime(
-                sim, downtimeStart: now, resumeDate: until
+                sim, downtimeStart: min(now, settings.pausedAt ?? now), resumeDate: until
             ) {
                 sim.lastFiredAt = anchor
             }
@@ -428,8 +439,17 @@ public enum Scheduler {
             for: due, priority: sim.priority, settings: settings, calendar: calendar
         ) else { return nil }
 
-        if sim.snoozedUntil != nil || !sim.schedule.isWallClock {
+        if !sim.schedule.isWallClock {
             return FireStep(fireDate: fireAt, stampDate: fireAt, outcome: .deliver)
+        }
+        if sim.snoozedUntil != nil {
+            // A snoozed wall-clock fire is still the slot's fire: stamping the
+            // delivery moment would move the anchor onto another day when the
+            // snooze crosses midnight and drag an "every N days" grid out of
+            // phase. The slot already fired, so its stamp is the anchor itself.
+            let slot = latestElapsedSlot(for: sim, now: fireAt, calendar: calendar)
+                ?? sim.lastFiredAt ?? fireAt
+            return FireStep(fireDate: fireAt, stampDate: slot, outcome: .deliver)
         }
 
         let slot = latestElapsedSlot(for: sim, now: fireAt, calendar: calendar) ?? fireAt
@@ -486,6 +506,18 @@ public enum Scheduler {
     ) -> Bool {
         let quiet = settings.quietHours
         guard quiet.contains(now, calendar: calendar) else { return false }
+        if quiet.allowsCritical && priority == .critical { return false }
+        return true
+    }
+
+    /// Whether a daily or weekly reminder at this time of day would be
+    /// skipped by quiet hours every time it came round — the editor's cue to
+    /// say so, since the engine otherwise records a silent miss each day.
+    public static func wallClockTimeIsSilenced(
+        hour: Int, minute: Int, priority: Priority, settings: Settings
+    ) -> Bool {
+        let quiet = settings.quietHours
+        guard quiet.covers(hour: hour, minute: minute) else { return false }
         if quiet.allowsCritical && priority == .critical { return false }
         return true
     }

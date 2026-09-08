@@ -1,4 +1,5 @@
 using NodaTime;
+using NodaTime.TimeZones;
 
 namespace Pauselet.Core;
 
@@ -9,6 +10,35 @@ namespace Pauselet.Core;
 /// behaviour at DST edges: a time inside a spring-forward gap lands just after
 /// the gap instead of failing.
 /// </summary>
+/// <summary>
+/// The machine's time zone, as NodaTime sees it. Resolved once, with a
+/// fallback: a Windows zone id with no TZDB mapping would otherwise throw
+/// from every constructor that asks and stop the app launching.
+/// </summary>
+public static class SystemZone
+{
+    public static readonly DateTimeZone Current = Resolve();
+
+    private static DateTimeZone Resolve()
+    {
+        try
+        {
+            return DateTimeZoneProviders.Tzdb.GetSystemDefault();
+        }
+        catch (DateTimeZoneNotFoundException)
+        {
+            try
+            {
+                return DateTimeZoneProviders.Bcl.GetSystemDefault();
+            }
+            catch (DateTimeZoneNotFoundException)
+            {
+                return DateTimeZone.Utc;
+            }
+        }
+    }
+}
+
 internal static class CalendarMath
 {
     internal static LocalDate DayOf(Instant instant, DateTimeZone zone) =>
@@ -21,11 +51,22 @@ internal static class CalendarMath
     /// The instant at <paramref name="hour"/>:<paramref name="minute"/> on
     /// <paramref name="day"/>, or <c>null</c> for values no day can contain.
     /// </summary>
+    private static readonly ZoneLocalMappingResolver GapToEndResolver =
+        Resolvers.CreateMappingResolver(
+            Resolvers.ReturnEarlier,
+            (local, zone, before, after) => after.Start.InZone(zone));
+
     internal static Instant? SlotAt(LocalDate day, int hour, int minute, DateTimeZone zone)
     {
         if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
         var local = day.At(new LocalTime(hour, minute));
-        return zone.AtLeniently(local).ToInstant();
+        // Apple's Calendar.date(bySettingHour:) returns the first instant
+        // after a DST gap for a time the clocks skipped, and the earlier of
+        // two mappings for a time they repeat. NodaTime's lenient resolver
+        // shifts a gap time forward by the gap's length instead, which would
+        // put a 02:30 reminder half an hour behind the Mac on spring-forward
+        // day; this resolver matches the Mac.
+        return zone.ResolveLocal(local, GapToEndResolver).ToInstant();
     }
 
     /// <summary>
@@ -307,7 +348,14 @@ public static class Scheduler
             // remaining time by shifting the anchor forward by the length of
             // the downtime, so two reminders that were 38 minutes apart still
             // are.
-            var elapsedDowntime = resumeDate - downtimeStart;
+            //
+            // An anchor set *inside* the downtime (a reminder added or
+            // re-enabled while paused, or re-anchored by the launch backlog on
+            // a relaunch mid-pause) has only been idle since it was set, so
+            // that is where its downtime starts; shifting it by the whole
+            // pause would push it hours or days past its interval.
+            var idleSince = Instant.Max(downtimeStart, anchor);
+            var elapsedDowntime = resumeDate - idleSince;
             if (elapsedDowntime <= Duration.Zero) return null;
             return anchor + elapsedDowntime;
         }
@@ -427,8 +475,13 @@ public static class Scheduler
             cursor = until;
             // Re-anchor exactly as the engine will when the pause expires,
             // preserving the reminder's phase, so the projection and the live
-            // engine cannot disagree about when this lands.
-            if (ReanchorForDowntime(sim, now, until) is { } anchor)
+            // engine cannot disagree about when this lands. The downtime began
+            // when the pause did, not at the moment of asking: projecting from
+            // `now` would drift later as the pause wore on.
+            var downtimeStart = settings.PausedAt is { } pausedAt
+                ? Instant.Min(now, pausedAt)
+                : now;
+            if (ReanchorForDowntime(sim, downtimeStart, until) is { } anchor)
             {
                 sim = sim with { LastFiredAt = anchor };
             }
@@ -438,9 +491,18 @@ public static class Scheduler
         var due = Instant.Max(pending, cursor);
         if (DeliveryMoment(due, sim.Priority, settings, zone) is not { } fireAt) return null;
 
-        if (sim.SnoozedUntil is not null || !sim.Schedule.IsWallClock)
+        if (!sim.Schedule.IsWallClock)
         {
             return new FireStep(fireAt, fireAt, FireStep.Outcome.Deliver);
+        }
+        if (sim.SnoozedUntil is not null)
+        {
+            // A snoozed wall-clock fire is still the slot's fire: stamping the
+            // delivery moment would move the anchor onto another day when the
+            // snooze crosses midnight and drag an "every N days" grid out of
+            // phase. The slot already fired, so its stamp is the anchor itself.
+            var snoozedSlot = LatestElapsedSlot(sim, fireAt, zone) ?? sim.LastFiredAt ?? fireAt;
+            return new FireStep(fireAt, snoozedSlot, FireStep.Outcome.Deliver);
         }
 
         var slot = LatestElapsedSlot(sim, fireAt, zone) ?? fireAt;
@@ -489,6 +551,20 @@ public static class Scheduler
     {
         var quiet = settings.QuietHours;
         if (!quiet.Contains(now, zone)) return false;
+        if (quiet.AllowsCritical && priority == Priority.Critical) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a daily or weekly reminder at this time of day would be skipped
+    /// by quiet hours every time it came round — the editor's cue to say so,
+    /// since the engine otherwise records a silent miss each day.
+    /// </summary>
+    public static bool WallClockTimeIsSilenced(
+        int hour, int minute, Priority priority, Settings settings)
+    {
+        var quiet = settings.QuietHours;
+        if (!quiet.Covers(hour, minute)) return false;
         if (quiet.AllowsCritical && priority == Priority.Critical) return false;
         return true;
     }

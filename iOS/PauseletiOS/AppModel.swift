@@ -65,6 +65,9 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     /// The takeover a lock-screen notification has already been posted for,
     /// so backgrounding twice does not post it twice.
     private var handedOffTakeoverID: UUID?
+    /// The request that carries it, so it can be taken down again once the
+    /// takeover is answered in the app.
+    private var handedOffRequestID: String?
     private var timeChangeObserver: NSObjectProtocol?
 
     static let backgroundRefreshIdentifier = "com.pauselet.pauselet.refresh"
@@ -99,7 +102,11 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
             forName: UIApplication.significantTimeChangeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.setNeedsReschedule() }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.foldInExternalState()
+                await self.rescheduleEverything()
+            }
         }
     }
 
@@ -152,6 +159,17 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     /// engine state, absorbs anything stale, fires anything genuinely current,
     /// and re-schedules the future.
     func reconcile() async {
+        await foldInExternalState()
+        engine.tick()
+        await rescheduleEverything()
+    }
+
+    /// The half of `reconcile()` that must run before the engine is mutated
+    /// or the schedule rebuilt from a background launch — a notification
+    /// action or an alarm intent — where no scene activation will do it.
+    /// Rescheduling from un-reconciled state would project every reminder
+    /// whose notification already fired as overdue and deliver it again.
+    private func foldInExternalState() async {
         let now = Date()
         let fires = await notifications.deliveredExternalFires()
         engine.recordExternalFires(fires)
@@ -160,8 +178,6 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
         // could deliver it (a cleared notification, a slot beyond the budget
         // horizon). Its moment has passed: absorb, don't replay.
         engine.absorbBacklogFromDowntime()
-        engine.tick()
-        await rescheduleEverything()
     }
 
     // MARK: - Rescheduling
@@ -325,7 +341,17 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     private func handOffUnacknowledgedTakeover() {
         guard let takeover, !takeover.isPreview, handedOffTakeoverID != takeover.id else { return }
         handedOffTakeoverID = takeover.id
-        notifications.postImmediate(takeover.reminder, settings: engine.settings)
+        handedOffRequestID = notifications.postImmediate(takeover.reminder, settings: engine.settings)
+    }
+
+    /// Takes the lock-screen copy down once its takeover has been answered
+    /// here, so its buttons cannot act on the reminder a second time.
+    private func withdrawHandedOffCopy() {
+        if let handedOffRequestID {
+            notifications.removeDelivered(identifiers: [handedOffRequestID])
+        }
+        handedOffRequestID = nil
+        handedOffTakeoverID = nil
     }
 
     enum TakeoverAction {
@@ -436,8 +462,25 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     /// schedule is armed (the response may have launched the app in the
     /// background, where nothing runs after the handler returns).
     func handleNotificationResponse(
-        reminderID: UUID, action: NotificationScheduler.ResponseAction
+        reminderID: UUID, action: NotificationScheduler.ResponseAction,
+        requestIdentifier: String? = nil
     ) async {
+        // A background launch: fold in what the system delivered first, or the
+        // reschedule below re-delivers every other pending reminder.
+        await foldInExternalState()
+
+        let isHandedOffCopy = requestIdentifier != nil && requestIdentifier == handedOffRequestID
+        if isHandedOffCopy, action == .dismiss, let takeover, !takeover.isPreview,
+           takeover.reminder.id == reminderID {
+            // Clearing the lock-screen copy of a takeover still on screen is
+            // tidying, not answering it: the takeover's own Done must still
+            // count as the acknowledgement, not as an early completion of the
+            // next slot.
+            handedOffRequestID = nil
+            await rescheduleEverything()
+            return
+        }
+
         switch action {
         case .complete: engine.complete(id: reminderID)
         case .snooze: engine.snooze(id: reminderID)
@@ -465,6 +508,8 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
                 id: reminderID, at: fire.stampDate, deliveredAt: fire.fireDate
             )
         }
+        // A background launch: see `handleNotificationResponse`.
+        await foldInExternalState()
         engine.complete(id: reminderID)
         await rescheduleEverything()
     }
@@ -482,7 +527,9 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     /// An alarm started alerting while the app is frontmost: silence the
     /// system alert and show the real takeover instead.
     func handleAlarmAlerting(reminderID: UUID) {
-        guard isActive else { return }
+        // Only once the tick loop is running: before that the activation's
+        // reconcile has not run, and a tick here would replay delivered fires.
+        guard tickTimer != nil else { return }
         guard let reminder = engine.reminder(withID: reminderID) else { return }
         alarms.stopIfAlerting(reminderID)
         // The tick will stamp and present it within seconds; presenting here

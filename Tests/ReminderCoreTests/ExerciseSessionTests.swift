@@ -1,9 +1,9 @@
 import XCTest
 @testable import ReminderCore
 
-/// The guided-exercise programme: what a timeline contains, what the coach
-/// says when, and how the session cursor follows wall time through pause,
-/// resume and skip.
+/// The coached programme: what a timeline contains for one exercise and for
+/// a run of them, what the coach says when, and how the session cursor
+/// follows wall time through pause, resume and skip.
 final class ExerciseSessionTests: XCTestCase {
 
     private let epoch = Date(timeIntervalSince1970: 1_760_000_000)
@@ -24,9 +24,28 @@ final class ExerciseSessionTests: XCTestCase {
 
     // MARK: - Timeline
 
-    func testUntimedExerciseHasNoTimeline() {
-        XCTAssertNil(ExerciseTimeline(exercise: Exercise(name: "Squats")))
-        XCTAssertNil(ExerciseTimeline(exercise: Exercise(name: "Squats", holdSeconds: 0)))
+    /// An exercise with no hold is still coached: each rep gets the fixed
+    /// tempo instead of a hold, so a whole programme can run unattended.
+    func testExerciseWithoutAHoldIsPacedRepByRep() throws {
+        let timeline = try timeline(Exercise(name: "Squats", sets: 1, reps: 3,
+                                             restBetweenRepsSeconds: 2))
+
+        XCTAssertEqual(timeline.phases.map(\.kind),
+                       [.getReady, .rep, .restBetweenReps, .rep, .restBetweenReps, .rep])
+        XCTAssertEqual(timeline.phases[1].duration, TimeInterval(ExerciseTimeline.repSeconds))
+        XCTAssertEqual(timeline.phases[1].title, "Set 1 · Rep 1")
+        XCTAssertEqual(timeline.phases[1].label, "Go")
+        XCTAssertEqual(timeline.phases[1].cue, "Set 1, rep 1.")
+        XCTAssertEqual(timeline.phases[3].cue, "Rep 2.")
+        XCTAssertEqual(timeline.totalDuration, 3 + 3 * 3 + 2 * 2)
+        XCTAssertFalse(timeline.cues.contains { $0.text == "Three." },
+                       "The countdown belongs to holds, not paced reps")
+    }
+
+    func testNothingRunnableHasNoTimeline() {
+        XCTAssertNil(ExerciseTimeline(exercise: Exercise(name: "Squats", sets: 0)))
+        XCTAssertNil(ExerciseTimeline(exercises: []))
+        XCTAssertNil(ExerciseTimeline(exercises: [Exercise(name: "Squats", reps: 0)]))
     }
 
     func testTimelinePhasesForTwoSetsOfThree() throws {
@@ -103,24 +122,16 @@ final class ExerciseSessionTests: XCTestCase {
 
     func testCueTextPerPhaseKind() throws {
         let timeline = try timeline(twoByThree)
-        let name = "Chin tucks"
 
-        XCTAssertEqual(ExerciseTimeline.cue(for: timeline.phases[0], exerciseName: name),
-                       "Chin tucks. Get ready.")
-        XCTAssertEqual(ExerciseTimeline.cue(for: timeline.phases[1], exerciseName: name),
-                       "Set 1, rep 1. Hold for 5 seconds.")
-        XCTAssertEqual(ExerciseTimeline.cue(for: timeline.phases[2], exerciseName: name),
-                       "Rest.")
-        XCTAssertEqual(ExerciseTimeline.cue(for: timeline.phases[3], exerciseName: name),
-                       "Rep 2. Hold.")
-        XCTAssertEqual(ExerciseTimeline.cue(for: timeline.phases[6], exerciseName: name),
-                       "Set 1 done. Rest for 10 seconds.")
-        XCTAssertEqual(ExerciseTimeline.cue(for: timeline.phases[7], exerciseName: name),
-                       "Set 2, rep 1. Hold for 5 seconds.")
+        XCTAssertEqual(timeline.phases[0].cue, "Chin tucks. Get ready.")
+        XCTAssertEqual(timeline.phases[1].cue, "Set 1, rep 1. Hold for 5 seconds.")
+        XCTAssertEqual(timeline.phases[2].cue, "Rest.")
+        XCTAssertEqual(timeline.phases[3].cue, "Rep 2. Hold.")
+        XCTAssertEqual(timeline.phases[6].cue, "Set 1 done. Rest for 10 seconds.")
+        XCTAssertEqual(timeline.phases[7].cue, "Set 2, rep 1. Hold for 5 seconds.")
 
         let oneSecond = try self.timeline(Exercise(name: "Blink", sets: 1, reps: 1, holdSeconds: 1))
-        XCTAssertEqual(ExerciseTimeline.cue(for: oneSecond.phases[1], exerciseName: "Blink"),
-                       "Set 1, rep 1. Hold for 1 second.")
+        XCTAssertEqual(oneSecond.phases[1].cue, "Set 1, rep 1. Hold for 1 second.")
     }
 
     func testCountdownCuesOnlyForHoldsOfSixSecondsOrMore() throws {
@@ -146,6 +157,118 @@ final class ExerciseSessionTests: XCTestCase {
         for phase in timeline.phases {
             XCTAssertEqual(timeline.cues.filter { $0.at == phase.start }.count, 1, "\(phase)")
         }
+    }
+
+    func testEveryPhaseNamesItsExercise() throws {
+        let exercise = twoByThree
+        let timeline = try timeline(exercise)
+
+        XCTAssertEqual(timeline.entries.map(\.id), [exercise.id])
+        XCTAssertEqual(timeline.entries.first?.start, 0)
+        XCTAssertEqual(timeline.entries.first?.end, timeline.totalDuration)
+        XCTAssertEqual(timeline.completionTitle, "Exercise complete")
+        for phase in timeline.phases {
+            XCTAssertEqual(phase.exerciseID, exercise.id)
+            XCTAssertEqual(phase.exerciseName, "Chin tucks")
+        }
+    }
+
+    // MARK: - A run of exercises
+
+    /// Two exercises with 10 s between them: the first, the rest (which
+    /// belongs to the second), the second's lead-in, the second.
+    func testSequencePutsTheRestBetweenExercisesBeforeTheNextLeadIn() throws {
+        let tucks = Exercise(name: "Chin tucks", sets: 1, reps: 2, holdSeconds: 5)
+        let shifts = Exercise(name: "Weight shifts", sets: 1, reps: 2)
+        let timeline = try XCTUnwrap(ExerciseTimeline(
+            exercises: [tucks, shifts], restBetweenExercisesSeconds: 10
+        ))
+
+        let phases = timeline.phases.map {
+            [$0.kind.rawValue, "\(Int($0.start))", "\(Int($0.duration))"].joined(separator: " ")
+        }
+        XCTAssertEqual(phases, [
+            "getReady 0 3",
+            "hold 3 5",
+            "hold 8 5",
+            "restBetweenExercises 13 10",
+            "getReady 23 3",
+            "rep 26 3",
+            "rep 29 3",
+        ])
+        XCTAssertEqual(timeline.phases[3].exerciseID, shifts.id, "The rest is the next one's")
+        XCTAssertEqual(timeline.phases[3].title, "Up next")
+        XCTAssertEqual(timeline.phases[3].label, "Rest")
+
+        XCTAssertEqual(timeline.entries.map(\.id), [tucks.id, shifts.id])
+        XCTAssertEqual(timeline.entries[0].end, 13)
+        XCTAssertEqual(timeline.entries[1].start, 23)
+        XCTAssertEqual(timeline.entries[1].end, 32)
+        XCTAssertEqual(timeline.totalDuration, 32)
+        XCTAssertEqual(timeline.completionTitle, "All exercises complete")
+    }
+
+    func testSequenceCuesSignOffTheExerciseBefore() throws {
+        let tucks = Exercise(name: "Chin tucks", sets: 1, reps: 1, holdSeconds: 5)
+        let shifts = Exercise(name: "Weight shifts", sets: 1, reps: 1)
+        let rows = Exercise(name: "Rows", sets: 1, reps: 1)
+
+        let withRest = try XCTUnwrap(ExerciseTimeline(
+            exercises: [tucks, shifts], restBetweenExercisesSeconds: 30
+        ))
+        XCTAssertEqual(withRest.phases[2].cue,
+                       "Chin tucks complete. Rest for 30 seconds. Next, Weight shifts.")
+        XCTAssertEqual(withRest.phases[3].cue, "Weight shifts. Get ready.")
+        XCTAssertEqual(withRest.cues.last?.text, "All exercises complete.")
+
+        let noRest = try XCTUnwrap(ExerciseTimeline(exercises: [tucks, shifts, rows]))
+        XCTAssertEqual(noRest.phases.map(\.kind),
+                       [.getReady, .hold, .getReady, .rep, .getReady, .rep])
+        XCTAssertEqual(noRest.phases[2].cue, "Chin tucks complete. Weight shifts. Get ready.")
+        XCTAssertEqual(noRest.phases[4].cue, "Weight shifts complete. Rows. Get ready.")
+    }
+
+    func testFinishedExercisesAndTheStartOfTheNext() throws {
+        let tucks = Exercise(name: "Chin tucks", sets: 1, reps: 2, holdSeconds: 5)
+        let shifts = Exercise(name: "Weight shifts", sets: 1, reps: 2)
+        let timeline = try XCTUnwrap(ExerciseTimeline(
+            exercises: [tucks, shifts], restBetweenExercisesSeconds: 10
+        ))
+
+        XCTAssertEqual(timeline.finishedExerciseIDs(at: 12.9), [])
+        XCTAssertEqual(timeline.finishedExerciseIDs(at: 13), [tucks.id])
+        XCTAssertEqual(timeline.finishedExerciseIDs(at: 31.9), [tucks.id])
+        XCTAssertEqual(timeline.finishedExerciseIDs(at: 32), [tucks.id, shifts.id])
+
+        XCTAssertEqual(timeline.startOfExercise(after: tucks.id), 23,
+                       "Past the rest, to the next lead-in")
+        XCTAssertEqual(timeline.startOfExercise(after: shifts.id), 32, "The last one: the end")
+        XCTAssertEqual(timeline.startOfExercise(after: UUID()), 32)
+    }
+
+    func testSequenceLeavesOutWhatCannotRun() throws {
+        let tucks = Exercise(name: "Chin tucks", sets: 1, reps: 1, holdSeconds: 5)
+        let broken = Exercise(name: "Nothing", sets: 0, reps: 0)
+        let timeline = try XCTUnwrap(ExerciseTimeline(exercises: [broken, tucks]))
+
+        XCTAssertEqual(timeline.entries.map(\.id), [tucks.id])
+        XCTAssertEqual(timeline.phases.first?.cue, "Chin tucks. Get ready.")
+    }
+
+    func testJumpMovesTheCursorAndClampsToTheSession() throws {
+        var session = ExerciseSession(timeline: try timeline(twoByThree), startedAt: epoch)
+
+        session.jump(to: 32, at: at(4))
+        XCTAssertEqual(session.elapsed(at: at(4)), 32)
+        XCTAssertEqual(session.phase(at: at(4))?.title, "Set 2 · Rep 1")
+        XCTAssertEqual(session.elapsed(at: at(5)), 33, "Keeps running from the new position")
+
+        session.jump(to: 1000, at: at(5))
+        XCTAssertTrue(session.isFinished(at: at(5)))
+
+        session.stop(at: at(5))
+        session.jump(to: 0, at: at(5))
+        XCTAssertTrue(session.isFinished(at: at(5)), "A stopped session does not move")
     }
 
     // MARK: - Session

@@ -82,7 +82,8 @@ struct ReminderListView: View {
         }
         .sheet(item: $editing) { reminder in
             ReminderEditorView(reminder: reminder) { updated in
-                engine.update(updated)
+                // Keeps whatever the engine stamped while the sheet was open.
+                engine.applyEdits(updated)
                 model.setNeedsReschedule()
             }
         }

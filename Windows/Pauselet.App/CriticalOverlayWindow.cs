@@ -17,8 +17,9 @@ namespace Pauselet.App;
 /// concentrating, so it is calm rather than alarming — dark, soft, and
 /// unhurried. For a reminder with an activity duration it runs a countdown,
 /// which turns "stop working" into a concrete, finite thing to do. An
-/// exercise reminder lists its exercises with a tick box each — working
-/// memory for the session, never persisted — above the same buttons.
+/// exercise reminder lists its exercises with Start and Skip on each — what
+/// is done is working memory for the session, never persisted — above the
+/// same buttons, and Start all runs the whole list in sequence.
 ///
 /// Two Windows-specific defences:
 /// - Topmost is re-asserted on a 2-second timer for as long as the takeover is
@@ -45,6 +46,8 @@ internal sealed class CriticalOverlayWindow : Window
     private DispatcherTimer? _countdownTimer;
     private IntPtr _handle;
     private bool _acknowledged;
+    /// <summary>Set by <see cref="CloseOverlay"/>: the presenter is taking the window down.</summary>
+    private bool _closeRequested;
 
     private int _remaining;
     private bool _hasStarted;
@@ -52,16 +55,15 @@ internal sealed class CriticalOverlayWindow : Window
     private TextBlock? _ringLabel;
     private TextBlock? _ringSubLabel;
     private Button? _doneButton;
-    private readonly List<System.Windows.Controls.Primitives.ToggleButton> _exerciseToggles = [];
+    private Button? _startAllButton;
     private TextBlock? _exerciseProgress;
 
     /// <summary>
     /// Shared with every other monitor's copy of this takeover; <c>null</c>
-    /// for an ordinary reminder, and for an exercise list with nothing guided
-    /// in it, which keeps its plain tick boxes.
+    /// for an ordinary reminder.
     /// </summary>
     private readonly ExerciseCoach? _coach;
-    /// <summary>Per-guided-exercise controls, so a tick refreshes the right row.</summary>
+    /// <summary>Per-exercise controls, so a change refreshes the right row.</summary>
     private readonly List<CoachRow> _coachRows = [];
     private Border? _coachPanel;
     private TextBlock? _coachHeadline;
@@ -69,12 +71,17 @@ internal sealed class CriticalOverlayWindow : Window
     private TextBlock? _coachCountdown;
     private System.Windows.Shapes.Path? _coachRingProgress;
     private Button? _coachPauseButton;
+    private Button? _coachSkipButton;
+    private Button? _coachStopButton;
+    private Button? _coachStartNextButton;
+    private Button? _coachStartAllButton;
 
     /// <summary>The coach-driven controls belonging to one exercise row.</summary>
     private sealed record CoachRow(
-        Guid Id, Button Start, Button Cancel, TextBlock Caption, StackPanel Text);
+        Guid Id, Border Row, TextBlock Glyph, Button Start, Button Cancel,
+        TextBlock Caption, StackPanel Text);
 
-    private bool HasCoach => _coach is { HasGuidedExercises: true };
+    private bool HasCoach => _coach is not null;
 
     private bool HasCountdown => (_reminder.ActivityDurationSeconds ?? 0) > 0;
 
@@ -96,6 +103,9 @@ internal sealed class CriticalOverlayWindow : Window
         Theme.Brush(Color.FromArgb(20, 255, 255, 255));
     private static readonly Brush RowDoneBrush =
         Theme.Brush(Color.FromArgb(10, 255, 255, 255));
+    /// <summary>The row being coached: the Mac's teal wash at 14% over the row.</summary>
+    private static readonly Brush RowActiveBrush =
+        Theme.Brush(Color.FromArgb(36, 107, 217, 199));
     private static readonly Brush UntickedBrush =
         Theme.Brush(Color.FromArgb(102, 255, 255, 255));
     private static readonly Brush InstructionsBrush =
@@ -144,8 +154,12 @@ internal sealed class CriticalOverlayWindow : Window
         if (_coach is not null)
         {
             // Every monitor's window redraws from the one shared coach, so a
-            // cue spoken once is reflected on all of them.
+            // cue spoken once is reflected on all of them. A window built
+            // around a coach mid-session (a monitor relayout) draws its
+            // current state now rather than at the next tick — which, once a
+            // run has completed, never comes.
             _coach.Changed += OnCoachChanged;
+            OnCoachChanged();
         }
 
         _topmostTimer = new DispatcherTimer
@@ -226,11 +240,50 @@ internal sealed class CriticalOverlayWindow : Window
 
     public void CloseOverlay()
     {
+        _closeRequested = true;
+        Close();
+    }
+
+    /// <summary>
+    /// A close the presenter did not ask for — Alt+F4, a taskbar close — must
+    /// not simply vanish: the presenter would still believe the takeover is
+    /// up and queue every later critical reminder behind it for good. It is
+    /// answered as a snooze, the acknowledgement that changes nothing, which
+    /// takes every monitor's copy down through the normal path.
+    /// </summary>
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_closeRequested && !_acknowledged)
+        {
+            e.Cancel = true;
+            Dispatcher.BeginInvoke(() => Acknowledge(_onSnooze));
+            return;
+        }
+        base.OnClosing(e);
+    }
+
+    /// <summary>
+    /// Timers and subscriptions end with the window however it went — a
+    /// topmost timer re-pinning a dead HWND is otherwise the first symptom.
+    /// </summary>
+    protected override void OnClosed(EventArgs e)
+    {
         _topmostTimer.Stop();
         _countdownTimer?.Stop();
         _countdownTimer = null;
         if (_coach is not null) _coach.Changed -= OnCoachChanged;
-        Close();
+        base.OnClosed(e);
+    }
+
+    /// <summary>
+    /// Moving the window onto a monitor with a different DPI makes WPF apply
+    /// the system-suggested rect, undoing the physical bounds just set; pin
+    /// them again at once rather than waiting for the 2 s timer.
+    /// </summary>
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        Dispatcher.BeginInvoke(() => PinToBounds(activate: false));
     }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
@@ -257,20 +310,39 @@ internal sealed class CriticalOverlayWindow : Window
                 e.Handled = true;
                 _coach?.Stop();
                 break;
+            // Only while the Start all button is on offer — nothing running,
+            // or the last run complete — as on the Mac; mid-run it would
+            // silently throw the session away.
+            case Key.A when _coach is { CanStartAll: true } coach
+                && coach.Session is null or { State: ExerciseSession.SessionState.Completed }:
+                e.Handled = true;
+                coach.StartAll();
+                break;
             case >= Key.D1 and <= Key.D9:
-                e.Handled = ToggleExercise(e.Key - Key.D1);
+                e.Handled = StartExerciseRow(e.Key - Key.D1);
                 break;
             case >= Key.NumPad1 and <= Key.NumPad9:
-                e.Handled = ToggleExercise(e.Key - Key.NumPad1);
+                e.Handled = StartExerciseRow(e.Key - Key.NumPad1);
                 break;
         }
     }
 
-    private bool ToggleExercise(int index)
+    /// <summary>
+    /// 1–9: the row's Start (or Again) pill — whatever the pill offers, the
+    /// key does too. Only a row being coached is left alone.
+    /// </summary>
+    private bool StartExerciseRow(int index)
     {
-        if (index < 0 || index >= _exerciseToggles.Count) return false;
-        var toggle = _exerciseToggles[index];
-        toggle.IsChecked = toggle.IsChecked != true;
+        var exercises = _reminder.Exercises ?? [];
+        if (_coach is null || index < 0 || index >= exercises.Count) return false;
+        var id = exercises[index].Id;
+        if (_coach.RowState(id) is ExerciseRowCoachState.Idle
+            or ExerciseRowCoachState.Suggested
+            or ExerciseRowCoachState.Cancelled
+            or ExerciseRowCoachState.Completed)
+        {
+            _coach.Start(id);
+        }
         return true;
     }
 
@@ -366,9 +438,8 @@ internal sealed class CriticalOverlayWindow : Window
 
         var footer = BuildFooter(
             ringGap: 20, buttonsGap: HasCountdown ? 28 : 8,
-            hint: HasCoach
-                ? "Space to start or pause · N to skip · X to stop · Return when you're done"
-                : "Press Return when you're done · S to snooze · 1–9 to tick an exercise"
+            hint: "Return when you're done · S to snooze · A to start all · 1–9 to start a row · "
+                + "Space to start or pause the coach · N next · X stop"
         );
         Grid.SetRow(footer, 2);
         layout.Children.Add(footer);
@@ -481,7 +552,7 @@ internal sealed class CriticalOverlayWindow : Window
 
     private UIElement BuildExerciseRow(Exercise exercise, int index)
     {
-        var glyph = Ui.Glyph("circle", 26, UntickedBrush);
+        var glyph = Ui.Glyph("play.circle.fill", 26, UntickedBrush);
         glyph.VerticalAlignment = VerticalAlignment.Top;
         glyph.Margin = new Thickness(0, 1, 16, 0);
 
@@ -500,50 +571,41 @@ internal sealed class CriticalOverlayWindow : Window
             text.Children.Add(instructions);
         }
 
-        // A guided exercise gets a caption naming the phase while it runs, so
-        // the row itself says what is happening even when the panel above is
-        // off the top of a scrolled list.
+        // A caption naming the phase while the row is being coached, so the
+        // row itself says what is happening even when the panel above is off
+        // the top of a scrolled list.
         var coachCaption = Ui.Text("", 14, IconBrush);
         coachCaption.Margin = new Thickness(0, 4, 0, 0);
         coachCaption.Visibility = Visibility.Collapsed;
-        if (HasCoach && exercise.IsGuided) text.Children.Add(coachCaption);
+        text.Children.Add(coachCaption);
 
         var badge = Ui.Text((index + 1).ToString(), 12, BadgeBrush);
         badge.VerticalAlignment = VerticalAlignment.Top;
         badge.Margin = new Thickness(16, 4, 0, 0);
 
-        // Start and Skip for a guided exercise, in the row's trailing edge.
-        // Their widths are fixed so the rows' names all wrap at the same
-        // place — the narrow-row problem iOS hit, solved here by a 700pt row
-        // having the space to spare.
-        StackPanel? pills = null;
-        Button? startPill = null;
-        Button? cancelPill = null;
-        if (HasCoach && exercise.IsGuided)
+        // Start and Skip in the row's trailing edge. Their widths are fixed so
+        // the rows' names all wrap at the same place — the narrow-row problem
+        // iOS hit, solved here by a 700pt row having the space to spare.
+        var id = exercise.Id;
+        var startPill = Ui.RoundedButton(
+            "Start", SecondaryButtonBrush, Brushes.White, SecondaryButtonBorderBrush,
+            cornerRadius: 9, padding: new Thickness(12, 5, 12, 5), minWidth: 74);
+        startPill.Click += (_, _) => _coach?.Start(id);
+        System.Windows.Automation.AutomationProperties.SetName(startPill, $"Start {exercise.Name}");
+        var cancelPill = Ui.RoundedButton(
+            "Skip", SecondaryButtonBrush, Brushes.White, SecondaryButtonBorderBrush,
+            cornerRadius: 9, padding: new Thickness(12, 5, 12, 5), minWidth: 74);
+        cancelPill.Click += (_, _) => _coach?.Cancel(id);
+        cancelPill.Margin = new Thickness(8, 0, 0, 0);
+        System.Windows.Automation.AutomationProperties.SetName(cancelPill, $"Skip {exercise.Name}");
+        var pills = new StackPanel
         {
-            startPill = Ui.RoundedButton(
-                "Start", SecondaryButtonBrush, Brushes.White, SecondaryButtonBorderBrush,
-                cornerRadius: 9, padding: new Thickness(12, 5, 12, 5), minWidth: 74);
-            var id = exercise.Id;
-            startPill.Click += (_, _) => _coach?.Start(id);
-            cancelPill = Ui.RoundedButton(
-                "Skip", SecondaryButtonBrush, Brushes.White, SecondaryButtonBorderBrush,
-                cornerRadius: 9, padding: new Thickness(12, 5, 12, 5), minWidth: 74);
-            cancelPill.Click += (_, _) =>
-            {
-                if (_coach?.ActiveExerciseId == id) _coach.Stop();
-                else _coach?.Cancel(id);
-            };
-            cancelPill.Margin = new Thickness(8, 0, 0, 0);
-            pills = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(16, 0, 0, 0),
-            };
-            pills.Children.Add(startPill);
-            pills.Children.Add(cancelPill);
-        }
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(16, 0, 0, 0),
+        };
+        pills.Children.Add(startPill);
+        pills.Children.Add(cancelPill);
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -551,74 +613,41 @@ internal sealed class CriticalOverlayWindow : Window
             new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
         );
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.Children.Add(glyph);
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
-        if (pills is not null)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetColumn(pills, 2);
-            grid.Children.Add(pills);
-            Grid.SetColumn(badge, 3);
-        }
-        else
-        {
-            Grid.SetColumn(badge, 2);
-        }
+        Grid.SetColumn(pills, 2);
+        grid.Children.Add(pills);
+        Grid.SetColumn(badge, 3);
         grid.Children.Add(badge);
 
-        var toggle = Ui.RoundedToggle(grid, RowBrush, 14, new Thickness(18, 12, 18, 12));
-        toggle.Margin = new Thickness(0, 0, 0, 10);
-        toggle.Checked += (_, _) =>
+        var row = new Border
         {
-            glyph.Text = SymbolMap.Glyph("checkmark.circle.fill");
-            glyph.Foreground = RingBrush;
-            text.Opacity = 0.5;
-            toggle.Background = RowDoneBrush;
-            UpdateExerciseProgress();
-        };
-        toggle.Unchecked += (_, _) =>
-        {
-            glyph.Text = SymbolMap.Glyph("circle");
-            glyph.Foreground = UntickedBrush;
-            text.Opacity = 1;
-            toggle.Background = RowBrush;
-            UpdateExerciseProgress();
+            Background = RowBrush,
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(18, 12, 18, 12),
+            Margin = new Thickness(0, 0, 0, 10),
+            Child = grid,
         };
         System.Windows.Automation.AutomationProperties.SetName(
-            toggle, $"{exercise.Name}, {exercise.Sets} sets of {exercise.Reps}"
+            row, $"{exercise.Name}, {exercise.Sets} sets of {exercise.Reps}"
         );
-        _exerciseToggles.Add(toggle);
 
-        if (HasCoach)
-        {
-            var id = exercise.Id;
-            // The coach owns "done" once there is one: a hand-tick tells it,
-            // and a coached exercise finishing ticks the box on every display.
-            toggle.Checked += (_, _) =>
-            {
-                if (_coach?.CompletedExerciseIds.Contains(id) == false) _coach.Toggle(id);
-            };
-            toggle.Unchecked += (_, _) =>
-            {
-                if (_coach?.CompletedExerciseIds.Contains(id) == true) _coach.Toggle(id);
-            };
-            if (startPill is not null && cancelPill is not null)
-            {
-                var row = new CoachRow(id, startPill, cancelPill, coachCaption, text);
-                _coachRows.Add(row);
-                UpdateCoachRow(row);
-            }
-        }
-
-        return toggle;
+        var coachRow = new CoachRow(id, row, glyph, startPill, cancelPill, coachCaption, text);
+        _coachRows.Add(coachRow);
+        UpdateCoachRow(coachRow);
+        return row;
     }
 
+    /// <summary>"2 of 5 done", plus the cancelled tally once there is one.</summary>
     private void UpdateExerciseProgress()
     {
-        if (_exerciseProgress is null) return;
-        var done = _exerciseToggles.Count(toggle => toggle.IsChecked == true);
-        _exerciseProgress.Text = $"{done} of {_exerciseToggles.Count} done";
+        if (_exerciseProgress is null || _coach is null) return;
+        var total = (_reminder.Exercises ?? []).Count;
+        var cancelled = _coach.CancelledExerciseIds.Count;
+        _exerciseProgress.Text = $"{_coach.CompletedExerciseIds.Count} of {total} done"
+            + (cancelled > 0 ? $" · {cancelled} cancelled" : "");
     }
 
     // MARK: - Coach
@@ -674,8 +703,17 @@ internal sealed class CriticalOverlayWindow : Window
         };
         _coachPauseButton = CoachButton("Pause", () => _coach?.TogglePause());
         controls.Children.Add(_coachPauseButton);
-        controls.Children.Add(CoachButton("Skip", () => _coach?.Skip()));
-        controls.Children.Add(CoachButton("Stop", () => _coach?.Stop()));
+        _coachSkipButton = CoachButton("Skip", () => _coach?.Skip());
+        controls.Children.Add(_coachSkipButton);
+        _coachStopButton = CoachButton("Stop", () => _coach?.Stop());
+        controls.Children.Add(_coachStopButton);
+        // Once the session has run its course: what to do next, if anything.
+        _coachStartNextButton = CoachButton("Start next", () => _coach?.StartSuggested());
+        _coachStartNextButton.Visibility = Visibility.Collapsed;
+        controls.Children.Add(_coachStartNextButton);
+        _coachStartAllButton = CoachButton("Start all", () => _coach?.StartAll());
+        _coachStartAllButton.Visibility = Visibility.Collapsed;
+        controls.Children.Add(_coachStartAllButton);
         body.Children.Add(controls);
 
         _coachPanel = new Border
@@ -702,8 +740,9 @@ internal sealed class CriticalOverlayWindow : Window
     }
 
     /// <summary>
-    /// Redraws everything the coach owns: the panel, the ring, and each guided
-    /// row's pills and caption. Called on every tick of the shared coach.
+    /// Redraws everything the coach owns: the panel, the ring, the Start all
+    /// button and each row's pills and caption. Called on every tick of the
+    /// shared coach.
     /// </summary>
     private void OnCoachChanged()
     {
@@ -714,17 +753,37 @@ internal sealed class CriticalOverlayWindow : Window
         {
             _coachPanel.Visibility = session is not null ? Visibility.Visible : Visibility.Collapsed;
         }
+        if (_startAllButton is not null)
+        {
+            _startAllButton.Visibility = session is null && _coach.CanStartAll
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+        var isComplete = session is { State: ExerciseSession.SessionState.Completed };
+        SetVisible(_coachPauseButton, !isComplete);
+        SetVisible(_coachSkipButton, !isComplete);
+        SetVisible(_coachStopButton, !isComplete);
+        SetVisible(_coachStartNextButton, isComplete && _coach.SuggestedExerciseId is not null);
+        SetVisible(_coachStartAllButton, isComplete && _coach.CanStartAll);
 
-        if (session is not null && session.PhaseAt(_coach.Now) is { } phase)
+        if (isComplete && session is not null)
+        {
+            if (_coachHeadline is not null) _coachHeadline.Text = session.Timeline.CompletionTitle;
+            if (_coachCaption is not null) _coachCaption.Text = "done";
+            if (_coachCountdown is not null) _coachCountdown.Text = SymbolMap.Glyph("checkmark.circle.fill");
+            if (_coachRingProgress is not null) _coachRingProgress.Data = RingGeometry(1, 118, 7);
+        }
+        else if (session is not null && session.PhaseAt(_coach.Now) is { } phase)
         {
             var position = session.PositionAt(_coach.Now);
             if (_coachHeadline is not null) _coachHeadline.Text = phase.Title;
             if (_coachCaption is not null)
             {
+                var caption = $"{phase.ExerciseName} · {phase.Label}";
                 _coachCaption.Text =
                     session.State == ExerciseSession.SessionState.Paused
-                        ? $"Paused · {phase.Label}"
-                        : phase.Label;
+                        ? $"Paused · {caption}"
+                        : caption;
             }
             if (_coachCountdown is not null)
             {
@@ -747,39 +806,47 @@ internal sealed class CriticalOverlayWindow : Window
         }
 
         foreach (var row in _coachRows) UpdateCoachRow(row);
-        SyncTogglesToCoach();
         UpdateExerciseProgress();
     }
 
-    /// <summary>
-    /// Reflects the coach's completed set onto the tick boxes, so an exercise
-    /// the coach finished shows ticked on every display. The Checked handlers
-    /// consult the coach before acting, so setting the box here does not bounce
-    /// back into Toggle.
-    /// </summary>
-    private void SyncTogglesToCoach()
+    private static void SetVisible(UIElement? element, bool visible)
     {
-        if (_coach is null) return;
-        var exercises = _reminder.Exercises ?? [];
-        for (var i = 0; i < _exerciseToggles.Count && i < exercises.Count; i++)
+        if (element is not null)
         {
-            var done = _coach.CompletedExerciseIds.Contains(exercises[i].Id);
-            if (_exerciseToggles[i].IsChecked != done) _exerciseToggles[i].IsChecked = done;
+            element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
     /// <summary>
-    /// One guided row's presentation: which pills it shows, whether its text
-    /// is dimmed, and the caption naming the phase while it is being coached.
+    /// One row's presentation: its glyph and wash, which pills it shows,
+    /// whether its text is dimmed, and the caption naming the phase while it
+    /// is being coached.
     /// </summary>
     private void UpdateCoachRow(CoachRow row)
     {
         if (_coach is null) return;
-        var state = _coach.RowState(row.Id) ?? ExerciseRowCoachState.Idle;
+        var state = _coach.RowState(row.Id);
         var caption = _coach.RowCaption(row.Id);
 
         row.Caption.Text = caption ?? "";
         row.Caption.Visibility = caption is null ? Visibility.Collapsed : Visibility.Visible;
+
+        row.Glyph.Text = SymbolMap.Glyph(state switch
+        {
+            ExerciseRowCoachState.Completed => "checkmark.circle.fill",
+            ExerciseRowCoachState.Cancelled => "circle",
+            ExerciseRowCoachState.Active => "timer",
+            _ => "play.circle.fill",
+        });
+        row.Glyph.Foreground = state is ExerciseRowCoachState.Completed or ExerciseRowCoachState.Active
+            ? RingBrush
+            : UntickedBrush;
+        row.Row.Background = state switch
+        {
+            ExerciseRowCoachState.Active => RowActiveBrush,
+            ExerciseRowCoachState.Completed or ExerciseRowCoachState.Cancelled => RowDoneBrush,
+            _ => RowBrush,
+        };
 
         row.Start.Visibility =
             state == ExerciseRowCoachState.Active ? Visibility.Collapsed : Visibility.Visible;
@@ -793,14 +860,14 @@ internal sealed class CriticalOverlayWindow : Window
             ? PrimaryButtonTextBrush
             : Brushes.White;
 
-        row.Cancel.Visibility = state switch
-        {
-            ExerciseRowCoachState.Completed or ExerciseRowCoachState.Cancelled =>
-                Visibility.Collapsed,
-            _ => Visibility.Visible,
-        };
-        row.Cancel.Content =
-            state == ExerciseRowCoachState.Active ? "Stop" : "Skip";
+        // Cancel is for a row that is waiting or being coached ("not this
+        // one" hands the run over to the next); a done or cancelled row has
+        // nothing to cancel.
+        row.Cancel.Visibility = state is ExerciseRowCoachState.Idle
+            or ExerciseRowCoachState.Suggested
+            or ExerciseRowCoachState.Active
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         row.Text.Opacity = state switch
         {
@@ -867,6 +934,20 @@ internal sealed class CriticalOverlayWindow : Window
             Margin = new Thickness(0, 38, 0, 0),
         };
 
+        // Runs every exercise still to do, in order, with the reminder's rest
+        // between them. Only offered while nothing is running and there are
+        // two or more left; OnCoachChanged keeps that current.
+        _startAllButton = Ui.RoundedButton(
+            "Start all", SecondaryButtonBrush, Brushes.White,
+            SecondaryButtonBorderBrush, minWidth: 148
+        );
+        _startAllButton.Margin = new Thickness(0, 0, 14, 0);
+        _startAllButton.Click += (_, _) => _coach?.StartAll();
+        _startAllButton.Visibility = _coach is { Session: null, CanStartAll: true }
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        row.Children.Add(_startAllButton);
+
         var snooze = Ui.RoundedButton(
             "Snooze", SecondaryButtonBrush, Brushes.White,
             SecondaryButtonBorderBrush, minWidth: 148
@@ -892,9 +973,10 @@ internal sealed class CriticalOverlayWindow : Window
     {
         if (!HasCountdown || !_hasStarted || _remaining <= 0) return;
         _remaining -= 1;
-        if (_remaining == 0)
+        if (_remaining == 0 && IsPrimaryScreen)
         {
-            // The activity is finished; let the user see that before it closes.
+            // The activity is finished; let the user see that before it
+            // closes. Every monitor's window counts, one of them chimes.
             Sounds.Play("Glass");
         }
         UpdateRing();

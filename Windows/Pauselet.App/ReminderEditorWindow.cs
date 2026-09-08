@@ -18,6 +18,19 @@ namespace Pauselet.App;
 internal sealed class ReminderEditorWindow : Window
 {
     private readonly Reminder? _existing;
+    private readonly Pauselet.Core.Settings _settings;
+    /// <summary>
+    /// A daily or weekly time inside quiet hours is skipped every time it
+    /// comes round; better said here than discovered from a silent history.
+    /// </summary>
+    private readonly TextBlock _quietHoursCaption = new()
+    {
+        Foreground = System.Windows.Media.Brushes.DarkOrange,
+        FontSize = 11,
+        Margin = new Thickness(0, 4, 0, 0),
+        TextWrapping = TextWrapping.Wrap,
+        Visibility = Visibility.Collapsed,
+    };
     private readonly AIImportController _ai;
     private readonly Action<Reminder> _onSave;
     private readonly Action<Reminder> _onPreview;
@@ -43,6 +56,13 @@ internal sealed class ReminderEditorWindow : Window
     private readonly TextBox _displaySeconds = new() { Width = 60 };
     private readonly TextBox _activityMinutes = new() { Width = 60 };
     private readonly List<ExerciseRow> _exerciseRows = [];
+    /// <summary>
+    /// The reminder's rest between one exercise and the next when the
+    /// takeover runs them all. Shown only once there are two exercises for it
+    /// to sit between.
+    /// </summary>
+    private readonly TextBox _restBetweenExercises = new() { Width = 44, Text = "0" };
+    private StackPanel? _restBetweenExercisesPanel;
 
     private StackPanel? _intervalPanel;
     private StackPanel? _dailyPanel;
@@ -64,32 +84,36 @@ internal sealed class ReminderEditorWindow : Window
         public Guid Id { get; init; } = Guid.NewGuid();
         public required Border Container { get; init; }
         public required TextBlock Header { get; init; }
+        public required Button MoveUp { get; init; }
+        public required Button MoveDown { get; init; }
         public required TextBox Name { get; init; }
         public required TextBox Instructions { get; init; }
         public required TextBox Sets { get; init; }
         public required TextBox Reps { get; init; }
         /// <summary>
-        /// Seconds each rep is held; 0 leaves the exercise untimed, which is
-        /// why the two rest fields follow it rather than stand alone.
+        /// Seconds each rep is held; 0 has the coach pace the rep instead.
         /// </summary>
         public required TextBox Hold { get; init; }
         public required TextBox RestBetweenReps { get; init; }
         public required TextBox RestBetweenSets { get; init; }
         /// <summary>
         /// The caption under the timing fields, which says what the numbers
-        /// mean and changes when a hold makes the exercise guided.
+        /// mean and changes with whether the reps are held.
         /// </summary>
         public required TextBlock TimingCaption { get; init; }
     }
 
+    /// <param name="settings">For the quiet-hours warning under a daily or weekly time.</param>
     public ReminderEditorWindow(
         Reminder? existing, AIImportController ai,
-        Action<Reminder> onSave, Action<Reminder> onPreview)
+        Action<Reminder> onSave, Action<Reminder> onPreview,
+        Pauselet.Core.Settings? settings = null)
     {
         _existing = existing;
         _ai = ai;
         _onSave = onSave;
         _onPreview = onPreview;
+        _settings = settings ?? new Pauselet.Core.Settings();
 
         Title = existing is null ? "Add Reminder" : "Edit Reminder";
         Width = 480;
@@ -118,6 +142,15 @@ internal sealed class ReminderEditorWindow : Window
 
         Content = BuildForm();
         LoadFrom(existing);
+
+        _timeHour.TextChanged += (_, _) => UpdateQuietHoursCaption();
+        _timeMinute.TextChanged += (_, _) => UpdateQuietHoursCaption();
+        _reminderType.SelectionChanged += (_, _) => UpdateQuietHoursCaption();
+        foreach (var radio in _priorityButtons)
+        {
+            radio.Checked += (_, _) => UpdateQuietHoursCaption();
+        }
+        UpdateQuietHoursCaption();
     }
 
     private UIElement BuildForm()
@@ -141,6 +174,19 @@ internal sealed class ReminderEditorWindow : Window
         _exercisePanel.Children.Add(FieldLabel("Exercises"));
         _exerciseRowsHost = new StackPanel();
         _exercisePanel.Children.Add(_exerciseRowsHost);
+        _restBetweenExercisesPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 8, 0, 0),
+            Visibility = Visibility.Collapsed,
+        };
+        _restBetweenExercisesPanel.Children.Add(InlineLabel("Rest between exercises"));
+        _restBetweenExercisesPanel.Children.Add(_restBetweenExercises);
+        var restCaption = SmallLabel("seconds, when you Start all");
+        restCaption.VerticalAlignment = VerticalAlignment.Center;
+        restCaption.Margin = new Thickness(4, 0, 0, 0);
+        _restBetweenExercisesPanel.Children.Add(restCaption);
+        _exercisePanel.Children.Add(_restBetweenExercisesPanel);
         var addExercise = new Button
         {
             Content = "Add exercise",
@@ -223,6 +269,7 @@ internal sealed class ReminderEditorWindow : Window
         _dailyPanel.Children.Add(_dayInterval);
         _dailyPanel.Children.Add(InlineLabel("day(s)"));
         stack.Children.Add(_dailyPanel);
+        stack.Children.Add(_quietHoursCaption);
 
         _weeklyPanel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         var dayRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -427,19 +474,43 @@ internal sealed class ReminderEditorWindow : Window
             Foreground = Theme.Brush(palette.SecondaryForeground),
             VerticalAlignment = VerticalAlignment.Center,
         };
+        // Move up, move down and remove: the arrows are the only way to
+        // reorder a form with no drag, and they disable rather than hide at
+        // either end so the header keeps its shape from row to row.
+        var moveUp = new Button
+        {
+            Content = "\u25B2",
+            Padding = new Thickness(6, 1, 6, 1),
+            ToolTip = "Move this exercise up",
+        };
+        var moveDown = new Button
+        {
+            Content = "\u25BC",
+            Padding = new Thickness(6, 1, 6, 1),
+            Margin = new Thickness(4, 0, 8, 0),
+            ToolTip = "Move this exercise down",
+        };
         var remove = new Button
         {
             Content = "Remove",
             Padding = new Thickness(8, 1, 8, 1),
             HorizontalAlignment = HorizontalAlignment.Right,
         };
+        System.Windows.Automation.AutomationProperties.SetName(moveUp, "Move exercise up");
+        System.Windows.Automation.AutomationProperties.SetName(moveDown, "Move exercise down");
         var headerRow = new Grid();
         headerRow.ColumnDefinitions.Add(
             new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
         );
         headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         headerRow.Children.Add(header);
-        Grid.SetColumn(remove, 1);
+        Grid.SetColumn(moveUp, 1);
+        headerRow.Children.Add(moveUp);
+        Grid.SetColumn(moveDown, 2);
+        headerRow.Children.Add(moveDown);
+        Grid.SetColumn(remove, 3);
         headerRow.Children.Add(remove);
 
         var name = new TextBox { Text = existing?.Name ?? "" };
@@ -451,7 +522,7 @@ internal sealed class ReminderEditorWindow : Window
             Height = 48,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
-        var sets = new TextBox { Width = 40, Text = (existing?.Sets ?? 3).ToString() };
+        var sets = new TextBox { Width = 40, Text = (existing?.Sets ?? 1).ToString() };
         var reps = new TextBox { Width = 40, Text = (existing?.Reps ?? 10).ToString() };
         var counts = new StackPanel
         {
@@ -463,8 +534,8 @@ internal sealed class ReminderEditorWindow : Window
         counts.Children.Add(InlineLabel("Reps per set"));
         counts.Children.Add(reps);
 
-        // Hold, then the two rests it enables — the same three fields, in the
-        // same order, as the Mac's and iOS's shared ExerciseRowEditor.
+        // Hold, then the two rests — the same three fields, in the same
+        // order, as the Mac's and iOS's shared ExerciseRowEditor.
         var hold = new TextBox { Width = 44, Text = (existing?.HoldSeconds ?? 0).ToString() };
         var restBetweenReps = new TextBox
         {
@@ -522,6 +593,8 @@ internal sealed class ReminderEditorWindow : Window
             Id = existing?.Id ?? Guid.NewGuid(),
             Container = container,
             Header = header,
+            MoveUp = moveUp,
+            MoveDown = moveDown,
             Name = name,
             Instructions = instructions,
             Sets = sets,
@@ -531,10 +604,12 @@ internal sealed class ReminderEditorWindow : Window
             RestBetweenSets = restBetweenSets,
             TimingCaption = timingCaption,
         };
-        // A rest only means something between held reps, so both rest fields
-        // follow the hold, and the caption says which state the row is in.
+        // The caption says how the coach will run the row: counting a hold
+        // down, or pacing each rep when there is none.
         hold.TextChanged += (_, _) => UpdateTimingState(row);
         UpdateTimingState(row);
+        moveUp.Click += (_, _) => MoveExerciseRow(row, -1);
+        moveDown.Click += (_, _) => MoveExerciseRow(row, 1);
         remove.Click += (_, _) =>
         {
             _exerciseRows.Remove(row);
@@ -575,27 +650,54 @@ internal sealed class ReminderEditorWindow : Window
     }
 
     /// <summary>
-    /// Enables the rest fields only when the row has a hold, and captions the
-    /// timing row accordingly — the same rule, and the same two sentences, as
-    /// <c>ExerciseRowEditor</c> on the Mac and iOS.
+    /// Captions the timing row for how the coach will run it — the same two
+    /// sentences as <c>ExerciseRowEditor</c> on the Mac and iOS.
     /// </summary>
     private static void UpdateTimingState(ExerciseRow row)
     {
         // Text that is not a number yet (mid-typing, or empty) reads as no
-        // hold, so the fields disable rather than flicker on a stray keystroke.
-        var isGuided = int.TryParse(row.Hold.Text, out var hold) && hold > 0;
-        row.RestBetweenReps.IsEnabled = isGuided;
-        row.RestBetweenSets.IsEnabled = isGuided;
-        row.TimingCaption.Text = isGuided
+        // hold, so the caption does not flicker on a stray keystroke.
+        var hasHold = int.TryParse(row.Hold.Text, out var hold) && hold > 0;
+        row.TimingCaption.Text = hasHold
             ? "Seconds per rep, between reps, and between sets."
-            : "Seconds. Hold 0 leaves this exercise untimed.";
+            : "Seconds. With no hold, each rep is counted at a steady pace.";
     }
 
+    /// <summary>
+    /// Swaps the row with its neighbour <paramref name="offset"/> rows away
+    /// (−1 up, +1 down), in the list and on screen; a no-op at either end.
+    /// </summary>
+    private void MoveExerciseRow(ExerciseRow row, int offset)
+    {
+        var index = _exerciseRows.IndexOf(row);
+        var target = index + offset;
+        if (index < 0 || target < 0 || target >= _exerciseRows.Count) return;
+        (_exerciseRows[index], _exerciseRows[target]) = (_exerciseRows[target], _exerciseRows[index]);
+        if (_exerciseRowsHost is { } host)
+        {
+            host.Children.Remove(row.Container);
+            host.Children.Insert(target, row.Container);
+        }
+        RenumberExerciseRows();
+    }
+
+    /// <summary>
+    /// Renames the headers after any change to the list, disables the arrows
+    /// at either end, and shows the rest between exercises once there are two
+    /// rows for it to sit between.
+    /// </summary>
     private void RenumberExerciseRows()
     {
         for (var i = 0; i < _exerciseRows.Count; i++)
         {
             _exerciseRows[i].Header.Text = $"Exercise {i + 1}";
+            _exerciseRows[i].MoveUp.IsEnabled = i > 0;
+            _exerciseRows[i].MoveDown.IsEnabled = i < _exerciseRows.Count - 1;
+        }
+        if (_restBetweenExercisesPanel is not null)
+        {
+            _restBetweenExercisesPanel.Visibility =
+                _exerciseRows.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
@@ -642,6 +744,26 @@ internal sealed class ReminderEditorWindow : Window
             _dailyPanel.Children[4].Visibility = _dayInterval.Visibility; // "every"
             _dailyPanel.Children[6].Visibility = _dayInterval.Visibility; // "day(s)"
         }
+        UpdateQuietHoursCaption();
+    }
+
+    private void UpdateQuietHoursCaption()
+    {
+        var kind = _scheduleKind.SelectedIndex;
+        var chosen = _priorityButtons
+            .FirstOrDefault(radio => radio.IsChecked == true)?.Tag is Priority selected
+            ? selected
+            : Priority.Normal;
+        var priority = IsExerciseType ? Priority.Critical : chosen;
+        var silenced = kind is 1 or 2
+            && int.TryParse(_timeHour.Text, out var hour)
+            && int.TryParse(_timeMinute.Text, out var minute)
+            && Scheduler.WallClockTimeIsSilenced(hour, minute, priority, _settings);
+        var quiet = _settings.QuietHours;
+        _quietHoursCaption.Text =
+            $"Falls inside quiet hours ({quiet.StartHour:D2}:{quiet.StartMinute:D2}–"
+            + $"{quiet.EndHour:D2}:{quiet.EndMinute:D2}), so it will be skipped.";
+        _quietHoursCaption.Visibility = silenced ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>
@@ -746,6 +868,7 @@ internal sealed class ReminderEditorWindow : Window
         // Rows first, then the type: selecting Exercise seeds a blank row
         // only when there are none.
         foreach (var exercise in existing.Exercises ?? []) AddExerciseRow(exercise);
+        _restBetweenExercises.Text = (existing.RestBetweenExercisesSeconds ?? 0).ToString();
         _reminderType.SelectedIndex = existing.IsExercise ? 1 : 0;
 
         UpdateSchedulePanels();
@@ -783,10 +906,32 @@ internal sealed class ReminderEditorWindow : Window
         }
 
         IReadOnlyList<Exercise>? exercises = null;
+        int? restBetweenExercises = null;
         if (IsExerciseType)
         {
             exercises = BuildExercises();
             if (exercises is null) return null;
+            // A rest only exists between exercises: null for a single one (the
+            // field is hidden then, so it is neither validated — a message
+            // about a control the user cannot see would strand them — nor
+            // saved behind their back) and null for none, so the file carries
+            // the key only when it means something.
+            if (exercises.Count > 1)
+            {
+                if (!int.TryParse(_restBetweenExercises.Text, out var rest)
+                    || rest < 0 || rest > Exercise.MaxRestSeconds)
+                {
+                    MessageBox.Show(
+                        this,
+                        "Rest between exercises needs to be a whole number of seconds "
+                            + $"from 0 to {Exercise.MaxRestSeconds}.",
+                        "Pauselet"
+                    );
+                    _restBetweenExercises.Focus();
+                    return null;
+                }
+                restBetweenExercises = rest > 0 ? rest : null;
+            }
         }
 
         Schedule schedule;
@@ -860,6 +1005,7 @@ internal sealed class ReminderEditorWindow : Window
             DisplaySeconds = displaySeconds,
             ActivityDurationSeconds = activitySeconds,
             Exercises = exercises,
+            RestBetweenExercisesSeconds = restBetweenExercises,
         };
     }
 
