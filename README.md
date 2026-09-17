@@ -94,7 +94,15 @@ music and all — without touching its schedule or history.
 Normal and Important reminders arrive as real system notifications, with
 **Done** and **Snooze** buttons on the banner itself — clicking the body marks
 it done, swiping it away records it as dismissed. Important reminders are sent
-as time-sensitive, so they can pierce a Focus mode.
+as time-sensitive.
+
+A caveat on Focus: time-sensitive delivery only breaks through a Focus mode for
+apps distributed through the App Store, and the Mac app is a direct download, so
+an active Focus will suppress Important reminders here like any other
+notification. If a reminder has to reach you regardless, make it Critical — that
+is the app's own full-screen overlay, which Focus does not control. On iPhone,
+where Pauselet will be distributed through the App Store, time-sensitive works
+as described.
 
 If notifications are denied, or the build is not notarized, the reminder is
 shown as an in-app card rather than being dropped, and an Important one stays

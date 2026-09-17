@@ -9,7 +9,7 @@ Status marks: `[ ]` open · `[x]` fixed and covered by a test where one is pract
 
 ---
 
-**Resolution (2026-09-08, same day):** every item below except N2 is fixed. Test counts after the fixes: `swift test` **300** (was 282), iOS simulator **345** (was 327), `dotnet test Windows/Pauselet.Core.Tests` **317** (was 294); `swift build` and `dotnet build Windows/Pauselet.App -r win-arm64` both succeed. Where the fix differs from the one suggested:
+**Resolution (2026-09-08, same day):** every item below except N2 is fixed; N2 was closed on 2026-09-17 as a deliberate won't-fix, since the entitlement it needs is not available to a Developer ID build — see its entry. Test counts after the fixes: `swift test` **300** (was 282), iOS simulator **345** (was 327), `dotnet test Windows/Pauselet.Core.Tests` **317** (was 294); `swift build` and `dotnet build Windows/Pauselet.App -r win-arm64` both succeed. Where the fix differs from the one suggested:
 
 - **W3 (welded after sleep):** the edge-case suite pins that every reminder overdue after a sleep fires on that first tick, critical last, so nothing is deferred. Instead the lapsed fires are stamped a short way *back* from the tick, spread `staggerStep` apart (capped so none is due again at once) with the most overdue getting the oldest stamp, so the next round comes back spaced and in order.
 - **C4 (cancel mid-run):** rather than skipping cancelled entries at run time, the coach rebuilds the run. Cancelling a queued exercise rebuilds the timeline without it and carries the cursor and state across (paused stays paused; an announcement in flight is still released by its own callback, since every phase before the cursor is unchanged). Cancelling the one being coached hands over to what follows it, from that exercise's lead-in, with no sign-off for the cancelled one; when nothing follows, a run of several completes (the behaviour an existing test pins) and a lone exercise stops. `cancel` refreshes `now` from the clock first. Four new iOS coach tests cover the queued cancel, a queued-then-active cancel, a cancel while paused, and the clock-vs-tick judgement.
@@ -177,8 +177,10 @@ Robustness gaps and inconsistencies that a user is unlikely to hit today.
 - Fix: `.customDismissAction`.
 
 ### N2. Important reminders claim `.timeSensitive` without the entitlement — macOS
-- [ ] `Sources/ReminderApp/NotificationPresenter.swift:148` the bundle is signed without `com.apple.developer.usernotifications.time-sensitive`, so a Focus mode swallows them and delivery confirmation still reports them landed.
-- Fix: add the entitlement to the signing step (needs the capability on the App ID); noted for the release checklist rather than changed blind here.
+- [x] `Sources/ReminderApp/NotificationPresenter.swift:148` the bundle is signed without `com.apple.developer.usernotifications.time-sensitive`, so a Focus mode swallows them and delivery confirmation still reports them landed.
+- **Closed 2026-09-17 as won't-fix, deliberately.** The original fix — add the entitlement, having enabled the capability on the App ID — is not available here: Apple grants `com.apple.developer.usernotifications.time-sensitive` for App Store distribution, and the Mac app ships as a Developer ID download (`scripts/build_app.sh`). A Developer ID build can carry the request, but without a profile authorising it the entitlement is not honoured, and adding an unauthorised entitlement risks the signature.
+- The code keeps setting `.timeSensitive`, which costs nothing when no Focus is active and is already correct for a Mac App Store build if one is ever made (`docs/mac-app-store-submission.md`). The accepted consequence: under an active Focus, a macOS Important reminder is suppressed like any ordinary notification, and the delivery check still counts it as landed. Someone who relies on breakthrough under Focus should use the Critical tier, which is the app's own overlay and not subject to it.
+- iOS is unaffected: the capability is enabled on the `com.pauselet.pauselet` App ID and `.timeSensitive` works there.
 
 ### N3. Running the unbundled binary crashes at launch — macOS
 - [x] `Sources/ReminderApp/NotificationPresenter.swift:18` `UNUserNotificationCenter.current()` in a stored-property initialiser throws without a bundle. The rest of the shell already guards the unbundled case.

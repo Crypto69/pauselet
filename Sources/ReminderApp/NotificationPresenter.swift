@@ -154,6 +154,15 @@ final class NotificationPresenter: NSObject {
             }
         }
 
+        // Requested, but not honoured by a Developer ID build: Apple grants
+        // com.apple.developer.usernotifications.time-sensitive for App Store
+        // distribution, and this app ships as a direct download. So under an
+        // active Focus an Important reminder is suppressed like any ordinary
+        // notification — and the delivery check still counts it as landed.
+        // Kept because it costs nothing when no Focus is on, and is already
+        // right if this is ever submitted to the Mac App Store. Breakthrough
+        // that must work is the Critical tier, which is our own overlay.
+        // See N2 in docs/BUG_REVIEW_2026-09-08.md.
         if reminder.priority >= .important {
             content.interruptionLevel = .timeSensitive
         }
