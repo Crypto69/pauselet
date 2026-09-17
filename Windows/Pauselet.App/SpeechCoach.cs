@@ -222,10 +222,13 @@ internal static class VoiceCatalog
 
     private static IReadOnlyList<Voice> Enumerate()
     {
-        using var synthesizer = new SpeechSynthesizer();
         List<Voice> english;
         try
         {
+            // The synthesizer itself can fail to construct on a machine with a
+            // damaged speech stack; that is "no voices", not a settings window
+            // that will not open.
+            using var synthesizer = new SpeechSynthesizer();
             english = synthesizer.GetInstalledVoices()
                 .Where(voice => voice.Enabled)
                 .Select(voice => voice.VoiceInfo)
@@ -233,7 +236,7 @@ internal static class VoiceCatalog
                 .Select(info => new Voice(info.Name, info.Name, info.Culture.Name))
                 .ToList();
         }
-        catch (PlatformNotSupportedException)
+        catch (Exception)
         {
             return [];
         }

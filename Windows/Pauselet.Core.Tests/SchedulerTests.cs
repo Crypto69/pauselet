@@ -18,6 +18,49 @@ public class SchedulerTests
 
     // MARK: - Interval schedules
 
+    private static Settings QuietSettings(bool allowsCritical = true) => new()
+    {
+        QuietHours = new QuietHours
+        {
+            IsEnabled = true, StartHour = 22, StartMinute = 0, EndHour = 7, EndMinute = 0,
+            AllowsCritical = allowsCritical,
+        },
+    };
+
+    /// <summary>The editor's warning for a daily time that quiet hours would swallow every day.</summary>
+    [Fact]
+    public void ATimeInsideTheQuietWindowIsSilencedForNonCriticalTiers()
+    {
+        Assert.True(Scheduler.WallClockTimeIsSilenced(6, 0, Priority.Normal, QuietSettings()));
+        Assert.True(Scheduler.WallClockTimeIsSilenced(23, 30, Priority.Important, QuietSettings()));
+        Assert.False(Scheduler.WallClockTimeIsSilenced(7, 0, Priority.Normal, QuietSettings()));
+        Assert.False(Scheduler.WallClockTimeIsSilenced(12, 0, Priority.Normal, QuietSettings()));
+        Assert.False(Scheduler.WallClockTimeIsSilenced(6, 0, Priority.Critical, QuietSettings()));
+        Assert.True(Scheduler.WallClockTimeIsSilenced(6, 0, Priority.Critical, QuietSettings(allowsCritical: false)));
+        Assert.False(Scheduler.WallClockTimeIsSilenced(6, 0, Priority.Normal, new Settings()));
+    }
+
+    /// <summary>
+    /// A wall-clock time the clocks skip on spring-forward day lands on the
+    /// first instant after the gap — 03:00 EDT — as Apple's calendar does,
+    /// not 03:30 as NodaTime's lenient resolver would have it.
+    /// </summary>
+    [Fact]
+    public void ASlotInsideADstGapLandsAtTheGapsEndLikeTheMac()
+    {
+        var newYork = TestDates.Zone("America/New_York");
+        var created = TestDates.At(newYork, 2026, 3, 7, 12, 0);
+        var reminder = new Reminder
+        {
+            Title = "Night check", Schedule = new Schedule.DailyAt(2, 30, 1), CreatedAt = created,
+        };
+
+        var next = Scheduler.NextFireDate(reminder, created, newYork);
+
+        Assert.Equal(TestDates.At(newYork, 2026, 3, 8, 3, 0), next);
+        Assert.Equal(Instant.FromUtc(2026, 3, 8, 7, 0), next);
+    }
+
     [Fact]
     public void IntervalFirstFireIsOneIntervalAfterCreation()
     {

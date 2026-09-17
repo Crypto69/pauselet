@@ -1,6 +1,44 @@
 import XCTest
 @testable import ReminderCore
 
+/// The editor's warning for a daily or weekly time that quiet hours would
+/// swallow every day.
+final class QuietHoursWarningTests: XCTestCase {
+    private var settings: Settings {
+        var settings = Settings()
+        settings.quietHours = QuietHours(
+            isEnabled: true, startHour: 22, startMinute: 0, endHour: 7, endMinute: 0,
+            allowsCritical: true
+        )
+        return settings
+    }
+
+    func testATimeInsideTheWindowIsSilencedForNonCriticalTiers() {
+        XCTAssertTrue(Scheduler.wallClockTimeIsSilenced(
+            hour: 6, minute: 0, priority: .normal, settings: settings))
+        XCTAssertTrue(Scheduler.wallClockTimeIsSilenced(
+            hour: 23, minute: 30, priority: .important, settings: settings), "Wraps midnight")
+        XCTAssertFalse(Scheduler.wallClockTimeIsSilenced(
+            hour: 7, minute: 0, priority: .normal, settings: settings), "The window's end is outside")
+        XCTAssertFalse(Scheduler.wallClockTimeIsSilenced(
+            hour: 12, minute: 0, priority: .normal, settings: settings))
+    }
+
+    func testCriticalIsSilencedOnlyWhenQuietHoursDoNotAllowIt() {
+        XCTAssertFalse(Scheduler.wallClockTimeIsSilenced(
+            hour: 6, minute: 0, priority: .critical, settings: settings))
+        var strict = settings
+        strict.quietHours.allowsCritical = false
+        XCTAssertTrue(Scheduler.wallClockTimeIsSilenced(
+            hour: 6, minute: 0, priority: .critical, settings: strict))
+    }
+
+    func testDisabledQuietHoursSilenceNothing() {
+        XCTAssertFalse(Scheduler.wallClockTimeIsSilenced(
+            hour: 6, minute: 0, priority: .normal, settings: Settings()))
+    }
+}
+
 /// Tests for the pure scheduling logic. Every case pins "now" to a fixed date
 /// so results are deterministic regardless of when the suite runs.
 final class SchedulerTests: XCTestCase {

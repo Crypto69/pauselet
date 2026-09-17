@@ -138,11 +138,23 @@ public enum ExerciseImporter {
             remainder = remove(match.0, from: remainder)
         }
 
-        // "3 sets of 10", "3 sets x 10 reps". Skipped entirely when the
-        // "times for" form already supplied the rep count: its number has been
-        // consumed, and re-reading it as a set count double-counts it.
+        // "3 sets of 10", "3 sets x 10 reps". When the "times for" form has
+        // already supplied the rep count its number has been consumed, so only
+        // a standalone set count ("3 sets of 10 times for 5 seconds") is
+        // still read; re-reading the pair would double-count it.
         if reps != nil {
-            // Nothing further to read.
+            if let match = firstMatch(remainder, pattern: setsOnlyPattern) {
+                sets = number(match.1)
+                remainder = remove(match.0, from: remainder)
+            }
+        // "3 sets of 30 seconds", "3 x 30 seconds": timed sets, one held rep
+        // each. Read before the plain pair so the seconds are not taken for a
+        // rep count.
+        } else if let match = firstMatch(remainder, pattern: timedSetsPattern) {
+            sets = number(match.1)
+            reps = 1
+            holdFromTimes = seconds(match.2, unit: match.3)
+            remainder = remove(match.0, from: remainder)
         } else if let match = firstMatch(remainder, pattern: setsOfRepsPattern) {
             sets = number(match.1)
             reps = number(match.2)
@@ -160,6 +172,11 @@ public enum ExerciseImporter {
             }
             if let match = firstMatch(remainder, pattern: setsOnlyPattern) {
                 sets = number(match.1)
+                remainder = remove(match.0, from: remainder)
+            }
+            // "Wall slides x 15": the handout shorthand for a rep count.
+            if reps == nil, let match = firstMatch(remainder, pattern: trailingCrossPattern) {
+                reps = number(match.1)
                 remainder = remove(match.0, from: remainder)
             }
         }
@@ -190,7 +207,7 @@ public enum ExerciseImporter {
         return Exercise(
             name: name,
             instructions: instructions,
-            sets: sets ?? 3,
+            sets: sets ?? 1,
             reps: reps ?? 10,
             holdSeconds: hold ?? 0,
             restBetweenRepsSeconds: restBetweenReps ?? 0,
@@ -203,12 +220,20 @@ public enum ExerciseImporter {
     /// Spelled-out numbers appear as often as digits in dictated text, so both
     /// forms are accepted everywhere a count is expected.
     private static let numberWord = #"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|sixty)"#
-    private static let unit = #"(seconds?|secs?|s|minutes?|mins?|m)"#
+    /// The word boundary keeps the bare "s" and "m" from eating the first
+    /// letter of whatever follows ("5 more" is not five minutes).
+    private static let unit = #"(?:(seconds?|secs?|s|minutes?|mins?|m)\b)"#
 
     private static let setsOfRepsPattern =
         #"\#(numberWord)\s*(?:sets?|rounds?)\s*(?:of|x|×|\*)?\s*\#(numberWord)\s*(?:reps?|repetitions?|times)?"#
     private static let crossPattern =
         #"\#(numberWord)\s*(?:x|×|\*)\s*\#(numberWord)"#
+    /// "3 sets of 30 seconds", "3 x 30 seconds": a timed set is one held rep.
+    private static let timedSetsPattern =
+        #"\#(numberWord)\s*(?:sets?|rounds?)?\s*(?:of|x|×|\*)\s*\#(numberWord)\s*\#(unit)"#
+    /// "x 15" with nothing in front of it: a rep count.
+    private static let trailingCrossPattern =
+        #"(?:^|(?<=\s))(?:x|×)\s*\#(numberWord)\b"#
     private static let repsOnlyPattern =
         #"\#(numberWord)\s*(?:reps?|repetitions?|times)"#
     /// "3 times for 15 seconds" / "10 times holding 3 s".
@@ -217,14 +242,17 @@ public enum ExerciseImporter {
     private static let setsOnlyPattern =
         #"\#(numberWord)\s*(?:sets?|rounds?)"#
     private static let holdPattern =
-        #"(?:hold(?:ing)?(?:\s+(?:it|for|each))*\s*\#(numberWord)\s*\#(unit)?|\#(numberWord)\s*\#(unit)\s*hold)"#
+        #"(?:hold(?:ing)?(?:\s+(?:it|for|each|this|the|that|position|stretch|there))*\s*\#(numberWord)\s*\#(unit)?|\#(numberWord)\s*\#(unit)\s*hold)"#
     /// The rest verb is optional so the second half of "rest 10s between reps
     /// and 30s between sets" is still recognised once the first clause has
     /// been removed.
+    /// The rest verb may come before the number ("rest 30 seconds between
+    /// sets") or after it ("30 seconds rest between sets"); a leading "with"
+    /// goes with the clause so it is not left dangling in the name.
     private static let restBetweenSetsPattern =
-        #"(?:(?:rest|break|pause)\w*\s*)?(?:for\s*)?\#(numberWord)\s*\#(unit)?\s*(?:of\s*rest\s*)?between\s*(?:each\s*)?sets?"#
+        #"(?:with\s+)?(?:(?:rest|break|pause)\w*\s*)?(?:for\s*)?\#(numberWord)\s*\#(unit)?\s*(?:(?:of\s*)?(?:rest|break|pause)\w*\s*)?between\s*(?:each\s*)?sets?"#
     private static let restBetweenRepsPattern =
-        #"(?:(?:rest|break|pause)\w*\s*(?:for\s*)?\#(numberWord)\s*\#(unit)?(?:\s*(?:of\s*rest\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))?|\#(numberWord)\s*\#(unit)?\s*(?:of\s*rest\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))"#
+        #"(?:with\s+)?(?:(?:rest|break|pause)\w*\s*(?:for\s*)?\#(numberWord)\s*\#(unit)?(?:\s*(?:(?:of\s*)?(?:rest|break|pause)\w*\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))?|\#(numberWord)\s*\#(unit)?\s*(?:(?:of\s*)?(?:rest|break|pause)\w*\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))"#
 
     // MARK: - Name and instructions
 
@@ -324,7 +352,7 @@ public enum ExerciseImporter {
     /// the first *non-empty* groups are returned rather than groups 1 and 2.
     private static func firstMatch(
         _ text: String, pattern: String
-    ) -> (String, String?, String?)? {
+    ) -> (String, String?, String?, String?)? {
         guard let regex = regex(pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = regex.firstMatch(in: text, range: range),
@@ -339,12 +367,12 @@ public enum ExerciseImporter {
         }
         return (
             String(text[whole]),
-            captures.first,
-            captures.count > 1 ? captures[1] : nil
+            captures.count > 0 ? captures[0] : nil,
+            captures.count > 1 ? captures[1] : nil,
+            captures.count > 2 ? captures[2] : nil
         )
     }
 
-    /// Removes the first occurrence of an already-matched substring.
     private static func remove(_ substring: String, from text: String) -> String {
         guard let range = text.range(of: substring) else { return text }
         return text.replacingCharacters(in: range, with: " ")

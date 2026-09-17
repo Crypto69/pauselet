@@ -2,7 +2,7 @@ import SwiftUI
 import ReminderCore
 
 /// The fields for one exercise — name, instructions, sets, reps, and the
-/// hold and rest times that make it a guided one — shared by the Mac and iOS
+/// hold and rest times the coach runs it by — shared by the Mac and iOS
 /// editors so the two cannot drift on what an exercise is.
 /// Each platform wraps rows in its own section (the Mac adds a remove button,
 /// iOS uses swipe-to-delete and reordering).
@@ -43,7 +43,6 @@ public struct ExerciseRowEditor: View {
                     range: Exercise.restRange
                 )
                 .frame(width: 132)
-                .disabled(!exercise.isGuided)
                 Spacer(minLength: 0)
             }
             HStack(alignment: .firstTextBaseline, spacing: 18) {
@@ -52,7 +51,6 @@ public struct ExerciseRowEditor: View {
                     range: Exercise.restRange
                 )
                 .frame(width: 150)
-                .disabled(!exercise.isGuided)
                 Text(timingCaption)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -78,10 +76,13 @@ public struct ExerciseRowEditor: View {
         }
     }
 
+    /// One sentence on what the numbers mean. With no hold the coach still
+    /// runs the exercise, counting each rep at a steady pace, so the rests
+    /// stay enabled either way.
     private var timingCaption: String {
-        exercise.isGuided
+        exercise.hasHold
             ? "Seconds per rep, between reps, and between sets."
-            : "Seconds. Hold 0 leaves this exercise untimed."
+            : "Seconds. With no hold, each rep is counted at a steady pace."
     }
 }
 

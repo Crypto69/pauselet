@@ -90,10 +90,11 @@ struct AboutTab: View {
             Text(AboutContent.origin)
 
             Text(
-                "Everything is stored locally. There is no account, no sync, "
-                + "and no network code in the app at all — the optional Spotify "
-                + "playback drives the Spotify app on your own Mac through "
-                + "AppleScript, not through any web service."
+                "Everything is stored locally. There is no account and no sync. "
+                + "The only thing that ever leaves this Mac is exercise text you "
+                + "choose to interpret with your own OpenAI key — the optional "
+                + "Spotify playback drives the Spotify app on your own Mac "
+                + "through AppleScript, not through any web service."
             )
         }
         .font(.system(size: 12))

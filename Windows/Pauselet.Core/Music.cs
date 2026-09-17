@@ -136,7 +136,7 @@ public static class SpotifyUri
     {
         var parts = uri.Split(':');
         if (parts.Length != 3) return uri;
-        var kind = char.ToUpperInvariant(parts[1][0]) + parts[1][1..];
+        var kind = parts[1].Length == 0 ? "" : char.ToUpperInvariant(parts[1][0]) + parts[1][1..];
         return $"{kind} · {parts[2]}";
     }
 }

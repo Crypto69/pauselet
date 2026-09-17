@@ -7,5 +7,24 @@
          still only *runs* on Windows). The core and its tests are plain
          net8.0 and run anywhere. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- The release workflow overrides this with -p:Version=<tag>; this is the
+         floor for local builds and should track the VERSION file at the repo
+         root. AssemblyVersion has to be set too, not just Version: the About
+         screen reads Assembly.GetExecutingAssembly().GetName().Version, which
+         is AssemblyVersion — setting Version alone would leave it at 1.0.0
+         while the informational version said otherwise.
+
+         AssemblyVersion and FileVersion must be strictly numeric, so any
+         prerelease suffix is stripped first: a tag like v1.5.0-rc1 (or the
+         v0.0.1-test dry run) would otherwise make MSBuild reject
+         '1.5.0-rc1.0' as an assembly version and fail the build. Version
+         itself keeps the full string and reaches InformationalVersion, so a
+         prerelease build stays identifiable. VersionPrefix is no use here:
+         MSBuild leaves it empty when Version is set explicitly. -->
+    <Version Condition="'$(Version)' == ''">1.5.0</Version>
+    <NumericVersion>$(Version.Split('-')[0])</NumericVersion>
+    <AssemblyVersion>$(NumericVersion).0</AssemblyVersion>
+    <FileVersion>$(NumericVersion).0</FileVersion>
   </PropertyGroup>
 </Project>

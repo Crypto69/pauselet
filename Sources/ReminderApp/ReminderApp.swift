@@ -14,6 +14,12 @@ struct ReminderApp: App {
         Settings {
             EmptyView()
         }
+        // The scene would otherwise install a "Settings…" (⌘,) command that
+        // opens this empty window; the real settings window is the
+        // delegate's.
+        .commands {
+            CommandGroup(replacing: .appSettings) {}
+        }
     }
 }
 

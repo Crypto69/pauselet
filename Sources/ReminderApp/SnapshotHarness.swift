@@ -328,12 +328,15 @@ enum SnapshotHarness {
             // The exercise rows on their own, like editor-music below.
             snapshot(
                 Form {
-                    ExerciseListSection(exercises: .constant(physioSet.exercises!))
+                    ExerciseListSection(
+                        exercises: .constant(physioSet.exercises!),
+                        restBetweenExercisesSeconds: .constant(20)
+                    )
                 }
                 .formStyle(.grouped)
                 .environmentObject(engine)
                 .environmentObject(ai),
-                size: NSSize(width: 470, height: 640),
+                size: NSSize(width: 470, height: 760),
                 named: "editor-exercise-section",
                 into: directory
             )

@@ -292,6 +292,31 @@ final class ReminderEngineTests: XCTestCase {
         XCTAssertEqual(engine.tick().count, 1)
     }
 
+    /// A snooze that crosses midnight is still the slot's fire: the anchor
+    /// must stay on the slot's day or an "every 2 days" grid slips a day.
+    func testSnoozingAWallClockFireAcrossMidnightKeepsTheGridInPhase() {
+        var reminder = Reminder(
+            title: "Night meds", schedule: .dailyAt(hour: 23, minute: 50, dayInterval: 2),
+            createdAt: date(2026, 3, 8, 12, 0)
+        )
+        reminder.lastFiredAt = date(2026, 3, 10, 23, 50)
+        let (engine, clock, presenter, _) = makeEngine(
+            reminders: [reminder], now: date(2026, 3, 10, 23, 50)
+        )
+
+        engine.snooze(id: reminder.id, minutes: 15)
+        clock.advance(by: 15 * 60)
+        XCTAssertEqual(engine.tick().count, 1, "The snooze delivers at 00:05")
+        XCTAssertEqual(presenter.presented.count, 1)
+
+        XCTAssertEqual(engine.reminders[0].lastFiredAt, date(2026, 3, 10, 23, 50))
+        XCTAssertEqual(
+            Scheduler.nextFireDate(for: engine.reminders[0], now: clock.now, calendar: calendar),
+            date(2026, 3, 12, 23, 50),
+            "Two days after the slot, not one day after the snooze"
+        )
+    }
+
     func testDismissRecordsHistoryWithoutResettingSchedule() {
         let start = date(2026, 3, 10, 9, 0)
         var reminder = Reminder(
@@ -370,6 +395,35 @@ final class ReminderEngineTests: XCTestCase {
 
         clock.advance(by: 10 * 60)
         XCTAssertEqual(engine.tick().count, 1)
+    }
+
+    /// The editor composes its result from the copy it opened with. If the
+    /// reminder fired while the editor was open, Save must not rewind that
+    /// stamp — or the reminder fires again on the next tick.
+    func testApplyEditsKeepsStampsSetWhileTheEditorWasOpen() {
+        let start = date(2026, 3, 10, 9, 0)
+        var reminder = Reminder(
+            title: "Water", schedule: .interval(minutes: 60), createdAt: start
+        )
+        reminder.lastFiredAt = start
+        let (engine, clock, presenter, _) = makeEngine(reminders: [reminder], now: start)
+
+        var edited = engine.reminders[0]  // The editor opens.
+        clock.advance(by: 60 * 60)
+        XCTAssertEqual(engine.tick().count, 1, "Fires while the editor is open")
+        engine.snooze(id: reminder.id, minutes: 5)
+
+        edited.title = "Drink water"
+        edited.priority = .important
+        engine.applyEdits(edited)
+
+        let saved = engine.reminders[0]
+        XCTAssertEqual(saved.title, "Drink water")
+        XCTAssertEqual(saved.priority, .important)
+        XCTAssertEqual(saved.lastFiredAt, clock.now, "The fire stamp survives")
+        XCTAssertNotNil(saved.snoozedUntil, "The snooze survives")
+        XCTAssertTrue(engine.tick().isEmpty, "Not fired again")
+        XCTAssertEqual(presenter.presented.count, 1)
     }
 
     // MARK: - Persistence

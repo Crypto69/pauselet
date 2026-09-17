@@ -65,6 +65,7 @@ final class ExerciseCoachTests: XCTestCase {
 
     private func makeCoach(
         _ exercises: [Exercise],
+        restBetweenExercises: Int = 0,
         speech: StubSpeech? = nil,
         clock: TestClock,
         soundEnabled: Bool = false
@@ -73,6 +74,7 @@ final class ExerciseCoachTests: XCTestCase {
         settings.soundEnabled = soundEnabled
         return ExerciseCoach(
             exercises: exercises,
+            restBetweenExercisesSeconds: restBetweenExercises,
             settings: settings,
             speech: speech,
             clock: { clock.now }
@@ -81,14 +83,17 @@ final class ExerciseCoachTests: XCTestCase {
 
     // MARK: - Suggestion
 
-    func testSuggestsFirstGuidedExerciseAndSkipsUntimedOnes() {
+    /// Every exercise is coachable, hold or no hold, so the first one is the
+    /// suggestion whatever it is.
+    func testSuggestsTheFirstExerciseWhateverItsHold() {
         let clock = TestClock()
         let walk = untimed()
         let tucks = guided()
         let coach = makeCoach([walk, tucks], clock: clock)
 
-        XCTAssertEqual(coach.suggestedExerciseID, tucks.id)
-        XCTAssertTrue(coach.hasGuidedExercises)
+        XCTAssertEqual(coach.suggestedExerciseID, walk.id)
+        XCTAssertTrue(coach.canStartAll)
+        XCTAssertEqual(coach.remainingExerciseIDs, [walk.id, tucks.id])
     }
 
     func testCancellingMovesTheSuggestionOn() {
@@ -117,18 +122,22 @@ final class ExerciseCoachTests: XCTestCase {
 
     // MARK: - Row state
 
-    func testUntimedRowHasNoCoachStateAndTicks() {
+    func testAnExerciseWithoutAHoldIsCoachedRepByRep() {
         let clock = TestClock()
         let walk = untimed()
         let coach = makeCoach([walk], clock: clock)
 
-        XCTAssertNil(coach.rowState(for: walk.id))
+        XCTAssertEqual(coach.rowState(for: walk.id), .suggested)
+        XCTAssertFalse(coach.canStartAll, "One exercise: Start All would just be Start")
 
-        coach.toggle(walk.id)
-        XCTAssertTrue(coach.completedExerciseIDs.contains(walk.id))
+        coach.start(walk.id)
+        clock.advance(4)  // Past the lead-in, into the first paced rep.
+        coach.tickNow()
 
-        coach.toggle(walk.id)
-        XCTAssertFalse(coach.completedExerciseIDs.contains(walk.id))
+        guard case let .active(caption) = coach.rowState(for: walk.id) else {
+            return XCTFail("expected an active row state")
+        }
+        XCTAssertEqual(caption, "Set 1 · Rep 1 · Go")
     }
 
     func testActiveRowCaptionNamesTheSetRepAndPhase() {
@@ -142,7 +151,7 @@ final class ExerciseCoachTests: XCTestCase {
         coach.tickNow()
         XCTAssertEqual(coach.activeExerciseID, exercise.id)
 
-        guard case let .active(caption)? = coach.rowState(for: exercise.id) else {
+        guard case let .active(caption) = coach.rowState(for: exercise.id) else {
             return XCTFail("expected an active row state")
         }
         XCTAssertTrue(caption.contains("Set 1"), caption)
@@ -157,7 +166,7 @@ final class ExerciseCoachTests: XCTestCase {
         clock.advance(4)
         coach.togglePause()
 
-        guard case let .active(caption)? = coach.rowState(for: exercise.id) else {
+        guard case let .active(caption) = coach.rowState(for: exercise.id) else {
             return XCTFail("expected an active row state")
         }
         XCTAssertTrue(caption.hasPrefix("Paused · "), caption)
@@ -306,16 +315,227 @@ final class ExerciseCoachTests: XCTestCase {
         XCTAssertNil(coach.suggestedExerciseID)
     }
 
-    func testTickingAnActiveUntimedExerciseStopsItsSession() {
+    func testCancellingTheActiveExerciseOnItsOwnEndsTheSession() {
         let clock = TestClock()
         let exercise = guided()
         let coach = makeCoach([exercise], clock: clock)
 
         coach.start(exercise.id)
-        coach.toggle(exercise.id)
+        coach.cancel(exercise.id)
 
-        XCTAssertTrue(coach.completedExerciseIDs.contains(exercise.id))
+        XCTAssertTrue(coach.cancelledExerciseIDs.contains(exercise.id))
+        XCTAssertFalse(coach.completedExerciseIDs.contains(exercise.id))
         XCTAssertNil(coach.session)
+    }
+
+    // MARK: - Start All
+
+    /// One session over every exercise still to do, in order, with the
+    /// reminder's rest between them; each is ticked as its last set ends.
+    func testStartAllRunsTheRemainingExercisesInOrder() {
+        let clock = TestClock()
+        let done = guided(name: "Done already", sets: 1, reps: 1, hold: 1)
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)   // 3 + 5 = 8
+        let second = untimed(name: "Second")                            // 3 + 3 = 6
+        let coach = makeCoach([done, first, second], restBetweenExercises: 10, clock: clock)
+
+        coach.start(done.id)
+        clock.advance(10)
+        coach.tickNow()
+        XCTAssertTrue(coach.completedExerciseIDs.contains(done.id))
+
+        coach.startAll()
+        XCTAssertEqual(coach.session?.timeline.entries.map(\.id), [first.id, second.id])
+        XCTAssertEqual(coach.activeExerciseID, first.id)
+        XCTAssertEqual(coach.rowState(for: first.id), .active(caption: "Get ready · Get ready"))
+
+        clock.advance(8)   // First's last hold has ended; the rest begins.
+        coach.tickNow()
+        XCTAssertTrue(coach.completedExerciseIDs.contains(first.id))
+        XCTAssertEqual(coach.rowState(for: first.id), .completed)
+        XCTAssertEqual(coach.activeExerciseID, second.id, "The rest belongs to the next one")
+        XCTAssertEqual(coach.rowState(for: second.id), .active(caption: "Up next · Rest"))
+
+        clock.advance(10 + 6)
+        coach.tickNow()
+        XCTAssertTrue(coach.completedExerciseIDs.contains(second.id))
+        XCTAssertEqual(coach.session?.state, .completed)
+        XCTAssertNil(coach.activeExerciseID)
+        XCTAssertFalse(coach.canStartAll)
+    }
+
+    func testStartAllSkipsCancelledExercises() {
+        let clock = TestClock()
+        let first = guided(name: "First")
+        let second = guided(name: "Second")
+        let third = guided(name: "Third")
+        let coach = makeCoach([first, second, third], clock: clock)
+
+        coach.cancel(second.id)
+        coach.startAll()
+
+        XCTAssertEqual(coach.session?.timeline.entries.map(\.id), [first.id, third.id])
+    }
+
+    /// Cancelling the exercise being coached mid-run moves straight on to
+    /// the next one rather than abandoning the whole run.
+    func testCancellingTheActiveExerciseInARunMovesOn() {
+        let clock = TestClock()
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)
+        let second = guided(name: "Second", sets: 1, reps: 1, hold: 5)
+        let coach = makeCoach([first, second], restBetweenExercises: 10, clock: clock)
+
+        coach.startAll()
+        clock.advance(4)
+        coach.tickNow()
+        XCTAssertEqual(coach.activeExerciseID, first.id)
+
+        coach.cancel(first.id)
+
+        XCTAssertTrue(coach.cancelledExerciseIDs.contains(first.id))
+        XCTAssertFalse(coach.completedExerciseIDs.contains(first.id),
+                       "Jumping past its end must not count as finishing it")
+        XCTAssertEqual(coach.activeExerciseID, second.id)
+        XCTAssertEqual(coach.session?.phase(at: clock.now)?.kind, .getReady,
+                       "Past the rest, straight to the next lead-in")
+        XCTAssertEqual(coach.session?.state, .running)
+    }
+
+    func testCancellingTheLastExerciseInARunFinishesIt() {
+        let clock = TestClock()
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)
+        let second = guided(name: "Second", sets: 1, reps: 1, hold: 5)
+        let coach = makeCoach([first, second], clock: clock)
+
+        coach.startAll()
+        clock.advance(8)   // First done, into Second's lead-in.
+        coach.tickNow()
+        XCTAssertEqual(coach.activeExerciseID, second.id)
+
+        coach.cancel(second.id)
+
+        XCTAssertEqual(coach.session?.state, .completed)
+        XCTAssertTrue(coach.completedExerciseIDs.contains(first.id))
+        XCTAssertTrue(coach.cancelledExerciseIDs.contains(second.id))
+        XCTAssertFalse(coach.completedExerciseIDs.contains(second.id))
+    }
+
+    /// Cancelling an exercise still to come takes it out of the run: it is
+    /// never announced or coached, its row never lights up, and the hand-over
+    /// names the exercise that actually finished before the next one.
+    func testCancellingAQueuedExerciseMidRunTakesItOutOfTheRun() {
+        let clock = TestClock()
+        let speech = StubSpeech()
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)
+        let second = guided(name: "Second", sets: 1, reps: 1, hold: 5)
+        let third = guided(name: "Third", sets: 1, reps: 1, hold: 5)
+        let coach = makeCoach([first, second, third], speech: speech, clock: clock)
+
+        coach.startAll()
+        speech.finishSpeaking()          // "First. Get ready."
+        clock.advance(1)
+        coach.tickNow()
+        coach.cancel(second.id)
+
+        XCTAssertEqual(coach.session?.timeline.entries.map(\.id), [first.id, third.id])
+        XCTAssertEqual(coach.session?.elapsed(at: clock.now), 1, "The cursor stays put")
+        XCTAssertEqual(coach.session?.state, .running)
+        XCTAssertEqual(coach.rowState(for: second.id), .cancelled)
+
+        clock.advance(2)
+        coach.tickNow()
+        speech.finishSpeaking()          // the hold's cue
+        clock.advance(5)
+        coach.tickNow()                  // First's hold over: into the next lead-in
+
+        XCTAssertEqual(speech.spoken.last, "First complete. Third. Get ready.")
+        XCTAssertEqual(coach.activeExerciseID, third.id)
+        XCTAssertEqual(coach.rowState(for: second.id), .cancelled)
+        XCTAssertFalse(speech.spoken.contains { $0.contains("Second") }, "Never mentioned")
+    }
+
+    /// Cancelling the exercise being coached hands over to the next one still
+    /// in the run — not to one that was cancelled in the meantime — and does
+    /// not sign off the cancelled exercise as complete.
+    func testCancellingTheActiveExerciseSkipsAnAlreadyCancelledOne() {
+        let clock = TestClock()
+        let speech = StubSpeech()
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)
+        let second = guided(name: "Second", sets: 1, reps: 1, hold: 5)
+        let third = guided(name: "Third", sets: 1, reps: 1, hold: 5)
+        let coach = makeCoach([first, second, third], restBetweenExercises: 10, speech: speech, clock: clock)
+
+        coach.startAll()
+        speech.finishSpeaking()
+        clock.advance(1)
+        coach.tickNow()
+        coach.cancel(second.id)
+        coach.cancel(first.id)
+
+        XCTAssertEqual(coach.activeExerciseID, third.id)
+        XCTAssertEqual(coach.session?.timeline.entries.map(\.id), [third.id])
+        XCTAssertEqual(speech.spoken.last, "Third. Get ready.", "No sign-off for a cancelled exercise")
+        XCTAssertEqual(coach.rowState(for: first.id), .cancelled)
+        XCTAssertEqual(coach.rowState(for: second.id), .cancelled)
+    }
+
+    /// A queued cancel while paused leaves the session paused where it was.
+    func testCancellingAQueuedExerciseWhilePausedStaysPaused() {
+        let clock = TestClock()
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)
+        let second = guided(name: "Second", sets: 1, reps: 1, hold: 5)
+        let coach = makeCoach([first, second], clock: clock)
+
+        coach.startAll()
+        clock.advance(2)
+        coach.tickNow()
+        coach.togglePause()
+        clock.advance(5)
+        coach.cancel(second.id)
+
+        XCTAssertEqual(coach.session?.state, .paused)
+        XCTAssertEqual(coach.session?.elapsed(at: clock.now), 2)
+        XCTAssertEqual(coach.session?.timeline.entries.map(\.id), [first.id])
+        coach.togglePause()
+        XCTAssertEqual(coach.session?.state, .running)
+        XCTAssertEqual(coach.activeExerciseID, first.id)
+    }
+
+    /// Whether the cancelled exercise is the one being coached is judged by
+    /// the clock, not by the last tick — up to 200 ms stale in the app.
+    func testCancelJudgesTheActiveExerciseByTheClock() {
+        let clock = TestClock()
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)
+        let second = guided(name: "Second", sets: 1, reps: 1, hold: 5)
+        let coach = makeCoach([first, second], clock: clock)
+
+        coach.startAll()
+        clock.advance(8)                 // Into Second's lead-in, with no tick since.
+        coach.cancel(second.id)
+
+        XCTAssertEqual(coach.session?.state, .completed, "Second was the last; the run is over")
+        XCTAssertTrue(coach.completedExerciseIDs.contains(first.id))
+        XCTAssertFalse(coach.completedExerciseIDs.contains(second.id))
+        XCTAssertEqual(coach.rowState(for: second.id), .cancelled)
+    }
+
+    func testTheRunSpeaksTheHandoverBetweenExercises() {
+        let clock = TestClock()
+        let speech = StubSpeech()
+        let first = guided(name: "First", sets: 1, reps: 1, hold: 5)
+        let second = guided(name: "Second", sets: 1, reps: 1, hold: 5)
+        let coach = makeCoach([first, second], restBetweenExercises: 10, speech: speech, clock: clock)
+
+        coach.startAll()
+        speech.finishSpeaking()          // "First. Get ready."
+        clock.advance(3)
+        coach.tickNow()
+        speech.finishSpeaking()          // the hold's cue
+        clock.advance(5)
+        coach.tickNow()                  // into the rest between exercises
+
+        XCTAssertEqual(speech.spoken.last, "First complete. Rest for 10 seconds. Next, Second.")
+        XCTAssertEqual(coach.session?.state, .announcing)
     }
 
     // MARK: - No voice

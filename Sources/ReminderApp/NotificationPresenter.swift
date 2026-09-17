@@ -15,7 +15,11 @@ final class NotificationPresenter: NSObject {
     /// reminder started, consistent with the overlay tiers.
     weak var music: MusicPlayer?
 
-    private let center = UNUserNotificationCenter.current()
+    /// `nil` when the executable runs outside an app bundle (`swift run`),
+    /// where asking for the centre throws; every reminder then takes the
+    /// in-app card, the same way a denied permission does.
+    private let center: UNUserNotificationCenter? =
+        Bundle.main.bundleIdentifier != nil ? UNUserNotificationCenter.current() : nil
 
     /// Identifiers used to wire notification buttons back to reminders.
     private enum Action {
@@ -44,6 +48,10 @@ final class NotificationPresenter: NSObject {
     private var availability: Availability = .unknown
 
     func configure() {
+        guard let center else {
+            availability = .unavailable
+            return
+        }
         center.delegate = self
         registerCategories()
         requestAuthorization()
@@ -53,7 +61,7 @@ final class NotificationPresenter: NSObject {
         // Read the stored decision first. If the user has already answered, this
         // settles it without waiting; if not, the request below prompts them.
         refreshAuthorizationStatus()
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
+        center?.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
             Task { @MainActor in
                 self?.availability = granted ? .available : .unavailable
             }
@@ -65,7 +73,7 @@ final class NotificationPresenter: NSObject {
     /// app that silently drops reminders is worse than useless — so we track
     /// this and fall back to the app's own windows when it is not available.
     func refreshAuthorizationStatus() {
-        center.getNotificationSettings { [weak self] settings in
+        center?.getNotificationSettings { [weak self] settings in
             let availability: Availability
             switch settings.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
@@ -102,9 +110,11 @@ final class NotificationPresenter: NSObject {
             identifier: Action.categoryPrefix,
             actions: [complete, snooze],
             intentIdentifiers: [],
-            options: []
+            // Without this a swipe-away is never reported, and dismissals
+            // never reach history.
+            options: [.customDismissAction]
         )
-        center.setNotificationCategories([category])
+        center?.setNotificationCategories([category])
     }
 
     /// Posts a notification for `reminder`. Delivered immediately.
@@ -114,7 +124,7 @@ final class NotificationPresenter: NSObject {
     /// handed to `fallbackPresenter` instead. Missing a pressure-relief prompt
     /// because of a permissions technicality is not an acceptable failure.
     func post(_ reminder: Reminder, settings: ReminderCore.Settings) {
-        if availability == .unavailable {
+        guard let center, availability != .unavailable else {
             fallbackPresenter?(reminder, settings)
             // Re-check in the background so a user who grants permission later
             // (or a transient failure) gets system notifications back without
@@ -180,9 +190,9 @@ final class NotificationPresenter: NSObject {
             // slightly after accepting it, and checking too eagerly would report
             // a false failure and show the card on top of a real banner.
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard let self else { return }
+            guard let self, let center = self.center else { return }
 
-            let delivered = await self.center.deliveredNotifications()
+            let delivered = await center.deliveredNotifications()
             let landed = delivered.contains { $0.request.identifier == identifier }
             guard !landed else { return }
 
@@ -192,7 +202,7 @@ final class NotificationPresenter: NSObject {
             // otherwise a quick "Done" on the banner would flip every future
             // notification to the fallback card for the rest of the session
             // and re-present the reminder the user just completed.
-            let status = await self.center.notificationSettings().authorizationStatus
+            let status = await center.notificationSettings().authorizationStatus
             switch status {
             case .authorized, .provisional, .ephemeral:
                 return

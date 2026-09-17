@@ -114,6 +114,17 @@ public sealed class AIImportController
         {
             LastTestResult = TestResult.Failure(exception.Message);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // Anything else (a malformed reply the parser did not anticipate,
+            // a socket error with no wrapper) is still a failed test, not a
+            // crash of the settings window. The Mac catches every error here.
+            LastTestResult = TestResult.Failure(exception.Message);
+        }
         finally
         {
             IsTesting = false;

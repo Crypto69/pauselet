@@ -13,7 +13,10 @@ cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
 APP="dist/Pauselet.app"
 BUNDLE_ID="com.pauselet.pauselet"
-VERSION="1.4.0"
+# The release workflow exports this from scripts/version.sh. Locally it falls
+# back to the VERSION file at the repo root, so a plain ./scripts/build_app.sh
+# stamps the right number without anyone passing anything.
+VERSION="${VERSION:-$(tr -d '[:space:]' < VERSION)}"
 
 # Your Apple Team ID. Used when signing with a Developer ID certificate;
 # ignored for the default ad-hoc signature.

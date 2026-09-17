@@ -56,9 +56,11 @@ public static class ExerciseImporter
         var unified = text.Replace("\r\n", "\n").Replace("\r", "\n");
         var lines = unified.Split('\n');
 
+        // Every non-newline whitespace, as the Mac's CharacterSet.whitespaces
+        // does: PDF text arrives with non-breaking spaces before its bullets.
         static bool IsMarker(string line)
         {
-            var trimmed = line.Trim(' ', '\t');
+            var trimmed = line.Trim(HorizontalWhitespace);
             return trimmed.Length > 0 && MarkerPattern.IsMatch(trimmed);
         }
 
@@ -130,7 +132,19 @@ public static class ExerciseImporter
     }
 
     private static string StripMarker(string line) =>
-        MarkerPattern.Replace(line.Trim(' ', '\t'), "", 1);
+        MarkerPattern.Replace(line.Trim(HorizontalWhitespace), "", 1);
+
+    /// <summary>
+    /// Every whitespace character that is not a line break — the Mac's
+    /// <c>CharacterSet.whitespaces</c>, which includes the non-breaking and
+    /// typographic spaces PDF text is full of.
+    /// </summary>
+    private static readonly char[] HorizontalWhitespace =
+    [
+        ' ', '\t', '\u00A0', '\u1680', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004',
+        '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200A', '\u202F', '\u205F',
+        '\u3000',
+    ];
 
     // MARK: - One exercise
 
@@ -157,12 +171,27 @@ public static class ExerciseImporter
             remainder = Remove(timesFor.Whole, remainder);
         }
 
-        // "3 sets of 10", "3 sets x 10 reps". Skipped entirely when the
-        // "times for" form already supplied the rep count: its number has been
-        // consumed, and re-reading it as a set count double-counts it.
+        // "3 sets of 10", "3 sets x 10 reps". When the "times for" form has
+        // already supplied the rep count its number has been consumed, so only
+        // a standalone set count ("3 sets of 10 times for 5 seconds") is
+        // still read; re-reading the pair would double-count it.
         if (reps is not null)
         {
-            // Nothing further to read.
+            if (FirstMatch(remainder, SetsOnlyPattern) is { } setsAfterTimes)
+            {
+                sets = Number(setsAfterTimes.First);
+                remainder = Remove(setsAfterTimes.Whole, remainder);
+            }
+        }
+        // "3 sets of 30 seconds", "3 x 30 seconds": timed sets, one held rep
+        // each. Read before the plain pair so the seconds are not taken for a
+        // rep count.
+        else if (FirstMatch(remainder, TimedSetsPattern) is { } timedSets)
+        {
+            sets = Number(timedSets.First);
+            reps = 1;
+            holdFromTimes = Seconds(timedSets.Second, timedSets.Third);
+            remainder = Remove(timedSets.Whole, remainder);
         }
         else if (FirstMatch(remainder, SetsOfRepsPattern) is { } setsOfReps)
         {
@@ -189,6 +218,12 @@ public static class ExerciseImporter
             {
                 sets = Number(setsOnly.First);
                 remainder = Remove(setsOnly.Whole, remainder);
+            }
+            // "Wall slides x 15": the handout shorthand for a rep count.
+            if (reps is null && FirstMatch(remainder, TrailingCrossPattern) is { } trailing)
+            {
+                reps = Number(trailing.First);
+                remainder = Remove(trailing.Whole, remainder);
             }
         }
 
@@ -222,7 +257,7 @@ public static class ExerciseImporter
         {
             Name = name,
             Instructions = instructions,
-            Sets = sets ?? 3,
+            Sets = sets ?? 1,
             Reps = reps ?? 10,
             HoldSeconds = hold ?? 0,
             RestBetweenRepsSeconds = restBetweenReps ?? 0,
@@ -238,13 +273,23 @@ public static class ExerciseImporter
     /// </summary>
     private const string NumberWord =
         @"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|sixty)";
-    private const string Unit = @"(seconds?|secs?|s|minutes?|mins?|m)";
+    /// <summary>
+    /// The word boundary keeps the bare "s" and "m" from eating the first
+    /// letter of whatever follows ("5 more" is not five minutes).
+    /// </summary>
+    private const string Unit = @"(?:(seconds?|secs?|s|minutes?|mins?|m)\b)";
 
     private static readonly Regex SetsOfRepsPattern = new(
         $@"{NumberWord}\s*(?:sets?|rounds?)\s*(?:of|x|×|\*)?\s*{NumberWord}\s*(?:reps?|repetitions?|times)?",
         Options);
     private static readonly Regex CrossPattern = new(
         $@"{NumberWord}\s*(?:x|×|\*)\s*{NumberWord}", Options);
+    /// <summary>"3 sets of 30 seconds", "3 x 30 seconds": a timed set is one held rep.</summary>
+    private static readonly Regex TimedSetsPattern = new(
+        $@"{NumberWord}\s*(?:sets?|rounds?)?\s*(?:of|x|×|\*)\s*{NumberWord}\s*{Unit}", Options);
+    /// <summary>"x 15" with nothing in front of it: a rep count.</summary>
+    private static readonly Regex TrailingCrossPattern = new(
+        $@"(?:^|(?<=\s))(?:x|×)\s*{NumberWord}\b", Options);
     private static readonly Regex RepsOnlyPattern = new(
         $@"{NumberWord}\s*(?:reps?|repetitions?|times)", Options);
     /// <summary>"3 times for 15 seconds" / "10 times holding 3 s".</summary>
@@ -254,18 +299,23 @@ public static class ExerciseImporter
     private static readonly Regex SetsOnlyPattern = new(
         $@"{NumberWord}\s*(?:sets?|rounds?)", Options);
     private static readonly Regex HoldPattern = new(
-        $@"(?:hold(?:ing)?(?:\s+(?:it|for|each))*\s*{NumberWord}\s*{Unit}?|{NumberWord}\s*{Unit}\s*hold)",
+        $@"(?:hold(?:ing)?(?:\s+(?:it|for|each|this|the|that|position|stretch|there))*\s*{NumberWord}\s*{Unit}?|{NumberWord}\s*{Unit}\s*hold)",
         Options);
     /// <summary>
     /// The rest verb is optional so the second half of "rest 10s between reps
     /// and 30s between sets" is still recognised once the first clause has
     /// been removed.
     /// </summary>
+    /// <summary>
+    /// The rest verb may come before the number ("rest 30 seconds between
+    /// sets") or after it ("30 seconds rest between sets"); a leading "with"
+    /// goes with the clause so it is not left dangling in the name.
+    /// </summary>
     private static readonly Regex RestBetweenSetsPattern = new(
-        $@"(?:(?:rest|break|pause)\w*\s*)?(?:for\s*)?{NumberWord}\s*{Unit}?\s*(?:of\s*rest\s*)?between\s*(?:each\s*)?sets?",
+        $@"(?:with\s+)?(?:(?:rest|break|pause)\w*\s*)?(?:for\s*)?{NumberWord}\s*{Unit}?\s*(?:(?:of\s*)?(?:rest|break|pause)\w*\s*)?between\s*(?:each\s*)?sets?",
         Options);
     private static readonly Regex RestBetweenRepsPattern = new(
-        $@"(?:(?:rest|break|pause)\w*\s*(?:for\s*)?{NumberWord}\s*{Unit}?(?:\s*(?:of\s*rest\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))?|{NumberWord}\s*{Unit}?\s*(?:of\s*rest\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))",
+        $@"(?:with\s+)?(?:(?:rest|break|pause)\w*\s*(?:for\s*)?{NumberWord}\s*{Unit}?(?:\s*(?:(?:of\s*)?(?:rest|break|pause)\w*\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))?|{NumberWord}\s*{Unit}?\s*(?:(?:of\s*)?(?:rest|break|pause)\w*\s*)?between\s*(?:each\s*)?(?:reps?|repetitions?))",
         Options);
 
     // MARK: - Name and instructions
@@ -377,7 +427,7 @@ public static class ExerciseImporter
     /// Patterns with alternatives leave the unused branch's groups empty, so
     /// the first <em>non-empty</em> groups are returned rather than groups 1 and 2.
     /// </summary>
-    private static (string Whole, string? First, string? Second)? FirstMatch(
+    private static (string Whole, string? First, string? Second, string? Third)? FirstMatch(
         string text, Regex pattern)
     {
         var match = pattern.Match(text);
@@ -392,7 +442,8 @@ public static class ExerciseImporter
         return (
             match.Value,
             captures.Count > 0 ? captures[0] : null,
-            captures.Count > 1 ? captures[1] : null
+            captures.Count > 1 ? captures[1] : null,
+            captures.Count > 2 ? captures[2] : null
         );
     }
 

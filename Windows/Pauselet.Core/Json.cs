@@ -44,7 +44,8 @@ public static class InstantExtensions
 ///   objects (<c>{"none":{}}</c>);
 /// - an optional <c>exercises</c> array of
 ///   <c>{id, instructions, name, reps, sets}</c> objects on a reminder,
-///   present only when the Mac optional is non-nil;
+///   present only when the Mac optional is non-nil, and an optional
+///   <c>restBetweenExercisesSeconds</c> beside it;
 /// - no trailing newline.
 ///
 /// The one deliberate deviation: Swift encodes <c>Set</c> values (weekly
@@ -143,6 +144,10 @@ public static class AppDataJson
             var array = new JVal.Arr();
             foreach (var exercise in exercises) array.Items.Add(EncodeExercise(exercise));
             obj.Members["exercises"] = array;
+        }
+        if (reminder.RestBetweenExercisesSeconds is { } restBetweenExercises)
+        {
+            obj.Members["restBetweenExercisesSeconds"] = new JVal.Num(restBetweenExercises);
         }
         if (reminder.LastFiredAt is { } fired)
         {
@@ -459,9 +464,11 @@ public static class AppDataJson
         // Lenient, so a data file written before the music feature existed
         // still loads instead of the engine wiping it with the starter set.
         Music = element.TryGetProperty("music", out var music)
+                && music.ValueKind != JsonValueKind.Null
             ? DecodeMusic(music)
             : MusicChoice.None,
         Exercises = OptionalExercises(element),
+        RestBetweenExercisesSeconds = OptionalInt(element, "restBetweenExercisesSeconds"),
         LastFiredAt = OptionalDate(element, "lastFiredAt"),
         LastAcknowledgedAt = OptionalDate(element, "lastAcknowledgedAt"),
         SnoozedUntil = OptionalDate(element, "snoozedUntil"),

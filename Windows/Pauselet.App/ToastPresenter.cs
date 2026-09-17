@@ -49,6 +49,12 @@ internal sealed class ToastPresenter
     }
 
     /// <summary>
+    /// Toasts are off for good this session (registering for them failed);
+    /// every reminder takes the in-app card instead.
+    /// </summary>
+    public void MarkUnavailable() => _availability = Availability.Unavailable;
+
+    /// <summary>
     /// Re-reads whether the system will currently show toasts for this app.
     /// Notifications can be off per-app or globally; a reminder app that
     /// silently drops reminders is worse than useless, so this decides between

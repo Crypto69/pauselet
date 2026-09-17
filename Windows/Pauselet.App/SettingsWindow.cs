@@ -24,7 +24,7 @@ internal sealed class SettingsWindow : Window
     /// available without each reading the secret store.
     /// </summary>
     private readonly AIImportController _ai;
-    private readonly DateTimeZone _zone = DateTimeZoneProviders.Tzdb.GetSystemDefault();
+    private readonly DateTimeZone _zone = SystemZone.Current;
 
     private ListView? _reminderList;
     private ListView? _historyList;
@@ -188,7 +188,10 @@ internal sealed class SettingsWindow : Window
     private void ReloadReminders()
     {
         if (_reminderList is null) return;
-        _reminderList.ItemsSource = _engine.Reminders
+        // Every persist reloads the list; the selection must survive it, or
+        // Edit and Delete silently do nothing once anything has fired.
+        var selectedId = SelectedReminder()?.Id;
+        var rows = _engine.Reminders
             .Select(reminder => new ReminderRowModel(
                 reminder,
                 SymbolMap.Glyph(reminder.SymbolName),
@@ -197,6 +200,11 @@ internal sealed class SettingsWindow : Window
                 reminder.Priority.DisplayName(),
                 reminder.IsEnabled))
             .ToList();
+        _reminderList.ItemsSource = rows;
+        if (selectedId is { } id)
+        {
+            _reminderList.SelectedItem = rows.FirstOrDefault(row => row.Reminder.Id == id);
+        }
     }
 
     private void OpenEditor(Reminder? existing)
@@ -212,10 +220,12 @@ internal sealed class SettingsWindow : Window
                 }
                 else
                 {
-                    _engine.Update(reminder);
+                    // Keeps whatever the engine stamped while the editor was open.
+                    _engine.ApplyEdits(reminder);
                 }
             },
-            onPreview: reminder => _overlays.Preview(reminder, _engine.Settings)
+            onPreview: reminder => _overlays.Preview(reminder, _engine.Settings),
+            settings: _engine.Settings
         )
         {
             Owner = this,
@@ -610,8 +620,8 @@ internal sealed class SettingsWindow : Window
                 details.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
             },
             help: "Reads out each set, rep, hold and rest while the exercise "
-                + "takeover coaches you through an exercise. Only exercises with "
-                + "a hold time are coached; the others keep their tick box."
+                + "takeover coaches you through an exercise. Reps without a hold "
+                + "are counted at a steady pace."
         ));
 
         var voices = VoiceCatalog.InstalledVoices();
@@ -1099,8 +1109,9 @@ internal sealed class SettingsWindow : Window
         );
         stack.Children.Add(whoFor);
         var localOnly = SecondaryText(
-            "Everything is stored locally. There is no account, no sync, and " +
-            "no network code in the app at all."
+            "Everything is stored locally. There is no account and no sync. " +
+            "The only thing that ever leaves this PC is exercise text you " +
+            "choose to interpret with your own OpenAI key."
         );
         localOnly.Margin = new Thickness(0, 10, 0, 0);
         stack.Children.Add(localOnly);

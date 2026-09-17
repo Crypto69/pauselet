@@ -23,3 +23,7 @@ Windows Conversion Plan.md
 # The iOS Xcode project is generated from iOS/project.yml (run `xcodegen` in
 # iOS/); CI regenerates it too, so the generated tree stays out of the repo.
 iOS/Pauselet.xcodeproj/
+
+# Working notes for the Windows port, kept local like the other planning
+# documents above. TESTING.md is the committed one.
+Windows/HANDOFF.md

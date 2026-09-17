@@ -158,6 +158,15 @@ public final class ReminderEngine: ObservableObject {
         refreshNextUp()
     }
 
+    /// What an editor's Save calls: the user-editable fields of `edited`
+    /// applied to the stored reminder, whose runtime state (fire, snooze and
+    /// acknowledgement stamps set while the editor was open) is kept. See
+    /// `Reminder.applyingEdits(from:)`.
+    public func applyEdits(_ edited: Reminder) {
+        guard let current = reminder(withID: edited.id) else { return }
+        update(current.applyingEdits(from: edited))
+    }
+
     public func delete(id: UUID) {
         reminders.removeAll { $0.id == id }
         persist()
@@ -202,6 +211,15 @@ public final class ReminderEngine: ObservableObject {
     @discardableResult
     public func absorbBacklogFromDowntime() -> [Reminder] {
         let current = now
+        expireTimedPauseIfNeeded(at: current)
+        // While paused nothing was owed, so there is nothing to absorb: the
+        // anchors are frozen where the pause found them, and `resume()` will
+        // shift them by exactly the pause. Moving them here would record a
+        // miss that never happened and then double-count the pause on resume.
+        guard !Scheduler.isPaused(settings: settings, now: current) else {
+            refreshNextUp()
+            return []
+        }
         let cutoff = current.addingTimeInterval(-Self.downtimeGrace)
         var absorbed: [Reminder] = []
 
@@ -409,8 +427,10 @@ public final class ReminderEngine: ObservableObject {
             return []
         }
 
-        var fired: [Reminder] = []
+        var firedIndices: [Int] = []
         var skippedAny = false
+        var lapsed: [(index: Int, due: Date)] = []
+        let cutoff = current.addingTimeInterval(-Self.downtimeGrace)
         for index in reminders.indices {
             // The whole firing policy — what the stamp is, whether a slot that
             // passed inside quiet hours is skipped, how a snooze is consumed —
@@ -420,15 +440,28 @@ public final class ReminderEngine: ObservableObject {
                 for: reminders[index], from: current, settings: settings, calendar: calendar
             ), step.fireDate <= current else { continue }
 
+            // Judged before the stamp moves, the way the launch backlog judges
+            // staleness: by when the running engine would have delivered it.
+            if case .interval = reminders[index].schedule, reminders[index].snoozedUntil == nil,
+               let pending = Scheduler.pendingFireDate(for: reminders[index], calendar: calendar),
+               let moment = Scheduler.deliveryMoment(
+                for: pending, priority: reminders[index].priority,
+                settings: settings, calendar: calendar
+               ), moment <= cutoff {
+                lapsed.append((index, moment))
+            }
+
             step.apply(to: &reminders[index])
             switch step.outcome {
             case .skip:
                 record(.missed, for: reminders[index], at: current)
                 skippedAny = true
             case .deliver:
-                fired.append(reminders[index])
+                firedIndices.append(index)
             }
         }
+        spreadLapsedStamps(lapsed, at: current)
+        let fired = firedIndices.map { reminders[$0] }
 
         if !fired.isEmpty {
             // Highest priority first, so a critical overlay is the last thing
@@ -445,6 +478,40 @@ public final class ReminderEngine: ObservableObject {
 
         refreshNextUp()
         return fired
+    }
+
+    /// Machine sleep, seen from the tick: several interval reminders lapsed
+    /// unmeasured and all come due on the first tick after waking. Every one
+    /// of them fires — the user may be sitting right there — but stamping
+    /// them all with this same instant would weld reminders that were minutes
+    /// apart onto one second for good. So the stamps are spread a little way
+    /// back from `current`, in the order the fires were due, and the next
+    /// round comes back spaced out again.
+    ///
+    /// Only fires overdue by more than `downtimeGrace` count: two reminders
+    /// that genuinely fall due within the same tick are left alone. The
+    /// spacing never exceeds `Scheduler.staggerStep`, and never pushes a
+    /// stamp so far back that the reminder is due again at once.
+    private func spreadLapsedStamps(_ lapsed: [(index: Int, due: Date)], at current: Date) {
+        guard lapsed.count > 1 else { return }
+        var shortest = TimeInterval.greatestFiniteMagnitude
+        for item in lapsed {
+            if case .interval(let minutes) = reminders[item.index].schedule {
+                shortest = min(shortest, TimeInterval(max(1, minutes) * 60))
+            }
+        }
+        let spacing = min(Scheduler.staggerStep, shortest / TimeInterval(lapsed.count))
+        let ordered = lapsed.sorted {
+            $0.due == $1.due
+                ? reminders[$0.index].id.uuidString < reminders[$1.index].id.uuidString
+                : $0.due < $1.due
+        }
+        // The one that had waited longest gets the oldest stamp, so it is
+        // also the first to come back.
+        for (slot, item) in ordered.enumerated() {
+            let back = TimeInterval(ordered.count - 1 - slot) * spacing
+            reminders[item.index].lastFiredAt = current.addingTimeInterval(-back)
+        }
     }
 
     /// Re-anchors every interval reminder after a stretch of downtime,
@@ -577,7 +644,10 @@ public final class ReminderEngine: ObservableObject {
     public func setPaused(_ paused: Bool) {
         settings.isPaused = paused
         settings.pausedUntil = nil
-        settings.pausedAt = paused ? now : nil
+        // Pausing again while already paused keeps the original start: that is
+        // when the countdowns stopped, and the phase preserved at resume is
+        // measured from it.
+        settings.pausedAt = paused ? (settings.pausedAt ?? now) : nil
         if paused { presenter?.dismissAll() }
         persist()
         refreshNextUp()
@@ -585,7 +655,7 @@ public final class ReminderEngine: ObservableObject {
 
     public func pause(forMinutes minutes: Int) {
         settings.isPaused = true
-        settings.pausedAt = now
+        settings.pausedAt = settings.pausedAt ?? now
         settings.pausedUntil = now.addingTimeInterval(TimeInterval(minutes * 60))
         presenter?.dismissAll()
         persist()

@@ -1,51 +1,86 @@
 import Foundation
 
-/// One step of a guided exercise — a hold, a rest, or the lead-in — with its
-/// place on the session's clock.
+/// One step of a coached programme — a hold or a paced rep, a rest, or the
+/// lead-in before an exercise — with its place on the session's clock and
+/// the exercise it belongs to.
 public struct ExercisePhase: Equatable, Sendable {
     public enum Kind: String, Equatable, Sendable {
         case getReady
+        /// One held repetition of an exercise with a hold time.
         case hold
+        /// One repetition of an exercise without a hold time, paced at
+        /// `ExerciseTimeline.repSeconds` so the coach can count it.
+        case rep
         case restBetweenReps
         case restBetweenSets
+        /// The gap between one exercise finishing and the next one's lead-in
+        /// when a whole programme runs in sequence. Belongs to the exercise
+        /// that is coming up.
+        case restBetweenExercises
     }
 
     public let kind: Kind
-    /// 1-based. For a rest between sets, the set just finished.
+    /// The exercise this phase belongs to. For a rest between exercises, the
+    /// one about to start.
+    public let exerciseID: UUID
+    public let exerciseName: String
+    /// 1-based. For a rest between sets, the set just finished. 0 for the
+    /// lead-in and for a rest between exercises.
     public let set: Int
-    /// 1-based. The rep being held, or — for a rest between reps — the rep
-    /// just finished. 0 for the lead-in and for a rest between sets.
+    /// 1-based. The rep being performed, or — for a rest between reps — the
+    /// rep just finished. 0 for the lead-in and for rests between sets or
+    /// exercises.
     public let rep: Int
     /// Offset from the start of the session.
     public let start: TimeInterval
     public let duration: TimeInterval
+    /// The spoken line for the start of this phase, composed when the
+    /// timeline is built so it can mention the exercise before as well as
+    /// the one at hand ("Pelvic tilts complete. Chin tucks. Get ready.").
+    public let cue: String
 
     public var end: TimeInterval { start + duration }
 
-    public init(kind: Kind, set: Int, rep: Int, start: TimeInterval, duration: TimeInterval) {
+    public init(
+        kind: Kind,
+        exerciseID: UUID,
+        exerciseName: String,
+        set: Int,
+        rep: Int,
+        start: TimeInterval,
+        duration: TimeInterval,
+        cue: String
+    ) {
         self.kind = kind
+        self.exerciseID = exerciseID
+        self.exerciseName = exerciseName
         self.set = set
         self.rep = rep
         self.start = start
         self.duration = duration
+        self.cue = cue
     }
 
-    /// The headline while this phase runs: "Set 1 · Rep 3", "Set 1 done".
+    /// The headline while this phase runs: "Set 1 · Rep 3", "Set 1 done",
+    /// "Up next".
     public var title: String {
         switch kind {
         case .getReady: return "Get ready"
-        case .hold, .restBetweenReps: return "Set \(set) · Rep \(rep)"
+        case .hold, .rep, .restBetweenReps: return "Set \(set) · Rep \(rep)"
         case .restBetweenSets: return "Set \(set) done"
+        case .restBetweenExercises: return "Up next"
         }
     }
 
-    /// What the countdown is counting: "Hold", "Rest".
+    /// What the countdown is counting: "Hold", "Go", "Rest".
     public var label: String {
         switch kind {
         case .getReady: return "Get ready"
         case .hold: return "Hold"
+        case .rep: return "Go"
         case .restBetweenReps: return "Rest"
         case .restBetweenSets: return "Rest between sets"
+        case .restBetweenExercises: return "Rest"
         }
     }
 }
@@ -61,65 +96,127 @@ public struct ExerciseCue: Equatable, Sendable {
     }
 }
 
-/// The whole guided programme for one exercise, computed once when Start is
-/// pressed: a short lead-in, then for every set and rep a hold, with the
-/// rests the exercise asks for in between. Zero-length rests are not emitted.
+/// The whole coached programme for one exercise or a run of them, computed
+/// once when Start is pressed: for each exercise a short lead-in, then for
+/// every set and rep a hold (or a paced rep when there is no hold), with the
+/// rests the exercise asks for in between; and between exercises the rest
+/// the reminder asks for. Zero-length rests are not emitted.
 ///
 /// Pure data, so the Mac, iOS and Windows coaches all run the same programme
 /// and say the same things.
 public struct ExerciseTimeline: Equatable, Sendable {
-    /// Seconds between pressing Start and the first hold — long enough to get
+    /// Seconds between pressing Start and the first rep — long enough to get
     /// into position, short enough not to feel like waiting.
     public static let leadInSeconds: TimeInterval = 3
+    /// Seconds allowed for one rep of an exercise with no hold time, so it
+    /// can be counted through rather than left to the person.
+    public static let repSeconds = 3
     /// Holds at least this long get a spoken "Three. Two. One." at the end.
     /// Shorter holds do not: the opening cue would still be being spoken.
     public static let countdownMinimumHold = 6
 
-    public let exerciseID: UUID
-    public let exerciseName: String
+    /// One exercise's span on the clock: from its lead-in to the end of its
+    /// last set. A rest between exercises falls between one entry's `end`
+    /// and the next one's `start`.
+    public struct Entry: Equatable, Sendable {
+        public let id: UUID
+        public let name: String
+        public let start: TimeInterval
+        public let end: TimeInterval
+
+        public init(id: UUID, name: String, start: TimeInterval, end: TimeInterval) {
+            self.id = id
+            self.name = name
+            self.start = start
+            self.end = end
+        }
+    }
+
+    /// The exercises in the order they run.
+    public let entries: [Entry]
     public let phases: [ExercisePhase]
     /// Sorted by `at`: one for the start of every phase, the countdown words
-    /// inside long holds, and "Exercise complete." at `totalDuration`.
+    /// inside long holds, and the closing line at `totalDuration`.
     public let cues: [ExerciseCue]
 
     public var totalDuration: TimeInterval { phases.last?.end ?? 0 }
 
-    /// `nil` unless the exercise is guided (has a hold time).
+    /// "Exercise complete" for one exercise, "All exercises complete" for a
+    /// run of them: the panel's headline at the end, and the closing cue.
+    public var completionTitle: String { Self.completionTitle(entryCount: entries.count) }
+
+    private static func completionTitle(entryCount: Int) -> String {
+        entryCount > 1 ? "All exercises complete" : "Exercise complete"
+    }
+
+    /// The programme for one exercise; `nil` when it has no sets or reps.
     public init?(exercise: Exercise) {
-        guard exercise.isGuided, exercise.sets >= 1, exercise.reps >= 1 else { return nil }
+        self.init(exercises: [exercise])
+    }
+
+    /// The programme for `exercises` in order, with `restBetweenExercisesSeconds`
+    /// between one finishing and the next one's lead-in. Exercises with no
+    /// sets or reps are left out; `nil` when nothing is left.
+    public init?(exercises: [Exercise], restBetweenExercisesSeconds: Int = 0) {
+        let runnable = exercises.filter { $0.sets >= 1 && $0.reps >= 1 }
+        guard !runnable.isEmpty else { return nil }
 
         var phases: [ExercisePhase] = []
+        var entries: [Entry] = []
         var cursor: TimeInterval = 0
-        func append(_ kind: ExercisePhase.Kind, set: Int, rep: Int, seconds: Int) {
-            phases.append(ExercisePhase(
-                kind: kind, set: set, rep: rep, start: cursor, duration: TimeInterval(seconds)
-            ))
-            cursor += TimeInterval(seconds)
-        }
 
-        phases.append(ExercisePhase(
-            kind: .getReady, set: 0, rep: 0, start: 0, duration: Self.leadInSeconds
-        ))
-        cursor = Self.leadInSeconds
+        for (index, exercise) in runnable.enumerated() {
+            func append(_ kind: ExercisePhase.Kind, set: Int, rep: Int, seconds: Int, cue: String) {
+                phases.append(ExercisePhase(
+                    kind: kind, exerciseID: exercise.id, exerciseName: exercise.name,
+                    set: set, rep: rep, start: cursor, duration: TimeInterval(seconds), cue: cue
+                ))
+                cursor += TimeInterval(seconds)
+            }
 
-        for set in 1...exercise.sets {
-            for rep in 1...exercise.reps {
-                append(.hold, set: set, rep: rep, seconds: exercise.holdSeconds)
-                if rep < exercise.reps, exercise.restBetweenRepsSeconds > 0 {
-                    append(.restBetweenReps, set: set, rep: rep,
-                           seconds: exercise.restBetweenRepsSeconds)
+            // The exercise before is signed off at the start of whatever
+            // comes next, so its last rep is not talked over.
+            var preamble = index > 0 ? "\(runnable[index - 1].name) complete. " : ""
+            if index > 0, restBetweenExercisesSeconds > 0 {
+                append(.restBetweenExercises, set: 0, rep: 0, seconds: restBetweenExercisesSeconds,
+                       cue: preamble + "Rest for \(Self.seconds(restBetweenExercisesSeconds)). "
+                           + "Next, \(exercise.name).")
+                preamble = ""
+            }
+
+            let entryStart = cursor
+            append(.getReady, set: 0, rep: 0, seconds: Int(Self.leadInSeconds),
+                   cue: preamble + "\(exercise.name). Get ready.")
+
+            for set in 1...exercise.sets {
+                for rep in 1...exercise.reps {
+                    if exercise.hasHold {
+                        append(.hold, set: set, rep: rep, seconds: exercise.holdSeconds,
+                               cue: rep == 1
+                                   ? "Set \(set), rep 1. Hold for \(Self.seconds(exercise.holdSeconds))."
+                                   : "Rep \(rep). Hold.")
+                    } else {
+                        append(.rep, set: set, rep: rep, seconds: Self.repSeconds,
+                               cue: rep == 1 ? "Set \(set), rep 1." : "Rep \(rep).")
+                    }
+                    if rep < exercise.reps, exercise.restBetweenRepsSeconds > 0 {
+                        append(.restBetweenReps, set: set, rep: rep,
+                               seconds: exercise.restBetweenRepsSeconds, cue: "Rest.")
+                    }
+                }
+                if set < exercise.sets, exercise.restBetweenSetsSeconds > 0 {
+                    append(.restBetweenSets, set: set, rep: 0,
+                           seconds: exercise.restBetweenSetsSeconds,
+                           cue: "Set \(set) done. Rest for \(Self.seconds(exercise.restBetweenSetsSeconds)).")
                 }
             }
-            if set < exercise.sets, exercise.restBetweenSetsSeconds > 0 {
-                append(.restBetweenSets, set: set, rep: 0,
-                       seconds: exercise.restBetweenSetsSeconds)
-            }
+
+            entries.append(Entry(id: exercise.id, name: exercise.name, start: entryStart, end: cursor))
         }
 
-        exerciseID = exercise.id
-        exerciseName = exercise.name
+        self.entries = entries
         self.phases = phases
-        cues = Self.cues(for: phases, exerciseName: exercise.name)
+        cues = Self.cues(for: phases, closing: Self.completionTitle(entryCount: entries.count) + ".")
     }
 
     /// Index of the phase containing `offset`, treating each phase as
@@ -131,20 +228,20 @@ public struct ExerciseTimeline: Equatable, Sendable {
         return phases.lastIndex { $0.start <= clamped }
     }
 
-    /// The spoken line for the start of `phase`.
-    public static func cue(for phase: ExercisePhase, exerciseName: String) -> String {
-        switch phase.kind {
-        case .getReady:
-            return "\(exerciseName). Get ready."
-        case .hold where phase.rep == 1:
-            return "Set \(phase.set), rep 1. Hold for \(seconds(Int(phase.duration)))."
-        case .hold:
-            return "Rep \(phase.rep). Hold."
-        case .restBetweenReps:
-            return "Rest."
-        case .restBetweenSets:
-            return "Set \(phase.set) done. Rest for \(seconds(Int(phase.duration)))."
-        }
+    /// The exercises whose last set has run by `offset`, in programme order.
+    public func finishedExerciseIDs(at offset: TimeInterval) -> [UUID] {
+        entries.filter { offset >= $0.end }.map(\.id)
+    }
+
+    /// Where the exercise after `id` begins — its lead-in, past any rest
+    /// between the two — or the end of the session when `id` is the last (or
+    /// not in the programme). What cancelling the exercise being coached
+    /// jumps to.
+    public func startOfExercise(after id: UUID) -> TimeInterval {
+        guard let index = entries.firstIndex(where: { $0.id == id }),
+              index + 1 < entries.count
+        else { return totalDuration }
+        return entries[index + 1].start
     }
 
     /// "1 second" / "5 seconds".
@@ -152,10 +249,10 @@ public struct ExerciseTimeline: Equatable, Sendable {
         count == 1 ? "1 second" : "\(count) seconds"
     }
 
-    private static func cues(for phases: [ExercisePhase], exerciseName: String) -> [ExerciseCue] {
+    private static func cues(for phases: [ExercisePhase], closing: String) -> [ExerciseCue] {
         var cues: [ExerciseCue] = []
         for phase in phases {
-            cues.append(ExerciseCue(at: phase.start, text: cue(for: phase, exerciseName: exerciseName)))
+            cues.append(ExerciseCue(at: phase.start, text: phase.cue))
             if phase.kind == .hold, Int(phase.duration) >= countdownMinimumHold {
                 cues.append(ExerciseCue(at: phase.end - 3, text: "Three."))
                 cues.append(ExerciseCue(at: phase.end - 2, text: "Two."))
@@ -163,7 +260,7 @@ public struct ExerciseTimeline: Equatable, Sendable {
             }
         }
         if let last = phases.last {
-            cues.append(ExerciseCue(at: last.end, text: "Exercise complete."))
+            cues.append(ExerciseCue(at: last.end, text: closing))
         }
         return cues.sorted { $0.at < $1.at }
     }
@@ -291,10 +388,16 @@ public struct ExerciseSession: Equatable, Sendable {
     /// Keeps whichever of running, announcing and paused the session was in;
     /// an announcing driver will announce the new phase.
     public mutating func skip(at now: Date) {
-        guard isLive else { return }
         let offset = elapsed(at: now)
-        banked = timeline.phaseIndex(at: offset).map { timeline.phases[$0].end }
-            ?? timeline.totalDuration
+        jump(to: timeline.phaseIndex(at: offset).map { timeline.phases[$0].end }
+            ?? timeline.totalDuration, at: now)
+    }
+
+    /// Moves the cursor to `offset` on the session's clock — the start of a
+    /// later exercise, say — with the same rules as `skip`.
+    public mutating func jump(to offset: TimeInterval, at now: Date) {
+        guard isLive else { return }
+        banked = min(max(0, offset), timeline.totalDuration)
         if state == .running { runningSince = now }
     }
 

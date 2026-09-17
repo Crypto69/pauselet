@@ -197,7 +197,7 @@ public struct OpenAIExerciseInterpreter: ExerciseInterpreting {
 
         Rules:
         - Extract only what the text states. Never invent or infer timings.
-        - When a value is not stated use these defaults: sets 3, reps 10, \
+        - When a value is not stated use these defaults: sets 1, reps 10, \
         holdSeconds 0, restBetweenRepsSeconds 0, restBetweenSetsSeconds 0.
         - All durations are in whole seconds. Convert minutes.
         - "name" is a short exercise name, without counts or timings.
@@ -280,7 +280,7 @@ public struct OpenAIExerciseInterpreter: ExerciseInterpreting {
             return Exercise(
                 name: name,
                 instructions: row["instructions"] as? String ?? "",
-                sets: integer(row["sets"]) ?? 3,
+                sets: integer(row["sets"]) ?? 1,
                 reps: integer(row["reps"]) ?? 10,
                 holdSeconds: integer(row["holdSeconds"]) ?? 0,
                 restBetweenRepsSeconds: integer(row["restBetweenRepsSeconds"]) ?? 0,
@@ -293,7 +293,14 @@ public struct OpenAIExerciseInterpreter: ExerciseInterpreting {
     /// not always consistent, and a quoted "3" should not lose the count.
     private static func integer(_ value: Any?) -> Int? {
         if let number = value as? Int { return number }
-        if let number = value as? Double { return Int(number) }
+        if let number = value as? Double {
+            // `Int(_:)` traps outside Int's range; a model that writes 1e23
+            // must not crash the app. `Exercise.normalized` clamps the rest.
+            guard number.isFinite, number >= -1e15, number <= 1e15 else {
+                return number > 0 ? Int.max : Int.min
+            }
+            return Int(number)
+        }
         if let text = value as? String { return Int(text) }
         return nil
     }

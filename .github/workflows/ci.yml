@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    # release.yml owns v* tags and runs these same suites itself.
+    tags-ignore: ["v*"]
   pull_request:
 
 jobs:

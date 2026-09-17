@@ -91,10 +91,11 @@ struct AboutScreen: View {
             Text(AboutContent.origin)
 
             Text(
-                "Everything is stored locally. There is no account, no sync, "
-                + "and no network code in the app at all. Critical reminders "
-                + "use Apple's alarm system, so they can reach you even in "
-                + "Silent mode — that permission is asked for once, and used "
+                "Everything is stored locally. There is no account and no sync. "
+                + "The only thing that ever leaves this device is exercise text "
+                + "you choose to interpret with your own OpenAI key. Critical "
+                + "reminders use Apple's alarm system, so they can reach you even "
+                + "in Silent mode — that permission is asked for once, and used "
                 + "for nothing else."
             )
         }

@@ -6,15 +6,16 @@ import Foundation
 ///
 /// A reminder carrying at least one of these is an "exercise reminder". It is
 /// always delivered as the critical, full-screen takeover, which lists the
-/// exercises with a tick box each so the programme is in front of the person
-/// while they work through it. The ticks are working memory for that
-/// session; nothing about them is stored.
+/// exercises with Start and Cancel on each so the programme is in front of
+/// the person while they work through it. What has been done is working
+/// memory for that session; nothing about it is stored.
 ///
-/// An exercise with a hold time is "guided": the takeover offers to coach it
-/// set by set and rep by rep (`ExerciseTimeline`). One without a hold is
-/// untimed and only has its tick box.
+/// Every exercise can be coached set by set and rep by rep
+/// (`ExerciseTimeline`). One with a hold time counts each rep down; one
+/// without is paced at a fixed tempo instead, so a whole programme can run
+/// through in sequence without anyone pressing Start between exercises.
 public struct Exercise: Identifiable, Codable, Equatable, Hashable, Sendable {
-    /// Stable identity for the editor's rows and the takeover's tick boxes.
+    /// Stable identity for the editor's rows and the takeover's coach rows.
     public var id: UUID
     public var name: String
     /// Multi-line free text. Stored with "\n" line endings only, so the same
@@ -23,8 +24,8 @@ public struct Exercise: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var instructions: String
     public var sets: Int
     public var reps: Int
-    /// Seconds each rep is held. 0 means untimed: the takeover shows a plain
-    /// tick box and the coach leaves the exercise alone.
+    /// Seconds each rep is held. 0 means the rep is not held: the coach
+    /// paces it at `ExerciseTimeline.repSeconds` rather than counting a hold.
     public var holdSeconds: Int
     /// Seconds of rest after every rep except the last of a set. 0 = none.
     public var restBetweenRepsSeconds: Int
@@ -35,12 +36,16 @@ public struct Exercise: Identifiable, Codable, Equatable, Hashable, Sendable {
     /// editor and the Windows mirror agree.
     public static let holdRange: ClosedRange<Int> = 0...300
     public static let restRange: ClosedRange<Int> = 0...600
+    /// Bounds for the counts. A pasted or model-supplied "99999999999 reps"
+    /// must not become a timeline with that many phases.
+    public static let setsRange: ClosedRange<Int> = 1...20
+    public static let repsRange: ClosedRange<Int> = 1...100
 
     public init(
         id: UUID = UUID(),
         name: String,
         instructions: String = "",
-        sets: Int = 3,
+        sets: Int = 1,
         reps: Int = 10,
         holdSeconds: Int = 0,
         restBetweenRepsSeconds: Int = 0,
@@ -75,13 +80,14 @@ public struct Exercise: Identifiable, Codable, Equatable, Hashable, Sendable {
             try container.decodeIfPresent(Int.self, forKey: .restBetweenSetsSeconds) ?? 0
     }
 
-    /// True when the exercise has a hold time, so the takeover can coach it.
-    public var isGuided: Bool { holdSeconds > 0 }
+    /// True when each rep is held for a time, so the coach counts the hold
+    /// down rather than pacing the rep.
+    public var hasHold: Bool { holdSeconds > 0 }
 
     /// "3 × 10" — sets by reps, as the takeover shows it; "3 × 10 · hold 5 s"
-    /// when the exercise is guided.
+    /// when the reps are held.
     public var summary: String {
-        isGuided ? "\(sets) × \(reps) · hold \(holdSeconds) s" : "\(sets) × \(reps)"
+        hasHold ? "\(sets) × \(reps) · hold \(holdSeconds) s" : "\(sets) × \(reps)"
     }
 
     /// A name to show, at least one set of at least one rep, and no negative
@@ -99,7 +105,9 @@ public struct Exercise: Identifiable, Codable, Equatable, Hashable, Sendable {
     /// `nil` for an empty list.
     public static func summary(of exercises: [Exercise]) -> String? {
         guard !exercises.isEmpty else { return nil }
-        let sets = exercises.reduce(0) { $0 + $1.sets }
+        // Counts are clamped by `normalized`, but a hand-edited file is not;
+        // an absurd total must not trap the list row.
+        let sets = exercises.reduce(0) { $0 &+ setsRange.clamping($1.sets) }
         let exerciseWord = exercises.count == 1 ? "exercise" : "exercises"
         let setWord = sets == 1 ? "set" : "sets"
         return "\(exercises.count) \(exerciseWord) · \(sets) \(setWord)"
@@ -119,6 +127,10 @@ public struct Exercise: Identifiable, Codable, Equatable, Hashable, Sendable {
                     .replacingOccurrences(of: "\r\n", with: "\n")
                     .replacingOccurrences(of: "\r", with: "\n")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+                // Only the top is clamped: a row with no sets or reps is not
+                // performable and is dropped below rather than promoted to one.
+                copy.sets = Swift.min(exercise.sets, setsRange.upperBound)
+                copy.reps = Swift.min(exercise.reps, repsRange.upperBound)
                 copy.holdSeconds = holdRange.clamping(exercise.holdSeconds)
                 copy.restBetweenRepsSeconds = restRange.clamping(exercise.restBetweenRepsSeconds)
                 copy.restBetweenSetsSeconds = restRange.clamping(exercise.restBetweenSetsSeconds)

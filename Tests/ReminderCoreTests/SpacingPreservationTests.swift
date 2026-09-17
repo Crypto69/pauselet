@@ -242,6 +242,141 @@ final class SpacingPreservationTests: XCTestCase {
         XCTAssertEqual(fires, fires.sorted(), "Original order is kept")
     }
 
+    // MARK: - Anchors set during the downtime
+
+    /// A reminder added while paused has only been idle since it was added.
+    /// Resume must shift it by that, not by the whole pause — the old code
+    /// pushed such a reminder an hour past its interval for every hour of
+    /// pause that preceded it.
+    func testResumeShiftsAnAnchorSetDuringThePauseOnlyFromThatPoint() {
+        let start = date(2026, 3, 10, 9, 0)
+        var hourly = Reminder(title: "Hourly", schedule: .interval(minutes: 60), createdAt: start)
+        hourly.lastFiredAt = start
+        let (engine, clock, _) = makeEngine(reminders: [hourly], now: date(2026, 3, 10, 9, 30))
+
+        engine.setPaused(true)  // 30 minutes left on the hourly.
+        clock.set(date(2026, 3, 10, 10, 30))
+        let added = Reminder(title: "Added while paused", schedule: .interval(minutes: 20))
+        engine.add(added)
+        clock.set(date(2026, 3, 10, 11, 0))
+        engine.resume()
+
+        let fires = Dictionary(uniqueKeysWithValues: engine.reminders.map {
+            ($0.title, Scheduler.nextFireDate(for: $0, now: clock.now, calendar: calendar)!)
+        })
+        XCTAssertEqual(fires["Hourly"], date(2026, 3, 10, 11, 30), "Still 30 minutes left")
+        XCTAssertEqual(
+            fires["Added while paused"], date(2026, 3, 10, 11, 20),
+            "A full 20 minutes from when it was added, not 20 minutes plus the pause"
+        )
+    }
+
+    /// Relaunching while paused: nothing was owed, so the launch backlog has
+    /// nothing to absorb, records no miss, and resume still preserves the
+    /// phase the pause found. (The old absorber re-anchored the reminder to
+    /// the relaunch and resume then shifted it by the whole pause again.)
+    func testRelaunchingWhilePausedAbsorbsNothingAndResumeKeepsThePhase() {
+        var reminder = Reminder(
+            title: "Hourly", schedule: .interval(minutes: 60), createdAt: date(2026, 3, 10, 8, 0)
+        )
+        reminder.lastFiredAt = date(2026, 3, 10, 8, 30)
+        let store = InMemoryDataStore(data: AppData(reminders: [reminder]))
+        let clock = MutableDateProvider(now: date(2026, 3, 10, 9, 0))
+        let first = ReminderEngine(
+            store: store, dateProvider: clock, presenter: RecordingPresenter(), calendar: calendar
+        )
+        first.setPaused(true)  // 30 minutes left.
+
+        // A day later the app is opened again, still paused.
+        clock.set(date(2026, 3, 11, 14, 0))
+        let relaunched = ReminderEngine(
+            store: store, dateProvider: clock, presenter: RecordingPresenter(), calendar: calendar
+        )
+        XCTAssertTrue(relaunched.absorbBacklogFromDowntime().isEmpty)
+        XCTAssertTrue(relaunched.events.isEmpty, "Nothing was missed while paused")
+        XCTAssertEqual(relaunched.reminders[0].lastFiredAt, date(2026, 3, 10, 8, 30))
+
+        clock.set(date(2026, 3, 11, 15, 0))
+        relaunched.resume()
+        XCTAssertEqual(
+            Scheduler.nextFireDate(for: relaunched.reminders[0], now: clock.now, calendar: calendar),
+            date(2026, 3, 11, 15, 30),
+            "The 30 minutes that were left are still left"
+        )
+    }
+
+    /// The tick's own sleep catch-up: the first overdue reminder fires on
+    /// waking and the others follow `staggerStep` apart, in the order they
+    /// were due, instead of all being stamped with the same instant.
+    func testWakingFromSleepThroughTheTickKeepsRemindersApart() {
+        let start = date(2026, 3, 10, 9, 0)
+        let (engine, clock, _) = makeEngine(
+            reminders: staggeredHourlyTrio(start: start), now: date(2026, 3, 10, 9, 50)
+        )
+
+        clock.set(date(2026, 3, 10, 17, 0))
+        XCTAssertEqual(engine.tick().count, 3, "Every catch-up fires on wake")
+
+        let fires = nextFires(engine, at: clock.now)
+        XCTAssertEqual(Set(fires).count, 3, "Waking up must not weld them together")
+        XCTAssertEqual(fires, fires.sorted(), "Original order is kept")
+        XCTAssertEqual(fires.last, date(2026, 3, 10, 18, 0), "The last to come due is a full hour away")
+        XCTAssertEqual(fires.last!.timeIntervalSince(fires.first!), 2 * Scheduler.staggerStep)
+
+        // The next round arrives one at a time, most overdue first.
+        clock.set(fires[0])
+        XCTAssertEqual(engine.tick().map(\.title), ["Lean Back"])
+        XCTAssertEqual(engine.reminders[0].lastFiredAt, clock.now, "A lone fire is stamped as usual")
+    }
+
+    /// Pausing again while already paused (indefinite, then "for 30 minutes")
+    /// must keep the original start: that is when the countdowns stopped.
+    func testPausingAgainWhilePausedKeepsTheOriginalStart() {
+        var reminder = Reminder(
+            title: "Hourly", schedule: .interval(minutes: 60), createdAt: date(2026, 3, 10, 9, 0)
+        )
+        reminder.lastFiredAt = date(2026, 3, 10, 9, 15)  // 15 minutes left at 10:00.
+        let (engine, clock, _) = makeEngine(reminders: [reminder], now: date(2026, 3, 10, 10, 0))
+
+        engine.setPaused(true)
+        clock.set(date(2026, 3, 10, 11, 0))
+        engine.pause(forMinutes: 30)
+        XCTAssertEqual(engine.settings.pausedAt, date(2026, 3, 10, 10, 0))
+
+        clock.set(date(2026, 3, 10, 11, 30))
+        engine.tick()  // The timed pause lifts.
+        XCTAssertEqual(
+            nextFires(engine, at: clock.now), [date(2026, 3, 10, 11, 45)],
+            "15 minutes left, measured from the first pause"
+        )
+    }
+
+    /// The projection during a timed pause must not drift as the pause wears
+    /// on: at every moment it says what the engine will do when the pause
+    /// lifts.
+    func testProjectionIsStableThroughoutATimedPause() {
+        var reminder = Reminder(
+            title: "Hourly", schedule: .interval(minutes: 60), createdAt: date(2026, 3, 10, 9, 0)
+        )
+        reminder.lastFiredAt = date(2026, 3, 10, 9, 50)
+        let (engine, clock, _) = makeEngine(reminders: [reminder], now: date(2026, 3, 10, 10, 0))
+        engine.pause(forMinutes: 120)
+
+        func projected() -> Date {
+            Scheduler.projectedFires(
+                for: engine.reminders[0], from: clock.now, limit: 1,
+                settings: engine.settings, calendar: calendar
+            )[0].fireDate
+        }
+        XCTAssertEqual(projected(), date(2026, 3, 10, 12, 50))
+        clock.set(date(2026, 3, 10, 11, 0))
+        XCTAssertEqual(projected(), date(2026, 3, 10, 12, 50), "Same answer an hour in")
+
+        clock.set(date(2026, 3, 10, 12, 0))
+        engine.tick()
+        XCTAssertEqual(nextFires(engine, at: clock.now), [date(2026, 3, 10, 12, 50)])
+    }
+
     // MARK: - Wall-clock schedules are untouched
 
     /// A daily reminder is anchored to the clock, not to the downtime. Resume

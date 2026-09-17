@@ -32,7 +32,8 @@ risk.
 |---|---|---|---|
 | Exercise reminders (model + JSON) | ✅ | ✅ | ✅ |
 | Exercise editing — all six fields | ✅ | ✅ *(shares `ExerciseRowEditor`)* | ✅ |
-| Exercise takeover with tick boxes | ✅ | ✅ | ✅ |
+| Exercise takeover — Start/Cancel per row, Start All in sequence | ✅ | ✅ | ✅ *unseen* |
+| Rest between exercises + reordering in the editor | ✅ | ✅ | ✅ *unseen* |
 | **Text importer (parsing engine)** | ✅ | ✅ *shared core* | ✅ *ported* |
 | **Import UI** | ✅ | ✅ | ✅ |
 | **AI import (OpenAI + key storage)** | ✅ | ✅ | ✅ *DPAPI* |

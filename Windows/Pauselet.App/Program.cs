@@ -62,7 +62,21 @@ public static class Program
                 Log.Error("UnhandledException", exception);
             }
         };
-        app.Startup += (_, _) => Start(args);
+        app.Startup += (_, _) =>
+        {
+            try
+            {
+                Start(args);
+            }
+            catch (Exception exception)
+            {
+                // Half-started is worse than not started: no tray icon, no
+                // ticks, and the single-instance mutex held so a relaunch
+                // exits at once. Log it and go.
+                Log.Error("startup failed", exception);
+                app.Shutdown(1);
+            }
+        };
         app.Exit += (_, _) => Stop();
         app.Run();
     }
@@ -93,8 +107,19 @@ public static class Program
         Log.Line($"startup: engine loaded ({engine.Reminders.Count} reminders)");
         notifier.Engine = engine;
         overlays.Engine = engine;
-        notifier.Configure();
-        Log.Line("startup: toasts configured");
+        try
+        {
+            notifier.Configure();
+            Log.Line("startup: toasts configured");
+        }
+        catch (Exception exception)
+        {
+            // Registering for toast activation writes COM and registry
+            // entries; an account that forbids them still gets reminders —
+            // the in-app card stands in — rather than no app at all.
+            Log.Error("toasts unavailable", exception);
+            notifier.MarkUnavailable();
+        }
 
         _engine = engine;
         _overlays = overlays;

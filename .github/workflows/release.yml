@@ -1,0 +1,349 @@
+# A `v*` tag (e.g. v1.5.0) produces one GitHub Release carrying all three
+# platforms, so a change to the shared core cannot ship to Mac users and quietly
+# miss everyone else:
+#
+#   - macOS    Pauselet-<v>.zip, Developer ID signed and notarized
+#   - Windows  Pauselet-<v>-windows-x64.zip, self-contained (no .NET to install)
+#   - iOS      Pauselet-<v>-ios-archive.zip, an unsigned .xcarchive
+#
+# Each platform runs its own test suite before it builds, because a tag push
+# matches neither ci.yml's `branches: [main]` nor its `pull_request` trigger —
+# there is no CI run to lean on for a tag. The release job needs all three, so a
+# red suite anywhere means no release at all rather than a partial one.
+#
+# The version is scripts/version.sh's: the tag without the v.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Builds everything without creating a tag, so changes to this file can be
+  # tested. The release job is skipped unless a tag was pushed.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: version stamp
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.v.outputs.APP_VERSION }}
+      build_number: ${{ steps.v.outputs.BUILD_NUMBER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # version.sh counts commits for BUILD_NUMBER and looks for tags.
+          fetch-depth: 0
+      - id: v
+        run: sh scripts/version.sh | tee -a "$GITHUB_OUTPUT"
+      - name: Warn if the VERSION file has drifted from the tag
+        run: |
+          file="$(tr -d '[:space:]' < VERSION)"
+          tag='${{ steps.v.outputs.APP_VERSION }}'
+          if [ "$file" != "$tag" ]; then
+            echo "::warning::VERSION says $file but this release is $tag. The tag wins; bump VERSION to match."
+          fi
+
+  macos:
+    name: macOS
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The default Xcode on the runner has lagged behind what this package
+      # needs for its concurrency annotations.
+      - name: Select the newest Xcode on the image
+        run: sudo xcode-select -s "$(./scripts/newest-xcode.sh)"
+
+      - name: Test
+        run: swift test
+
+      # Secrets cannot be tested in `if:`, so surface them as a flag. All five
+      # or none: a signed but un-notarized Developer ID app is still blocked by
+      # Gatekeeper, so a partial set would produce a build that claims to be
+      # signed and still will not open. Fail fast instead of releasing that.
+      - name: Are the macOS signing secrets present?
+        id: signing
+        shell: bash
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          all="MACOS_CERT_P12 MACOS_CERT_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER_ID APPLE_API_KEY_P8"
+          present=""; missing=""
+          for v in $all; do
+            if [ -n "${!v}" ]; then present="$present $v"; else missing="$missing $v"; fi
+          done
+          if [ -z "$missing" ]; then
+            echo "all five macOS signing secrets are set: signing and notarizing"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [ -z "$present" ]; then
+            echo "no macOS signing secrets are set: building ad-hoc signed"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::macOS signing secrets are incomplete (missing:$missing). Set all five or none — see docs/releasing.md."
+            exit 1
+          fi
+
+      - name: Import the Developer ID certificate into a throwaway keychain
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          pw="$(uuidgen)"
+          security create-keychain -p "$pw" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$pw" "$keychain"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pw" "$keychain" > /dev/null
+          # Search only this keychain, so a Developer ID that happens to live in
+          # the runner's login keychain cannot make the match ambiguous, and pin
+          # the exact certificate by its SHA-1 hash: a name that matched two
+          # identities would make codesign fail.
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          line="$(security find-identity -v -p codesigning "$keychain" | grep -F "Developer ID Application")"
+          n="$(printf '%s' "$line" | grep -c .)"
+          [ "$n" -eq 1 ] || { echo "::error::expected one Developer ID Application certificate in the throwaway keychain, found $n"; echo "$line"; exit 1; }
+          echo "$line"
+          echo "SIGN_IDENTITY=$(printf '%s\n' "$line" | sed -n 's/^ *[0-9][0-9]*) \([0-9A-Fa-f]\{40\}\) .*/\1/p')" >> "$GITHUB_ENV"
+
+      # SIGN_IDENTITY comes from $GITHUB_ENV above when signing is on; without
+      # it build_app.sh falls back to an ad-hoc signature.
+      - name: Build the app bundle
+        env:
+          VERSION: ${{ needs.version.outputs.app_version }}
+        run: ./scripts/build_app.sh
+
+      - name: Zip
+        run: |
+          v='${{ needs.version.outputs.app_version }}'
+          ditto -c -k --keepParent dist/Pauselet.app "dist/Pauselet-$v.zip"
+
+      - name: Notarize with Apple and staple the ticket
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          echo "$APPLE_API_KEY_P8" | base64 --decode > "$APPLE_API_KEY_PATH"
+          v='${{ needs.version.outputs.app_version }}'
+          ./scripts/notarize.sh dist/Pauselet.app "dist/Pauselet-$v.zip"
+          rm -f "$APPLE_API_KEY_PATH"
+          # Written only after notarize.sh succeeded, so the release notes can
+          # say "signed and notarized" on the strength of this file and nothing
+          # else. Separate jobs cannot pass this through `outputs:` without the
+          # Windows and iOS legs having an opinion, so it travels in the
+          # artifact instead.
+          echo "notarized $(date -u +%FT%TZ)" > dist/macos-notarized.txt
+
+      # What ships is what is checked: unpack the zip that will be uploaded and
+      # verify the app inside it, not the one left in dist/ by the build.
+      - name: Verify the app inside the zip that ships
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          v='${{ needs.version.outputs.app_version }}'
+          dir="$RUNNER_TEMP/release-zip"
+          rm -rf "$dir"; mkdir -p "$dir"
+          ditto -x -k "dist/Pauselet-$v.zip" "$dir"
+          codesign --verify --deep --strict --verbose=2 "$dir/Pauselet.app"
+          xcrun stapler validate "$dir/Pauselet.app"
+          spctl --assess --type execute -vv "$dir/Pauselet.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          # The marker travels with the zip; `files:` in the release job matches
+          # only *.zip, so it is never attached to the release itself.
+          path: |
+            dist/Pauselet-*.zip
+            dist/macos-notarized.txt
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Test the core
+        run: dotnet test Windows/Pauselet.Core.Tests/Pauselet.Core.Tests.csproj --configuration Release
+
+      # Self-contained: the .NET runtime travels inside the zip, so this is
+      # unzip-and-run on a machine with nothing installed. Deliberately not
+      # PublishSingleFile (WPF's native DLLs stay loose beside the exe anyway,
+      # so it saves ~4MB of download and risks toast COM activation) and
+      # definitely not PublishTrimmed (WPF is not trim-safe, and the app relies
+      # on reflection-driven XAML and SAPI COM interop).
+      - name: Publish self-contained win-x64
+        shell: bash
+        run: |
+          dotnet publish Windows/Pauselet.App/Pauselet.App.csproj \
+            --configuration Release \
+            --runtime win-x64 \
+            --self-contained true \
+            -p:Version=${{ needs.version.outputs.app_version }} \
+            -p:DebugType=none \
+            --output publish/win-x64
+
+      # Zip the contents, not the folder, so Pauselet.exe is at the top of the
+      # archive rather than inside a win-x64/ directory.
+      - name: Zip
+        shell: pwsh
+        run: |
+          $v = '${{ needs.version.outputs.app_version }}'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path publish/win-x64/* -DestinationPath "dist/Pauselet-$v-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  ios:
+    name: iOS
+    needs: version
+    # AlarmKit and the iOS 26 SDK; the macos-15 image predates both.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode on the image
+        run: sudo xcode-select -s "$(./scripts/newest-xcode.sh)"
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      # The .xcodeproj is generated, not committed.
+      - name: Generate project
+        run: xcodegen
+        working-directory: iOS
+
+      # Simulator names rotate with the image; take whichever iPhone the
+      # selected Xcode ships rather than naming one.
+      - name: Pick a simulator
+        run: |
+          device="$(xcrun simctl list devices available | grep -m1 -o 'iPhone [^(]*' | sed 's/ *$//')"
+          test -n "$device"
+          echo "Using $device"
+          echo "SIMULATOR_NAME=$device" >> "$GITHUB_ENV"
+
+      - name: Build and test on the iOS simulator
+        run: |
+          xcodebuild -project Pauselet.xcodeproj -scheme Pauselet \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME" \
+            -only-testing:PauseletTests \
+            CODE_SIGNING_ALLOWED=NO test
+        working-directory: iOS
+
+      # Unsigned, and archived to RUNNER_TEMP so the working tree stays clean.
+      # All four signing overrides are needed together: the simulator test above
+      # gets away with CODE_SIGNING_ALLOWED alone, but a device archive also
+      # tries to resolve a provisioning profile (project.yml sets automatic
+      # signing with a team) and the AlarmKit entitlements would demand a
+      # matching one. docs/releasing.md says what changes to make this a real
+      # TestFlight upload.
+      - name: Archive for device, unsigned
+        env:
+          APP_VERSION: ${{ needs.version.outputs.app_version }}
+          BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
+        run: |
+          xcodebuild -project Pauselet.xcodeproj -scheme Pauselet \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Pauselet.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            MARKETING_VERSION="$APP_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" \
+            archive
+        working-directory: iOS
+
+      - name: Zip the archive
+        run: |
+          v='${{ needs.version.outputs.app_version }}'
+          mkdir -p dist
+          # A build-setting override fails silently when the setting is defined
+          # at target rather than project level, so read the version back out of
+          # the archived app rather than trusting it took.
+          plist="$RUNNER_TEMP/Pauselet.xcarchive/Products/Applications/PauseletiOS.app/Info.plist"
+          got="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+          [ "$got" = "$v" ] || { echo "::error::the archived iOS app says $got, expected $v"; exit 1; }
+          ditto -c -k --keepParent "$RUNNER_TEMP/Pauselet.xcarchive" "dist/Pauselet-$v-ios-archive.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: [version, macos, windows, ios]
+    # A workflow_dispatch run builds and checks everything, but only a tag
+    # publishes.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Write the release notes header
+        run: |
+          v='${{ needs.version.outputs.app_version }}'
+          # The macOS job writes this marker only after notarize.sh succeeded,
+          # so a run without the signing secrets gets honest instructions
+          # instead of a promise the build cannot keep.
+          if [ -f artifacts/macos-notarized.txt ]; then
+            mac='Signed and notarized by Apple — unzip and drag to Applications.'
+          else
+            mac='This build is unsigned: right-click the app → *Open* and confirm the first time. Note that an un-notarized build is not granted notification permission, so the Normal and Important tiers fall back to the app’s own card.'
+          fi
+          cat > notes.md <<EOF_NOTES
+          ## Install
+
+          **macOS 13 or later** — \`Pauselet-$v.zip\`
+          $mac
+
+          **Windows 10 1809 or later** — \`Pauselet-$v-windows-x64.zip\`
+          Unzip anywhere and run \`Pauselet.exe\`. The .NET runtime is included,
+          so there is nothing else to install. The build is unsigned, so
+          SmartScreen shows "Windows protected your PC" once: click *More info*
+          → *Run anyway*.
+
+          **iPhone** — \`Pauselet-$v-ios-archive.zip\`
+          An unsigned Xcode archive, published so every release is proven to
+          build for a real device. Apple does not allow an app to be installed
+          from a download like this; TestFlight distribution is not set up yet.
+
+          EOF_NOTES
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Pauselet ${{ needs.version.outputs.app_version }}
+          body_path: notes.md
+          generate_release_notes: true
+          files: artifacts/*.zip

@@ -26,8 +26,7 @@ struct VoiceCoachSection: View {
                 title: "Speak exercise cues",
                 help: "Reads out each set, rep, hold and rest while the "
                     + "exercise takeover coaches you through an exercise. "
-                    + "Only exercises with a hold time are coached; the "
-                    + "others keep their tick box."
+                    + "Reps without a hold are counted at a steady pace."
             ) {
                 Toggle("", isOn: binding(\.voiceCoachEnabled)).labelsHidden()
             }
@@ -52,11 +51,13 @@ struct VoiceCoachSection: View {
                 }
 
                 Button {
+                    // Hands the audio route back when the sample is over, or
+                    // whatever was playing stays ducked until a takeover ends.
                     speech.speak(
                         Self.sampleCue,
                         voiceIdentifier: engine.settings.voiceCoachVoiceIdentifier,
                         rate: engine.settings.voiceCoachRate
-                    )
+                    ) { SpeechCoach.deactivateAudioSession() }
                 } label: {
                     if speech.isSpeaking {
                         HStack(spacing: 8) {

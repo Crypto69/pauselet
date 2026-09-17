@@ -116,6 +116,37 @@ public class ExerciseInterpreterTests
         Assert.Equal(Exercise.MaxHoldSeconds, exercise.HoldSeconds);
     }
 
+    /// <summary>Port of the Swift testMissingFieldsFallBackToTheEditorDefaults.</summary>
+    [Fact]
+    public async Task MissingFieldsFallBackToTheEditorDefaults()
+    {
+        var (interpreter, _) = Build(Envelope("""{"exercises": [{"name": "Squats"}]}"""));
+
+        var exercise = Assert.Single(await interpreter.InterpretAsync("anything"));
+        Assert.Equal(1, exercise.Sets);
+        Assert.Equal(10, exercise.Reps);
+        Assert.Equal(0, exercise.HoldSeconds);
+    }
+
+    /// <summary>A number too large for int must decode and be brought into range, not throw.</summary>
+    [Fact]
+    public async Task AnAbsurdlyLargeCountDoesNotThrow()
+    {
+        var (interpreter, _) = Build(Envelope("""
+            {"exercises": [
+              {"name": "Squats", "instructions": "", "sets": 100000000000000000000000, "reps": 1e30,
+               "holdSeconds": 0, "restBetweenRepsSeconds": 0, "restBetweenSetsSeconds": 0},
+              {"name": "Negative", "instructions": "", "sets": 3, "reps": -1e30,
+               "holdSeconds": 0, "restBetweenRepsSeconds": 0, "restBetweenSetsSeconds": 0}
+            ]}
+            """));
+
+        var exercise = Assert.Single(await interpreter.InterpretAsync("anything"));
+        Assert.Equal("Squats", exercise.Name);
+        Assert.Equal(Exercise.MaxSets, exercise.Sets);
+        Assert.Equal(Exercise.MaxReps, exercise.Reps);
+    }
+
     /// <summary>Identity is ours to assign; the model never sends one.</summary>
     [Fact]
     public async Task EveryRowGetsAFreshIdentity()

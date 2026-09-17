@@ -81,7 +81,12 @@ public sealed class DpapiSecretStore : ISecretStore
         var plain = string.Join("\n", all.Select(pair => $"{pair.Key}\t{pair.Value}"));
         var cipher = Protect(Encoding.UTF8.GetBytes(plain));
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllBytes(_path, cipher);
+        // Written beside and moved into place, as the data store does, so a
+        // crash mid-write cannot leave a half-written file that reads back
+        // as "no key stored".
+        var temporary = _path + ".tmp";
+        File.WriteAllBytes(temporary, cipher);
+        File.Move(temporary, _path, overwrite: true);
     }
 
     private Dictionary<string, string> ReadAll()
