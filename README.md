@@ -8,6 +8,23 @@ Everything stays on your Mac. There is no account, no sync, and no telemetry.
 The one exception is opt-in and explicit: if you choose to interpret pasted
 exercise text with AI, that text is sent to OpenAI using a key you supply.
 
+## Download
+
+**<https://github.com/Crypto69/pauselet/releases/latest>**
+
+- **macOS 13 or later** — `Pauselet-<version>.zip`. Signed and notarized by
+  Apple: unzip and drag to Applications.
+- **Windows 10 1809 or later** — `Pauselet-<version>-windows-x64.zip`. Unzip
+  anywhere and run `Pauselet.exe`; the .NET runtime is included, so there is
+  nothing else to install. The build is unsigned, so SmartScreen shows
+  "Windows protected your PC" once: click *More info* → *Run anyway*.
+- **iPhone** — not yet installable. Each release carries an unsigned Xcode
+  archive so the iOS build is always proven, but Apple only allows an app to be
+  installed through TestFlight or the App Store, and neither is set up yet.
+
+Every release is built, tested and published from one tag, so the three
+platforms never drift apart — see [docs/releasing.md](docs/releasing.md).
+
 ## The menu bar
 
 Clicking the menu bar icon opens a popover — the everyday surface. It shows
@@ -293,6 +310,10 @@ rejected.
 
 macOS 13 or later. Notifications need to be allowed for the Normal and
 Important tiers to post real system notifications.
+
+This README describes the Mac app. Pauselet also runs on Windows 10 1809 or
+later (`Windows/`) and on iOS 26 (`iOS/`), both built from the same shared
+core; `PARITY.md` tracks what differs between them.
 
 ## Building
 
