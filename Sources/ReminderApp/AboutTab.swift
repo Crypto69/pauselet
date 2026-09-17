@@ -140,6 +140,9 @@ struct AboutTab: View {
             Text(AboutContent.licence)
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
+                // Two sentences now rather than one, so let it wrap to as many
+                // lines as it needs instead of being truncated.
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

@@ -287,8 +287,10 @@ meaning.
 
 **Settings → About** shows the version, why the app exists — it was built for a
 wheelchair user who needed reliable pressure-relief reminders — and links for
-feedback and to the project behind it. Pauselet is free and open source under
-the MIT licence.
+feedback and to the project behind it. Pauselet is free, and its source is
+public under the [PolyForm Noncommercial
+licence](https://polyformproject.org/licenses/noncommercial/1.0.0) — see
+[Licence](#licence).
 
 ## Other settings
 
@@ -363,3 +365,24 @@ machine lives in `ReminderAI`, so the boundary is easy to audit.
 Reminders, settings and history live in a single JSON file at
 `~/Library/Application Support/Pauselet/data.json`. The Windows port reads and
 writes the same file byte-for-byte, so it can be copied between machines.
+
+## Licence
+
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
+— see `LICENSE`.
+
+Use it, copy it, change it, fork it and share it freely for any noncommercial
+purpose. That explicitly includes personal use, hobby projects, and use by
+charities, schools, public research bodies, health and safety organisations,
+and government — funding source doesn't matter.
+
+What needs permission is commercial use: selling the app or a derivative of it,
+charging for access to it, or building it into something you sell. If that is
+what you want to do, ask.
+
+This is a source-available licence rather than an open-source one: the OSI
+definition requires that commercial use not be restricted, and this restricts
+it. The source is public and forkable; it just isn't yours to sell.
+
+The bundled Material Symbols font is Google's, under the Apache Licence 2.0 —
+see `NOTICE`.

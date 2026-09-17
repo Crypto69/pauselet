@@ -94,5 +94,11 @@ public enum AboutContent {
 
     public static let feedbackPrompt = "Questions or feedback:"
 
-    public static let licence = "Free and open source, under the MIT licence."
+    // "Source available" rather than "open source": the PolyForm Noncommercial
+    // licence restricts commercial use, which the OSI definition does not allow
+    // an open-source licence to do. The source is public and forkable; it is
+    // just not anyone else's to sell.
+    public static let licence =
+        "Free to use and share for any noncommercial purpose. "
+        + "Source available under the PolyForm Noncommercial licence."
 }

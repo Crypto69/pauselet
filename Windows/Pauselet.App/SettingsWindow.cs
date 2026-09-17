@@ -1158,8 +1158,17 @@ internal sealed class SettingsWindow : Window
 
         var licence = new TextBlock
         {
-            Text = "Free and open source, under the MIT licence.",
+            // Kept in step with AboutContent.licence in the Swift core.
+            // "Source available" rather than "open source": PolyForm
+            // Noncommercial restricts commercial use, which an OSI-approved
+            // licence may not do.
+            Text = "Free to use and share for any noncommercial purpose. "
+                 + "Source available under the PolyForm Noncommercial licence.",
             FontSize = 11,
+            // Two sentences now rather than one: without this the default
+            // NoWrap would run it off the edge of the pane.
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 560,
             Foreground = Theme.Brush(palette.TertiaryForeground),
             Margin = new Thickness(0, 8, 0, 0),
         };
