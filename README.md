@@ -300,13 +300,25 @@ Important tiers to post real system notifications.
 swift build                 # build the package
 swift test                  # run the test suite
 ./scripts/build_app.sh      # assemble and sign dist/Pauselet.app
-./scripts/notarize.sh       # sign, notarize and staple for distribution
 ```
+
+The version comes from the `VERSION` file at the repository root, or from
+`$VERSION` when it is set.
 
 Notarization matters for more than Gatekeeper warnings: macOS will not grant
 notification authorization to an app it does not fully trust, so an
 un-notarized build falls back to the app's own card instead of posting system
-notifications.
+notifications. To build one for distribution:
+
+```sh
+SIGN_IDENTITY="Developer ID Application: …" ./scripts/build_app.sh
+ditto -c -k --keepParent dist/Pauselet.app dist/Pauselet-1.5.0.zip
+./scripts/notarize.sh dist/Pauselet.app dist/Pauselet-1.5.0.zip
+```
+
+Releases are automated: pushing a `v*` tag builds, tests and publishes all three
+platforms — macOS, Windows and iOS — as one GitHub Release. See
+[docs/releasing.md](docs/releasing.md).
 
 Two launch flags help when working on the UI: `--open-settings` opens the
 Settings window straight after launch, and `--snapshot <dir>` renders every

@@ -15,8 +15,12 @@ settings:
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: 4R94388LH8
-    CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 1.0.0
+    # The release workflow overrides both on the xcodebuild line, from
+    # scripts/version.sh. These are the floor for a build from Xcode, and
+    # should track the VERSION file at the repo root — without them a
+    # developer build claims to be 1.0.0 long after the app has moved on.
+    CURRENT_PROJECT_VERSION: 58
+    MARKETING_VERSION: 1.5.0
 
 packages:
   Reminder:

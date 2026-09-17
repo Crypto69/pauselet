@@ -41,6 +41,27 @@ xcodebuild -project Pauselet.xcodeproj -scheme Pauselet \
   -only-testing:PauseletUITests test
 ```
 
+## Archiving
+
+A `v*` tag archives the app for device in CI and attaches it to the release, as
+proof the iPhone build is good. The same thing locally, unsigned:
+
+```sh
+xcodebuild -project Pauselet.xcodeproj -scheme Pauselet \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath /tmp/Pauselet.xcarchive \
+  MARKETING_VERSION=1.5.0 CURRENT_PROJECT_VERSION=58 \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" \
+  archive
+```
+
+All four signing overrides are needed together: a device archive resolves a
+provisioning profile even when a simulator build does not, and the AlarmKit
+entitlements would demand a matching one. The versions come from
+`scripts/version.sh` in CI; passing them here keeps `project.yml` untouched.
+`docs/releasing.md` covers what changes to make this a TestFlight upload.
+
 AlarmKit behaviour (breakthrough alerts, Silent-mode piercing, the lock-screen
 alarm UI, Apple Watch surfaces) is not meaningfully testable in the simulator;
 see Part 5 of the implementation plan for the physical-device matrix. When

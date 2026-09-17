@@ -7,5 +7,16 @@
          still only *runs* on Windows). The core and its tests are plain
          net8.0 and run anywhere. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- The release workflow overrides this with -p:Version=<tag>; this is the
+         floor for local builds and should track the VERSION file at the repo
+         root. AssemblyVersion has to be set too, not just Version: the About
+         screen reads Assembly.GetExecutingAssembly().GetName().Version, which
+         is AssemblyVersion — setting Version alone would leave it at 1.0.0
+         while the informational version said otherwise. The four-part forms
+         take the assembly-version revision field that .NET expects. -->
+    <Version Condition="'$(Version)' == ''">1.5.0</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
   </PropertyGroup>
 </Project>
