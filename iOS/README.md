@@ -50,7 +50,7 @@ proof the iPhone build is good. The same thing locally, unsigned:
 xcodebuild -project Pauselet.xcodeproj -scheme Pauselet \
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath /tmp/Pauselet.xcarchive \
-  MARKETING_VERSION=1.5.0 CURRENT_PROJECT_VERSION=58 \
+  MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=58 \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" \
   archive

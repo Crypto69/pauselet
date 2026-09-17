@@ -5,7 +5,7 @@
 # platforms cannot drift apart the way they did before (macOS 1.4.0, iOS 1.0.0,
 # Windows nothing at all). Prints four KEY=value lines:
 #
-#   APP_VERSION   on a v* tag, the tag without the v (v1.5.0 -> 1.5.0);
+#   APP_VERSION   on a v* tag, the tag without the v (v1.0.0 -> 1.0.0);
 #                 otherwise the VERSION file verbatim.
 #   BUILD_NUMBER  commits reachable from HEAD. Monotonic, which is what
 #                 CFBundleVersion has to be for App Store Connect — a semver

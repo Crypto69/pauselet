@@ -13,8 +13,8 @@
 # works the same on a laptop and on a CI runner:
 #
 #   ./scripts/build_app.sh                       # or with SIGN_IDENTITY set
-#   ditto -c -k --keepParent dist/Pauselet.app dist/Pauselet-1.5.0.zip
-#   ./scripts/notarize.sh dist/Pauselet.app dist/Pauselet-1.5.0.zip
+#   ditto -c -k --keepParent dist/Pauselet.app dist/Pauselet-1.0.0.zip
+#   ./scripts/notarize.sh dist/Pauselet.app dist/Pauselet-1.0.0.zip
 #
 # Two ways to authenticate, chosen by what is set in the environment:
 #

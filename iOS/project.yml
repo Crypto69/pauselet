@@ -20,7 +20,7 @@ settings:
     # should track the VERSION file at the repo root — without them a
     # developer build claims to be 1.0.0 long after the app has moved on.
     CURRENT_PROJECT_VERSION: 58
-    MARKETING_VERSION: 1.5.0
+    MARKETING_VERSION: 1.0.0
 
 packages:
   Reminder:

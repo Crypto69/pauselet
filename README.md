@@ -335,8 +335,8 @@ notifications. To build one for distribution:
 
 ```sh
 SIGN_IDENTITY="Developer ID Application: …" ./scripts/build_app.sh
-ditto -c -k --keepParent dist/Pauselet.app dist/Pauselet-1.5.0.zip
-./scripts/notarize.sh dist/Pauselet.app dist/Pauselet-1.5.0.zip
+ditto -c -k --keepParent dist/Pauselet.app dist/Pauselet-1.0.0.zip
+./scripts/notarize.sh dist/Pauselet.app dist/Pauselet-1.0.0.zip
 ```
 
 Releases are automated: pushing a `v*` tag builds, tests and publishes all three

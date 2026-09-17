@@ -1,4 +1,4 @@
-# A `v*` tag (e.g. v1.5.0) produces one GitHub Release carrying all three
+# A `v*` tag (e.g. v1.0.0) produces one GitHub Release carrying all three
 # platforms, so a change to the shared core cannot ship to Mac users and quietly
 # miss everyone else:
 #

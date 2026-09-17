@@ -1,6 +1,6 @@
 # Releasing Pauselet
 
-One tag releases all three platforms. Pushing `v1.5.0` builds, tests and
+One tag releases all three platforms. Pushing `v1.0.0` builds, tests and
 publishes a Mac app, a Windows app and an iOS archive as a single GitHub
 Release, so a change to the shared core cannot reach Mac users while quietly
 missing everyone else.
@@ -12,8 +12,8 @@ missing everyone else.
 3. Tag and push:
 
    ```sh
-   git tag v1.5.0
-   git push origin v1.5.0
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
 4. Watch it at <https://github.com/Crypto69/pauselet/actions>. It takes roughly
@@ -48,7 +48,7 @@ and the app runs on a machine with nothing installed:
 ```sh
 dotnet publish Windows/Pauselet.App/Pauselet.App.csproj \
   --configuration Release --runtime win-x64 --self-contained true \
-  -p:Version=1.5.0 -p:DebugType=none --output publish/win-x64
+  -p:Version=1.0.0 -p:DebugType=none --output publish/win-x64
 ```
 
 That is ~188 MB unpacked, ~75 MB zipped — the price of no runtime
@@ -105,8 +105,8 @@ Still supported, and unchanged apart from `notarize.sh` now taking arguments:
 
 ```sh
 SIGN_IDENTITY="Developer ID Application: Christian Venter (4R94388LH8)" ./scripts/build_app.sh
-ditto -c -k --keepParent dist/Pauselet.app dist/Pauselet-1.5.0.zip
-./scripts/notarize.sh dist/Pauselet.app dist/Pauselet-1.5.0.zip
+ditto -c -k --keepParent dist/Pauselet.app dist/Pauselet-1.0.0.zip
+./scripts/notarize.sh dist/Pauselet.app dist/Pauselet-1.0.0.zip
 ```
 
 This uses the `reminder-notary` keychain profile. If you have not set one up:
