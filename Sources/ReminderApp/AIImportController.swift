@@ -46,8 +46,13 @@ final class AIImportController: ObservableObject {
 
     // MARK: - The key
 
+    /// Checks only for the key's presence, never its value: this runs at
+    /// launch, and a launch that decrypts the secret makes macOS prompt for
+    /// the keychain password whenever the running binary is not on the item's
+    /// ACL — which it is not after any re-sign. `interpret` does the real read,
+    /// at the point the user has actually asked for an import.
     func refresh() {
-        isConfigured = (try? secrets.read(account: aiImportKeyAccount))?.isEmpty == false
+        isConfigured = (try? secrets.exists(account: aiImportKeyAccount)) == true
     }
 
     /// Stores a key, or removes it when `key` is nil or blank.

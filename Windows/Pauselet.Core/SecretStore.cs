@@ -14,6 +14,14 @@ public interface ISecretStore
     string? Read(string account);
 
     /// <summary>
+    /// Whether a secret is stored for <paramref name="account"/>, without
+    /// retrieving it. Kept in step with the Apple stores, where retrieval is
+    /// the costly, user-visible operation (it decrypts, so the OS may prompt);
+    /// callers that only want the boolean ask for the boolean everywhere.
+    /// </summary>
+    bool Exists(string account);
+
+    /// <summary>
     /// Stores <paramref name="value"/>, replacing any existing secret.
     /// <c>null</c> removes it.
     /// </summary>
@@ -60,6 +68,16 @@ public sealed class DpapiSecretStore : ISecretStore
     {
         var all = ReadAll();
         return all.TryGetValue(account, out var value) ? value : null;
+    }
+
+    /// <summary>
+    /// DPAPI has no per-item access control, so there is no prompt to avoid
+    /// here; the cheap path is simply not decrypting when the file is absent.
+    /// </summary>
+    public bool Exists(string account)
+    {
+        if (!File.Exists(_path)) return false;
+        return Read(account) is { Length: > 0 };
     }
 
     public void Write(string? value, string account)
@@ -155,6 +173,8 @@ public sealed class InMemorySecretStore : ISecretStore
             return _storage.TryGetValue(account, out var value) ? value : null;
         }
     }
+
+    public bool Exists(string account) => Read(account) is { Length: > 0 };
 
     public void Write(string? value, string account)
     {

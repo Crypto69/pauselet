@@ -225,4 +225,50 @@ final class SecretStoreTests: XCTestCase {
         try store.write("", account: aiImportKeyAccount)
         XCTAssertNil(try store.read(account: aiImportKeyAccount), "Clearing the field removes the key")
     }
+
+    // MARK: - Presence without retrieval
+
+    func testExistsFollowsWhetherAKeyIsStored() throws {
+        let store = InMemorySecretStore()
+        XCTAssertFalse(try store.exists(account: aiImportKeyAccount))
+        try store.write("sk-abc", account: aiImportKeyAccount)
+        XCTAssertTrue(try store.exists(account: aiImportKeyAccount))
+        try store.write(nil, account: aiImportKeyAccount)
+        XCTAssertFalse(try store.exists(account: aiImportKeyAccount))
+    }
+
+    func testExistsIgnoresOtherAccounts() throws {
+        let store = InMemorySecretStore([aiImportKeyAccount: "sk-abc"])
+        XCTAssertFalse(try store.exists(account: "some-other-account"))
+    }
+
+    /// The point of `exists`: a presence check must be answerable without
+    /// retrieving the secret.
+    ///
+    /// On macOS, retrieving a keychain item decrypts it, which makes the OS
+    /// check the item's ACL and prompt for the keychain password whenever the
+    /// running binary is not on that ACL — as it is not after any re-sign. The
+    /// app used to do exactly that on every launch, for a boolean. This store
+    /// treats any read as the failure it would be.
+    func testAPresenceCheckNeverRetrievesTheSecret() throws {
+        let store = ReadIsAPromptSecretStore()
+        XCTAssertTrue(try store.exists(account: aiImportKeyAccount))
+        XCTAssertEqual(store.reads, 0, "A read here is a keychain prompt in the user's face")
+    }
+}
+
+/// Stands in for the login keychain, where `read` is the operation that can
+/// put a password prompt on screen. Counts reads so a test can assert none
+/// happened.
+private final class ReadIsAPromptSecretStore: SecretStoring, @unchecked Sendable {
+    private(set) var reads = 0
+
+    func read(account: String) throws -> String? {
+        reads += 1
+        return "sk-abc"
+    }
+
+    func exists(account: String) throws -> Bool { true }
+
+    func write(_ value: String?, account: String) throws {}
 }

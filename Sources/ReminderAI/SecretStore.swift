@@ -12,8 +12,25 @@ import Security
 public protocol SecretStoring: Sendable {
     /// The stored secret for `account`, or `nil` when none is stored.
     func read(account: String) throws -> String?
+    /// Whether a secret is stored for `account`, without retrieving it.
+    ///
+    /// Separate from `read` because on Apple platforms retrieving a secret is
+    /// the expensive, user-visible operation: it decrypts the item, which
+    /// makes the OS check the item's ACL and prompt for the keychain password
+    /// when the asking binary is not on it. Answering "is one stored?" needs
+    /// none of that, so anything that only wants the boolean asks for the
+    /// boolean.
+    func exists(account: String) throws -> Bool
     /// Stores `value`, replacing any existing secret. `nil` removes it.
     func write(_ value: String?, account: String) throws
+}
+
+extension SecretStoring {
+    /// Falls back to a read for stores where retrieval is free — an in-memory
+    /// one, or any future store with no per-item access control.
+    public func exists(account: String) throws -> Bool {
+        try read(account: account)?.isEmpty == false
+    }
 }
 
 /// The account name the exercise importer's API key is stored under.
@@ -48,6 +65,22 @@ public struct KeychainSecretStore: SecretStoring {
             return nil
         }
         return value
+    }
+
+    /// Asks only for the item's attributes, never `kSecReturnData`. An
+    /// attribute lookup does not decrypt the secret, so it does not consult
+    /// the item's ACL and cannot raise the "wants to use your confidential
+    /// information" prompt — which is why launch-time checks use this and not
+    /// `read`.
+    public func exists(account: String) throws -> Bool {
+        var query = baseQuery(account: account)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        if status == errSecItemNotFound { return false }
+        guard status == errSecSuccess else { throw SecretStoreError(status: status) }
+        return true
     }
 
     public func write(_ value: String?, account: String) throws {

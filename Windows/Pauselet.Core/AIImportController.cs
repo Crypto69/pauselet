@@ -50,7 +50,13 @@ public sealed class AIImportController
 
     // MARK: - The key
 
-    public void Refresh() => IsConfigured = ReadKey() is { Length: > 0 };
+    /// <summary>
+    /// Checks only for the key's presence, never its value. This runs at
+    /// construction, and the Apple builds must not decrypt the secret that
+    /// early — doing so makes macOS prompt for the keychain password. The
+    /// three platforms keep the same shape so the rule is not re-learned.
+    /// </summary>
+    public void Refresh() => IsConfigured = _secrets.Exists(SecretAccounts.AIImportKey);
 
     /// <summary>
     /// Stores a key, or removes it when <paramref name="key"/> is null or
