@@ -12,8 +12,10 @@ struct ExerciseListSection: View {
     /// list runs in sequence. Only shown once there are two exercises for it
     /// to sit between.
     @Binding var restBetweenExercisesSeconds: Int
-    @EnvironmentObject private var ai: AIImportController
-    @State private var isImporting = false
+    /// Owned by the editor, which presents the import sheet from its Form.
+    /// A `.sheet` attached to this Section closes the editor's own sheet on
+    /// iOS 26 instead of stacking on it.
+    @Binding var isImporting: Bool
 
     var body: some View {
         Section {
@@ -66,19 +68,6 @@ struct ExerciseListSection: View {
             }
         } footer: {
             Text(Exercise.summary(of: exercises) ?? "Add at least one exercise.")
-        }
-        .sheet(isPresented: $isImporting) {
-            ExerciseImportSheet { imported in
-                // Switching the type to Exercise seeds one blank row for
-                // typing into. Importing is the alternative to typing, so that
-                // untouched placeholder is replaced rather than left above the
-                // imported rows. Anything the person actually filled in stays.
-                exercises.removeAll { $0.name.trimmingCharacters(in: .whitespaces).isEmpty }
-                exercises.append(contentsOf: imported)
-            }
-            // A sheet gets a fresh environment; the import controller has to be
-            // handed to it explicitly.
-            .environmentObject(ai)
         }
     }
 }

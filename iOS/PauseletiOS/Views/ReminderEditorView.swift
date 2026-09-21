@@ -36,6 +36,8 @@ struct ReminderEditorView: View {
     @State private var displaySeconds: Int
     @State private var type: ReminderType
     @State private var exercises: [Exercise]
+    @State private var isImportingExercises = false
+    @EnvironmentObject private var ai: AIImportController
     @State private var restBetweenExercisesSeconds: Int
 
     enum ReminderType: String, CaseIterable, Identifiable {
@@ -180,7 +182,8 @@ struct ReminderEditorView: View {
                 if type == .exercise {
                     ExerciseListSection(
                             exercises: $exercises,
-                            restBetweenExercisesSeconds: $restBetweenExercisesSeconds
+                            restBetweenExercisesSeconds: $restBetweenExercisesSeconds,
+                            isImporting: $isImportingExercises
                         )
                 }
 
@@ -271,6 +274,7 @@ struct ReminderEditorView: View {
                         Label("Preview", systemImage: "eye")
                     }
                     .accessibilityHint("Shows this reminder now, exactly as it will appear")
+                    .accessibilityIdentifier("editorPreview")
                 } footer: {
                     Text("Preview shows the reminder without touching its schedule or history.")
                 }
@@ -286,6 +290,22 @@ struct ReminderEditorView: View {
                 if symbolName == "bell" {
                     symbolName = "dumbbell.fill"
                 }
+            }
+            // Presented from the Form, not from the exercise Section: on iOS 26
+            // a sheet attached inside a Form section of a presented sheet
+            // dismisses that sheet rather than stacking on it.
+            .sheet(isPresented: $isImportingExercises) {
+                ExerciseImportSheet { imported in
+                    // Switching the type to Exercise seeds one blank row for
+                    // typing into. Importing is the alternative to typing, so
+                    // that untouched placeholder is replaced rather than left
+                    // above the imported rows. Anything actually filled in stays.
+                    exercises.removeAll { $0.name.trimmingCharacters(in: .whitespaces).isEmpty }
+                    exercises.append(contentsOf: imported)
+                }
+                // A sheet gets a fresh environment; the import controller has
+                // to be handed to it explicitly.
+                .environmentObject(ai)
             }
             .navigationTitle(existing == nil ? "New Reminder" : "Edit Reminder")
             .navigationBarTitleDisplayMode(.inline)
