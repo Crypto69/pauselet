@@ -27,3 +27,6 @@ iOS/Pauselet.xcodeproj/
 # Working notes for the Windows port, kept local like the other planning
 # documents above. TESTING.md is the committed one.
 Windows/HANDOFF.md
+
+# Signing assets: certificates, profiles and keys never go in the repo.
+signing/
