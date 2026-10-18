@@ -3,24 +3,34 @@ import AppKit
 import ReminderCore
 import ReminderAI
 
+/// The app runs on AppKit's lifecycle rather than SwiftUI's `App`.
+///
+/// SwiftUI requires at least one scene, and for a menu bar app with no
+/// primary window the usual trick is an empty `Settings` scene. That scene
+/// brings a window with it: ⌘, opens a blank "Pauselet Settings" panel that
+/// is not the app's settings at all, and `CommandGroup(replacing: .appSettings)`
+/// removes the menu item without disabling the shortcut. A reviewer pressing
+/// the standard shortcut would see an empty window and reasonably call the app
+/// broken.
+///
+/// Everything the app does already lives in `AppDelegate` and the status bar,
+/// so there is nothing for a scene to hold. Starting NSApplication directly
+/// means no scene exists to be opened by accident, and the only settings
+/// window is the one `StatusBarController.openSettings()` builds.
 @main
-struct ReminderApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-
-    var body: some Scene {
-        // The UI lives entirely in the status bar and in windows the delegate
-        // opens, so there is no primary scene. `Settings` gives SwiftUI a valid
-        // (empty) scene without putting a window on screen at launch.
-        Settings {
-            EmptyView()
-        }
-        // The scene would otherwise install a "Settings…" (⌘,) command that
-        // opens this empty window; the real settings window is the
-        // delegate's.
-        .commands {
-            CommandGroup(replacing: .appSettings) {}
-        }
+@MainActor
+enum PauseletMain {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        // NSApplication holds its delegate weakly, so it has to be kept alive
+        // here or it is deallocated before the app finishes launching.
+        retainedDelegate = delegate
+        app.delegate = delegate
+        app.run()
     }
+
+    private static var retainedDelegate: AppDelegate?
 }
 
 @MainActor
