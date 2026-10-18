@@ -56,6 +56,18 @@ as landed. The App Store build carries the entitlement in its provisioning
 profile, so there Important should pierce a Focus; the direct download never
 will.
 
+## 18 October evening: a second outage, cleared without a known cause
+
+After a reboot the same symptom returned with no Focus active: the app's own
+diagnostics showed authorized, banner style, every post accepted and
+confirmed delivered, and the delivered count climbing, while no banner from
+any app was drawn. Quitting QuickTime, the sharing toggle and the display
+agent restart each changed nothing on their own; banners resumed minutes
+after the agent restart and two scripted openings of Notification Centre.
+BetterDisplay runs on this Mac and remains an unproven suspect. A window-list
+probe for banner windows proved unreliable on macOS 26 and should not be
+used as evidence of absence.
+
 ## Things that gate banners on macOS, outside the app
 
 Check these on a machine where notifications land in Notification Centre but
