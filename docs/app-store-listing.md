@@ -757,7 +757,10 @@ this app lives, so a window-only recording would miss the point.
 
 **Step 1. Launch (20 s).** Open the app from Applications. Nothing appears in
 the Dock, which is correct and worth a caption saying so. Point at the new
-icon in the menu bar. Allow notifications when macOS asks.
+icon in the menu bar. macOS 26 asks for notification permission with a
+banner at the top right ("Pauselet" Notifications), not a dialog: click the
+banner, then click **Allow**. If it has faded, it is waiting in Notification
+Centre with the same buttons.
 
 **Step 2. The popover (30 s).** Click the menu bar icon. Rest on it: Next up
 with its countdown, the four example reminders with their schedules and
