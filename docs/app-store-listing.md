@@ -747,9 +747,11 @@ so none of Apple's sub-cases apply.
 
 **Before recording.** Quit any running copy, and move
 `~/Library/Application Support/Pauselet/data.json` aside so the recording
-shows a genuine first launch with the four example reminders. Turn on Do Not
-Disturb for everything except this app. Have the physiotherapy paragraph
-ready to paste. Use QuickTime Player, File > New Screen Recording, and record
+shows a genuine first launch with the four example reminders. Make sure **no
+Focus mode is on**: a Focus hides the Normal tier's banner in this build (it
+goes straight to Notification Centre), and the recording must show it
+arriving. Quit chat and mail apps instead if you want a quiet screen. Have
+the physiotherapy paragraph ready to paste. Use QuickTime Player, File > New Screen Recording, and record
 the whole screen so the menu bar is visible throughout. The menu bar is where
 this app lives, so a window-only recording would miss the point.
 
@@ -766,12 +768,27 @@ and Quit), then dismiss it.
 **Step 3. The four levels (50 s).** Settings > Reminders, click a reminder to
 open the editor. Work down it: title, icon, the three schedule kinds, then
 stop on Importance and let all four levels and their explanations be read.
-This is the part that explains what the app is for.
+This is the part that explains what the app is for. Click Critical and
+pause: the Activity Timer section appears, because only the full-screen
+takeover can run a countdown; click Normal and it goes again.
 
-**Step 4. Preview (40 s).** Still in the editor, press Preview and let the
-reminder appear exactly as it would when it fires. Do it twice: once with a
-Normal reminder, once with Tilt Back, the Critical example, so the
-full-screen overlay is seen taking the screen and requiring Done or Snooze.
+**Step 4. Preview, three levels (60 s).** Still in the editor, press Preview
+and let the reminder appear exactly as it would when it fires. Do it three
+times, lowest to highest:
+
+- **Drink Water (Normal):** the in-app card for a preview, since a preview
+  never posts a real notification. Let it fade on its own.
+- **Stretch & Range of Motion (Important):** the sticky card. Leave it on
+  screen for a few seconds so it is clear it is not fading, then press
+  **Snooze** so both buttons are seen.
+- **Tilt Back (Critical):** the full-screen takeover with its countdown,
+  requiring Done or Snooze. Press Done.
+
+**Step 4a. A Normal reminder arriving for real (30 s).** Set Drink Water to
+Repeating every 1 minute and let it fire: a real macOS notification with
+Done and Snooze on the banner. Cut the wait and caption it. This is the one
+place the recording shows a system notification, which is what the
+notification permission in step 1 was for.
 
 **Step 5. An exercise programme (60 s).** New reminder, type switched to
 Exercise. Press Import from Text, paste the handout, press Read Text, show
