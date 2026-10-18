@@ -26,6 +26,13 @@ Windows 11 VM would launch a bare `notepad.exe` and nothing else, every
 started there. `Windows/HANDOFF.md` item 9 lists what needs eyes, in order of
 risk.
 
+
+> **Divergence recorded 18 October 2026.** On macOS the Important tier is
+> now the app's own sticky card (stays until Done or Snooze, immune to Focus
+> and Alert Style). iOS keeps a time-sensitive notification, which is the
+> only mechanism available there. Windows still posts a toast for Important
+> and should move to a sticky in-app card to match the Mac when next touched.
+
 ## The short version
 
 | | macOS | iOS | Windows |

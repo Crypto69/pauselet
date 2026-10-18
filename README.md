@@ -56,7 +56,7 @@ interrupts you:
 |---|---|
 | **Subtle** | A small self-dismissing card. No sound — for frequent micro-nudges |
 | **Normal** | A standard notification that stays in Notification Center |
-| **Important** | A notification with sound that persists until acknowledged |
+| **Important** | The app's own card with sound, which stays on screen until you tick it done or snooze it |
 | **Critical** | A full-screen overlay that takes over every display until acknowledged |
 
 In **Settings → Reminders**, click a row to edit it, or right-click to
@@ -78,8 +78,9 @@ Three kinds of schedule:
 
 - **Title and message** — what it says when it arrives
 - **An icon** — chosen from a picker, shown in the popover and on the overlay
-- **A countdown** — for reminders describing a timed activity ("tilt back for
-  five minutes"), the overlay runs a timer of that length
+- **A countdown** — Critical reminders only: for a timed activity ("tilt back
+  for five minutes"), the takeover runs a timer of that length. The option is
+  hidden for other tiers, whose surfaces have nowhere to show it
 - **A sound** — the tier default, or a specific one you pick
 - **How long a subtle card lingers** — per reminder, overriding the global setting
 - **Music** — a Spotify playlist to start when it fires (see below)
@@ -91,22 +92,22 @@ music and all — without touching its schedule or history.
 
 ## Notifications
 
-Normal and Important reminders arrive as real system notifications, with
-**Done** and **Snooze** buttons on the banner itself — clicking the body marks
-it done, swiping it away records it as dismissed. Important reminders are sent
-as time-sensitive.
+Normal reminders arrive as real system notifications, with **Done** and
+**Snooze** buttons on the banner itself. Clicking the body marks it done,
+swiping it away records it as dismissed. How long the banner stays is macOS's
+Alert Style setting for Pauselet (Temporary fades, Persistent stays).
 
-A caveat on Focus: time-sensitive delivery only breaks through a Focus mode for
-apps distributed through the App Store, and the Mac app is a direct download, so
-an active Focus will suppress Important reminders here like any other
-notification. If a reminder has to reach you regardless, make it Critical — that
-is the app's own full-screen overlay, which Focus does not control. On iPhone,
-where Pauselet will be distributed through the App Store, time-sensitive works
-as described.
+Important reminders are different on purpose: they are the app's own card,
+in the same corner, with sound, and it stays on screen until you tick it done
+or press Snooze. Nothing in macOS can shorten or hide it. A system
+notification cannot be made to persist on its own, and an active Focus mode
+swallows one silently in a direct-download build, which is exactly the
+failure an Important reminder exists to avoid. On iPhone, where Pauselet is
+distributed through the App Store, Important is a time-sensitive notification
+instead, since an app there cannot show its own window in the background.
 
-If notifications are denied, or the build is not notarized, the reminder is
-shown as an in-app card rather than being dropped, and an Important one stays
-for a full minute instead of the usual few seconds. Pauselet checks that each
+If notifications are denied, or the build is not notarized, a Normal reminder
+is shown as an in-app card rather than being dropped. Pauselet checks that each
 notification actually arrived, and switches back to system notifications by
 itself once permission is granted.
 
@@ -318,8 +319,8 @@ rejected.
 
 ## Requirements
 
-macOS 13 or later. Notifications need to be allowed for the Normal and
-Important tiers to post real system notifications.
+macOS 13 or later. Notifications need to be allowed for the Normal tier to
+post real system notifications; the other tiers are the app's own windows.
 
 This README describes the Mac app. Pauselet also runs on Windows 10 1809 or
 later (`Windows/`) and on iOS 26 (`iOS/`), both built from the same shared

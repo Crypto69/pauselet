@@ -11,7 +11,9 @@ public enum Priority: String, Codable, CaseIterable, Sendable, Comparable {
     case subtle
     /// A standard notification that stays in Notification Center.
     case normal
-    /// A notification with sound that persists until acknowledged.
+    /// On the Mac, the app's own card with sound: it stays on screen until
+    /// ticked done or snoozed, regardless of Focus or Alert Style. On iOS, a
+    /// time-sensitive notification with sound.
     case important
     /// A full-screen overlay that takes over every display until acknowledged.
     case critical
@@ -29,7 +31,7 @@ public enum Priority: String, Codable, CaseIterable, Sendable, Comparable {
         switch self {
         case .subtle: return "Brief silent hint near the menu bar"
         case .normal: return "Standard notification"
-        case .important: return "Notification with sound, stays until dismissed"
+        case .important: return "A card with sound that stays until you tick it done or snooze"
         case .critical: return "Full-screen overlay on every display"
         }
     }

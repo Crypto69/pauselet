@@ -303,18 +303,24 @@ struct ReminderEditor: View {
 
                     ReminderMusicSection(music: $music)
 
-                    Section("Activity Timer") {
-                        Toggle("Run a countdown", isOn: $hasActivityDuration)
-                            .help(
-                                "Show a timer for activities with a set length, "
-                                    + "such as tilting back for five minutes."
-                            )
-                        if hasActivityDuration {
-                            Stepper(
-                                "For \(activityMinutes) min",
-                                value: $activityMinutes,
-                                in: 1...120
-                            )
+                    // Only the Critical takeover draws the countdown, so the
+                    // option is meaningless on any other tier and is hidden
+                    // rather than silently ignored.
+                    if effectivePriority == .critical {
+                        Section("Activity Timer") {
+                            Toggle("Run a countdown", isOn: $hasActivityDuration)
+                                .help(
+                                    "Show a timer on the full-screen takeover for "
+                                        + "activities with a set length, such as "
+                                        + "tilting back for five minutes."
+                                )
+                            if hasActivityDuration {
+                                Stepper(
+                                    "For \(activityMinutes) min",
+                                    value: $activityMinutes,
+                                    in: 1...120
+                                )
+                            }
                         }
                     }
                 }
@@ -428,7 +434,9 @@ struct ReminderEditor: View {
             (normalizedExercises?.count ?? 0) > 1 && restBetweenExercisesSeconds > 0
                 ? min(restBetweenExercisesSeconds, Exercise.restRange.upperBound)
                 : nil
-        reminder.activityDurationSeconds = hasActivityDuration
+        // Cleared for any tier that cannot show it, so the data never carries
+        // a timer the user can no longer see in the editor.
+        reminder.activityDurationSeconds = effectivePriority == .critical && hasActivityDuration
             ? activityMinutes * 60
             : nil
         return reminder

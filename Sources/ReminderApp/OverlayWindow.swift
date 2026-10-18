@@ -70,6 +70,12 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
     /// is only handed back when the takeover was the thing that took it.
     private var wasActiveBeforeCritical = false
 
+    /// The Important tier's sticky card. Its own slot, so an unanswered
+    /// Important reminder never blocks the Subtle cards that keep coming.
+    private var importantPanel: OverlayPanel?
+    private var importantShowing: Reminder?
+    private var importantQueue: [(reminder: Reminder, settings: ReminderCore.Settings)] = []
+
     private var subtlePanel: OverlayPanel?
     private var subtleQueue: [(
         reminder: Reminder, settings: ReminderCore.Settings, minimumSeconds: Int,
@@ -92,15 +98,12 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         self.speech = speech
         super.init()
         // When the system will not deliver a notification, show the reminder in
-        // the app's own window instead so it is never silently dropped. An
-        // important reminder demoted to the corner card must not also inherit
-        // the card's 8-second lifetime — it gets a sticky minimum instead.
+        // the app's own window instead so it is never silently dropped. Only
+        // the Normal tier reaches the notifier now; Important has its own
+        // sticky card and never depends on the system.
         notifier.fallbackPresenter = { [weak self] reminder, settings in
-            let minimum = reminder.priority >= .important ? 60 : 0
             // Its music started when the notification was posted.
-            self?.showSubtle(
-                reminder, settings: settings, minimumSeconds: minimum, startsMusic: false
-            )
+            self?.showSubtle(reminder, settings: settings, startsMusic: false)
         }
         // Displays come and go mid-takeover: a lid closes, a monitor is
         // unplugged. Without this an orphaned panel is relocated by AppKit
@@ -124,9 +127,15 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         switch reminder.priority {
         case .subtle:
             showSubtle(reminder, settings: settings)
-        case .normal, .important:
+        case .normal:
             music.play(for: reminder, settings: settings)
             notifier.post(reminder, settings: settings)
+        case .important:
+            // The app's own card, not a notification: it stays until answered
+            // regardless of Alert Style or an active Focus. See
+            // ImportantCardView for why.
+            music.play(for: reminder, settings: settings)
+            showImportant(reminder, settings: settings)
         case .critical:
             showCritical(reminder, settings: settings)
         }
@@ -135,8 +144,10 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
     func dismissAll() {
         criticalQueue.removeAll()
         subtleQueue.removeAll()
+        importantQueue.removeAll()
         closeCriticalPanels()
         closeSubtlePanel()
+        closeImportantPanel()
         // Pausing the engine takes the overlay's buttons — the only music
         // controls — off screen with it, so reminder-started music must stop
         // here or it plays on with no way to silence it.
@@ -158,11 +169,13 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         switch reminder.priority {
         case .subtle:
             showSubtle(reminder, settings: settings, isPreview: true)
-        case .normal, .important:
+        case .normal:
             // Posting a real notification for a preview would leave it sitting
             // in Notification Center, so show the in-app card instead. It
             // carries the same title, message and icon.
             showSubtle(reminder, settings: settings, isPreview: true)
+        case .important:
+            showImportant(reminder, settings: settings, isPreview: true)
         case .critical:
             showCritical(reminder, settings: settings, isPreview: true)
         }
@@ -409,10 +422,11 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         // and the message is allowed up to four lines.
         let size = NSSize(width: 330, height: 132)
         let margin: CGFloat = 16
-        // Top-right, tucked under the menu bar near where the app lives.
+        // Top-right, tucked under the menu bar near where the app lives. If an
+        // Important card is already holding that corner, sit beneath it.
         let origin = NSPoint(
             x: screen.visibleFrame.maxX - size.width - margin,
-            y: screen.visibleFrame.maxY - size.height - margin
+            y: subtleSlotTop(on: screen) - size.height
         )
         let panel = OverlayPanel(
             contentRect: NSRect(origin: origin, size: size), isInteractive: true
@@ -438,6 +452,133 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             guard !Task.isCancelled else { return }
             self?.dismissSubtleAndAdvance()
+        }
+    }
+
+    /// Where the top of the Subtle card goes: the corner, or just under the
+    /// Important card when one is up.
+    private func subtleSlotTop(on screen: NSScreen) -> CGFloat {
+        let margin: CGFloat = 16
+        if let important = importantPanel {
+            return important.frame.minY - 8
+        }
+        return screen.visibleFrame.maxY - margin
+    }
+
+    // MARK: - Important card
+
+    private static let importantSize = NSSize(width: 360, height: 132)
+
+    fileprivate func showImportant(
+        _ reminder: Reminder,
+        settings: ReminderCore.Settings,
+        isPreview: Bool = false
+    ) {
+        if importantPanel != nil {
+            if isPreview {
+                closeImportantPanel()
+            } else {
+                // One is already waiting to be answered. The same reminder
+                // firing again (a repeating one left unanswered) adds nothing;
+                // a different one queues and appears once this is dealt with.
+                let alreadyPending = importantShowing?.id == reminder.id
+                    || importantQueue.contains { $0.reminder.id == reminder.id }
+                if !alreadyPending { importantQueue.append((reminder, settings)) }
+                return
+            }
+        }
+        displayImportant(reminder, settings: settings, isPreview: isPreview)
+    }
+
+    private func displayImportant(
+        _ reminder: Reminder, settings: ReminderCore.Settings, isPreview: Bool
+    ) {
+        guard let screen = NSScreen.main else { return }
+
+        // The sound a notification would have carried. Played here because
+        // the card is ours; a preview plays it too, since hearing the reminder
+        // is part of previewing it.
+        if settings.playsSound(for: .important) {
+            Sounds.play(named: reminder.soundName ?? "Glass")
+        }
+
+        let view = ImportantCardView(
+            reminder: reminder,
+            onComplete: { [weak self] in
+                guard let self else { return }
+                if !isPreview { self.engine?.complete(id: reminder.id) }
+                self.music.stopReminderMusic()
+                self.dismissImportantAndAdvance()
+            },
+            onSnooze: { [weak self] in
+                guard let self else { return }
+                if !isPreview { self.engine?.snooze(id: reminder.id) }
+                self.music.stopReminderMusic()
+                self.dismissImportantAndAdvance()
+            }
+        )
+
+        let size = Self.importantSize
+        let margin: CGFloat = 16
+        let origin = NSPoint(
+            x: screen.visibleFrame.maxX - size.width - margin,
+            y: screen.visibleFrame.maxY - size.height - margin
+        )
+        let panel = OverlayPanel(
+            contentRect: NSRect(origin: origin, size: size), isInteractive: true
+        )
+        panel.contentView = NSHostingView(rootView: view)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            panel.animator().alphaValue = 1
+        }
+        importantPanel = panel
+        importantShowing = reminder
+
+        // A Subtle card already in the corner moves down to make room.
+        if let subtle = subtlePanel {
+            let target = NSPoint(
+                x: subtle.frame.origin.x,
+                y: origin.y - 8 - subtle.frame.height
+            )
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                subtle.animator().setFrameOrigin(target)
+            }
+        }
+        // No self-dismiss: that is the whole point of this tier.
+    }
+
+    private func closeImportantPanel() {
+        guard let panel = importantPanel else { return }
+        importantPanel = nil
+        importantShowing = nil
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            panel.orderOut(nil)
+        }
+        // Give the corner back to a Subtle card that was pushed down.
+        if let subtle = subtlePanel, let screen = NSScreen.main {
+            let target = NSPoint(
+                x: subtle.frame.origin.x,
+                y: screen.visibleFrame.maxY - 16 - subtle.frame.height
+            )
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                subtle.animator().setFrameOrigin(target)
+            }
+        }
+    }
+
+    private func dismissImportantAndAdvance() {
+        closeImportantPanel()
+        if let next = importantQueue.first {
+            importantQueue.removeFirst()
+            displayImportant(next.reminder, settings: next.settings, isPreview: false)
         }
     }
 

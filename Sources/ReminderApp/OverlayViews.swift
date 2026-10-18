@@ -408,6 +408,92 @@ struct OverlayButtonStyle: ButtonStyle {
 ///
 /// This is the every-20-minutes weight shift: it must register without
 /// hijacking attention, so it is quiet, small, and disappears on its own.
+/// The Important tier's card: the subtle card's shape, but it never times
+/// out. It stays until the user ticks it done or snoozes it, which is what
+/// "important" has to mean for a reminder with a consequence behind it.
+///
+/// This is the app's own window rather than a system notification on
+/// purpose. A notification's lifetime is macOS's per-app Alert Style, which
+/// cannot differ between Normal and Important, and any Focus mode swallows
+/// it silently in a Developer ID build. A window the app owns is subject to
+/// neither, the same reasoning that makes the Critical tier an overlay.
+struct ImportantCardView: View {
+    let reminder: Reminder
+    let onComplete: () -> Void
+    let onSnooze: () -> Void
+
+    @State private var appeared = false
+
+    private static let accent = Color(red: 0.36, green: 0.72, blue: 0.67)
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: reminder.symbolName)
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(Self.accent)
+                .frame(width: 30)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(reminder.title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                if !reminder.message.isEmpty {
+                    Text(reminder.message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            // Snooze is a labelled pill and Done a filled tick, so the two
+            // cannot be confused by a glance or a head pointer. The tick is
+            // tinted at rest, not only on hover: a card that must be answered
+            // should say so.
+            VStack(spacing: 8) {
+                Button(action: onComplete) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(Self.accent)
+                }
+                .buttonStyle(.plain)
+                .help("Mark as done")
+                .accessibilityLabel("Done")
+
+                Button(action: onSnooze) {
+                    Text("Snooze")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help("Snooze")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.18), radius: 14, y: 5)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Self.accent.opacity(0.35), lineWidth: 1)
+        )
+        .padding(6)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : -8)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.25)) { appeared = true }
+        }
+    }
+}
+
 struct SubtleHintView: View {
     let reminder: Reminder
     let onComplete: () -> Void

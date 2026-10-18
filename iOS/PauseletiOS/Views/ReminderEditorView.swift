@@ -250,20 +250,25 @@ struct ReminderEditorView: View {
                     onScreenTimeSection
                 }
 
-                Section("Activity Timer") {
-                    HelpRow(
-                        title: "Run a countdown",
-                        help: "Shows a timer for activities with a set length, "
-                            + "such as tilting back for five minutes."
-                    ) {
-                        Toggle("", isOn: $hasActivityDuration).labelsHidden()
-                    }
-                    if hasActivityDuration {
-                        Stepper(
-                            "For \(activityMinutes) min",
-                            value: $activityMinutes,
-                            in: 1...120
-                        )
+                // Only the Critical takeover draws the countdown; on other
+                // tiers the option would be stored and never shown.
+                if effectivePriority == .critical {
+                    Section("Activity Timer") {
+                        HelpRow(
+                            title: "Run a countdown",
+                            help: "Shows a timer on the full-screen takeover for "
+                                + "activities with a set length, such as tilting "
+                                + "back for five minutes."
+                        ) {
+                            Toggle("", isOn: $hasActivityDuration).labelsHidden()
+                        }
+                        if hasActivityDuration {
+                            Stepper(
+                                "For \(activityMinutes) min",
+                                value: $activityMinutes,
+                                in: 1...120
+                            )
+                        }
                     }
                 }
 
@@ -447,7 +452,9 @@ struct ReminderEditorView: View {
         reminder.symbolName = symbolName
         reminder.soundName = soundName
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
-        reminder.activityDurationSeconds = hasActivityDuration ? activityMinutes * 60 : nil
+        // Cleared for any tier that cannot show it (see the editor section).
+        reminder.activityDurationSeconds =
+            effectivePriority == .critical && hasActivityDuration ? activityMinutes * 60 : nil
         // Tidied (trimmed, line endings unified, empty collapsed to nil) so
         // the same list serializes identically on every platform.
         reminder.exercises = type == .exercise ? Exercise.normalized(exercises) : nil

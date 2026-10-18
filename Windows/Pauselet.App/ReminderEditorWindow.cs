@@ -70,6 +70,7 @@ internal sealed class ReminderEditorWindow : Window
     private StackPanel? _exercisePanel;
     private StackPanel? _exerciseRowsHost;
     private StackPanel? _priorityPanel;
+    private StackPanel? _activityPanel;
     private TextBlock? _criticalNote;
     private StackPanel? _displayPanel;
     /// <summary>
@@ -148,9 +149,34 @@ internal sealed class ReminderEditorWindow : Window
         _reminderType.SelectionChanged += (_, _) => UpdateQuietHoursCaption();
         foreach (var radio in _priorityButtons)
         {
-            radio.Checked += (_, _) => UpdateQuietHoursCaption();
+            radio.Checked += (_, _) =>
+            {
+                UpdateQuietHoursCaption();
+                UpdateActivityPanel();
+            };
         }
+        _reminderType.SelectionChanged += (_, _) => UpdateActivityPanel();
         UpdateQuietHoursCaption();
+        UpdateActivityPanel();
+    }
+
+    /// <summary>The tier the reminder will actually be saved with: Exercise
+    /// reminders are always Critical, otherwise whichever radio is chosen.</summary>
+    private Priority EffectivePriority()
+    {
+        var chosen = _priorityButtons
+            .FirstOrDefault(radio => radio.IsChecked == true)?.Tag is Priority selected
+            ? selected
+            : Priority.Normal;
+        return IsExerciseType ? Priority.Critical : chosen;
+    }
+
+    private void UpdateActivityPanel()
+    {
+        if (_activityPanel is null) return;
+        _activityPanel.Visibility = EffectivePriority() == Priority.Critical
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private UIElement BuildForm()
@@ -405,8 +431,12 @@ internal sealed class ReminderEditorWindow : Window
         _displayPanel.Children.Add(_displaySeconds);
         optionsGrid.Children.Add(_displayPanel);
 
-        optionsGrid.Children.Add(FieldLabel("Activity countdown (minutes, blank = none)"));
-        optionsGrid.Children.Add(_activityMinutes);
+        // Only the Critical overlay draws the countdown, so the field is shown
+        // for that tier alone rather than stored and silently ignored.
+        _activityPanel = new StackPanel();
+        _activityPanel.Children.Add(FieldLabel("Activity countdown (minutes, blank = none)"));
+        _activityPanel.Children.Add(_activityMinutes);
+        optionsGrid.Children.Add(_activityPanel);
 
         stack.Children.Add(optionsGrid);
 
@@ -989,7 +1019,8 @@ internal sealed class ReminderEditorWindow : Window
             ? display
             : null;
         int? activitySeconds =
-            int.TryParse(_activityMinutes.Text, out var activity) && activity > 0
+            EffectivePriority() == Priority.Critical
+            && int.TryParse(_activityMinutes.Text, out var activity) && activity > 0
                 ? activity * 60
                 : null;
 
