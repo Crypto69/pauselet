@@ -14,6 +14,9 @@ import ReminderAI
 /// Run with: `Reminder --snapshot <output-directory>`
 @MainActor
 enum SnapshotHarness {
+    /// Bitmap scale factor. 1 for documentation, 2 for App Store assets.
+    private static var scale: CGFloat = 1
+
     /// Reads the launch arguments and, if asked, renders and exits.
     /// Returns true when it handled the launch, so the app should not continue.
     static func runIfRequested() -> Bool {
@@ -23,6 +26,15 @@ enum SnapshotHarness {
         let directory = arguments.indices.contains(flagIndex + 1)
             ? URL(fileURLWithPath: arguments[flagIndex + 1])
             : URL(fileURLWithPath: "build/ui")
+
+        // `--snapshot-scale 2` renders at 2x for App Store assets, which need
+        // far more pixels than a README does. Points stay the same, so layout
+        // is identical and only the bitmap is denser.
+        if let scaleIndex = arguments.firstIndex(of: "--snapshot-scale"),
+           arguments.indices.contains(scaleIndex + 1),
+           let scale = Double(arguments[scaleIndex + 1]), scale > 0 {
+            self.scale = CGFloat(scale)
+        }
         try? FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true
         )
@@ -351,6 +363,16 @@ enum SnapshotHarness {
                 named: "overlay-subtle",
                 into: directory
             )
+            snapshot(
+                ImportantCardView(
+                    reminder: engine.reminders.first { $0.priority == .important }
+                        ?? engine.reminders[0],
+                    onComplete: {}, onSnooze: {}
+                ),
+                size: NSSize(width: 360, height: 132),
+                named: "overlay-important",
+                into: directory
+            )
         }
 
         // Editors render at their real sheet size. The form scrolls in the app,
@@ -419,19 +441,84 @@ enum SnapshotHarness {
         // Opaque window background: a clear one leaves white bands where the
         // view does not paint, which looks like a rendering fault in a README.
         window.backgroundColor = .windowBackgroundColor
+        // Position away from the screen edges. A window partly offscreen is
+        // captured with the offscreen part blank.
+        window.setFrameOrigin(NSPoint(x: 100, y: 100))
         window.orderFrontRegardless()
 
-        // Give SwiftUI a turn of the run loop to lay out before snapshotting;
-        // without this, the first frame can come out blank.
-        RunLoop.main.run(until: Date().addingTimeInterval(0.45))
-        hosting.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
+        // Give SwiftUI turns of the run loop to lay out and draw before
+        // snapshotting. One short pause is not enough on macOS 26: text runs
+        // are resolved asynchronously, so a single-pass capture comes back
+        // with the shapes drawn and every label missing. Pumping the loop
+        // repeatedly, with a forced display between turns, lets the text
+        // land before the bitmap is taken.
+        for _ in 0..<8 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            hosting.layoutSubtreeIfNeeded()
+            hosting.needsDisplay = true
+            window.displayIfNeeded()
+        }
 
-        guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
-            print("snapshot \(name): could not allocate bitmap")
+        // `bitmapImageRepForCachingDisplay` always renders at 1x, and asking
+        // the layer to render into a scaled context loses most of the content
+        // because SwiftUI does not put it all in the layer tree. Instead the
+        // view draws itself at 1x through its normal path, and the resulting
+        // image is drawn once into a bitmap of the final pixel size. Text is
+        // re-rasterised during that draw rather than being pixel-doubled.
+        // `cacheDisplay(in:to:)` stopped capturing SwiftUI text on macOS 26:
+        // it returns the shapes and symbols with every label missing. The
+        // window's own backing store is what the compositor actually drew, so
+        // capture that instead. `CGWindowListCreateImage` reads it at the
+        // display's backing scale, which is already 2x on a Retina Mac.
+        let windowID = CGWindowID(window.windowNumber)
+        // `.null` asks for the window's own bounds. Passing an explicit rect
+        // is not worth it: that API wants flipped screen coordinates, and
+        // getting them wrong yields a blank image. The capture can still come
+        // back larger than the window on a multi-display setup, so it is
+        // cropped to the top-left corner below.
+        guard let cgImage = CGWindowListCreateImage(
+            .null, .optionIncludingWindow, windowID,
+            [.boundsIgnoreFraming, .bestResolution]
+        ) else {
+            print("snapshot \(name): could not capture the window")
             return
         }
-        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+
+        let rep: NSBitmapImageRep
+        if scale == 1 {
+            rep = NSBitmapImageRep(cgImage: cgImage)
+        } else {
+            // Redraw the capture into a bitmap of the final pixel size. The
+            // bitmap's `size` is left at its pixel dimensions so one point
+            // equals one pixel while drawing; setting it to the point size
+            // instead makes the draw land at half scale in a corner.
+            let wide = Int(size.width * scale)
+            let high = Int(size.height * scale)
+            guard let scaled = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: wide,
+                pixelsHigh: high,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ), let context = NSGraphicsContext(bitmapImageRep: scaled) else {
+                print("snapshot \(name): could not allocate bitmap")
+                return
+            }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            context.imageInterpolation = .high
+            context.cgContext.draw(
+                cgImage,
+                in: CGRect(x: 0, y: 0, width: wide, height: high)
+            )
+            NSGraphicsContext.restoreGraphicsState()
+            rep = scaled
+        }
 
         guard let data = rep.representation(using: .png, properties: [:]) else {
             print("snapshot \(name): could not encode PNG")
