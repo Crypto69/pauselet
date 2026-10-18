@@ -148,6 +148,23 @@ coach was widened to every exercise, and tick boxes were removed.
 | Keyboard-driven overlays card: "number keys to tick an exercise" | "number keys to start an exercise, A to start them all" | One-word edit |
 | Voice coach section implies only exercises with a hold time are coached | **Every exercise is coachable.** A movement with a hold time has each rep counted down. One without a hold is paced at three seconds a rep, counted aloud ("Set 1, rep 1. Rep 2. Rep 3."), so it runs through on its own. | Add a sentence to the voice coach section |
 
+### 3.1a Wrong since 18 October: the Important tier on the Mac
+
+The site says Important is "A notification with sound, marked time-sensitive
+so it can reach you through a Focus." On the Mac it is now the app's own
+card with sound, which stays on screen until ticked done or snoozed, and
+which no Focus mode or notification setting can hide. Only Normal is a
+system notification. iPhone keeps the time-sensitive notification. Update the
+Important card in the four-volumes section and the platform notes.
+
+### 3.1b Wrong since 18 October: the activity countdown is Critical-only
+
+The Schedules section says "Give a reminder a duration and it counts down
+while you do the activity." Only the Critical takeover can show that timer,
+and the editors on all three platforms now offer the option only when the
+reminder is Critical (exercise reminders included, since they are always
+Critical). Say so, or move the sentence into the Critical card.
+
 ### 3.2 Missing: Start All and the rest between exercises
 
 Not on the site at all. This is the feature that turns a list into a

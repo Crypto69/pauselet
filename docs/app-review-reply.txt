@@ -1,0 +1,53 @@
+2. PURPOSE AND TARGET AUDIENCE
+
+Pauselet is a reminder app for recurring physical routines. Each reminder carries its own level of interruption, from a quiet card that fades by itself to a full-screen alarm that must be acknowledged.
+
+Ordinary reminder apps deliver everything at the same volume, so a prompt arriving three times an hour looks identical to one with a medical consequence behind it.
+
+It was written for a wheelchair user who must shift their weight every twenty minutes and tilt their chair back for five minutes every hour, to avoid pressure injuries.
+
+Audience: people with a physical routine to keep. Wheelchair users managing pressure relief, people doing a physiotherapy programme at home, and anyone sitting for long periods who needs movement or posture prompts.
+
+The app makes no medical claim and does not diagnose, monitor or treat anything.
+
+3. SETTING UP AND ACCESSING THE MAIN FEATURES
+
+No login, account or credentials. Nothing is gated. The app works the moment it launches, and installs four example reminders on first launch, one per level.
+
+Permissions: allow notifications and alarms when prompted. Alarms are used only for the Critical level; if declined, Critical reminders fall back to time-sensitive notifications.
+
+The four levels:
+- Subtle: silent in-app card
+- Normal: standard notification
+- Important: notification with sound, reaches through Focus
+- Critical: an AlarmKit alarm that sounds through Silent mode, plus a full-screen takeover that stays until acknowledged
+
+To see any level immediately, open a reminder and tap Preview in the editor. It shows the reminder exactly as it will appear without altering its schedule.
+
+Exercise reminders: switch a reminder's type to Exercise and it carries a list of exercises rather than one message. Add rows by hand, or tap Import from Text and paste a handout, for example:
+
+"2 sets of 10 shoulder shrugs, holding for 5 seconds. Then neck rotations: 1 set of 20 each side. Finally, hamstring stretches: 1 set of 10 reps, holding for 30 seconds."
+
+Read Text parses this on the device into editable rows; nothing is added until confirmed. When the reminder fires, Start on a row coaches that exercise, counting each repetition and rest. Start All runs the whole programme.
+
+Voice coach: off by default, enabled in Settings, then speaks cues using voices already installed on the device. No sample files or credentials needed.
+
+4. EXTERNAL SERVICES
+
+Required: none. There is no server, no account system, no analytics, no crash reporting, no advertising identifier and no third-party SDK. Everything is stored in one file inside the app's container.
+
+Optional: OpenAI, used only by the "Interpret with AI" button in the exercise importer. That button does not exist until the user enters their own OpenAI API key in Settings. When used, only the pasted text is sent, directly from their device to OpenAI, with their own key against their own account. We never receive the text or the key. The key is stored in the device keychain, marked this-device-only.
+
+With no key stored, the app makes no network requests at all. The on-device parser handles the same task and is the default. No key is needed to review the app.
+
+Apple frameworks: AlarmKit, UserNotifications, AVFoundation speech synthesis, SwiftUI, WidgetKit.
+
+5. REGIONAL DIFFERENCES
+
+The app functions identically in all regions. No regional content, no server, no geolocation. Scheduling uses the device's own clock, calendar and time zone. English only.
+
+6. REGULATED INDUSTRY OR PROTECTED MATERIAL
+
+Neither applies. The app is not a regulated medical device: it schedules reminders and times exercises the user entered, takes no measurements, and does not diagnose, monitor or treat. The Regulated Medical Device declaration has been answered accordingly.
+
+All exercise content is entered by the user. The app ships no exercise programme, clinical content or licensed material.

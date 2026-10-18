@@ -1,0 +1,23 @@
+Pauselet is a menu bar reminder app with no account, no server and no analytics. All data stays on the Mac.
+
+WHERE THE APP IS. Pauselet has no Dock icon and no app-switcher entry by design: it is a menu bar app (LSUIElement). After launching, look for the icon in the menu bar at the top right of the screen. Click it for the popover; right-click it for pause options, Settings and Quit.
+
+THE CENTRAL FEATURE. Each reminder carries its own level of interruption:
+- Subtle: a small card near the menu bar that fades on its own, no sound
+- Normal: a standard notification
+- Important: the app's own card with sound; it stays on screen until ticked done or snoozed, unaffected by Focus or Alert Style
+- Critical: a full-screen overlay on every connected display, which stays until acknowledged
+
+To see any of them immediately without waiting: Settings > Reminders, click a reminder to edit it, and press Preview at the bottom of the editor. That shows the reminder exactly as it will appear, without altering its schedule or history. Four example reminders, one per level, are installed on first launch.
+
+APP SANDBOX ENTITLEMENT. The build claims com.apple.security.temporary-exception.apple-events for com.spotify.client. The justification is in the App Sandbox Entitlement Usage Information field. In short: a reminder can start a user-chosen Spotify playlist when it fires, Spotify's AppleScript interface is the only local API for this, Spotify declares no scripting access groups so scripting-targets cannot be used, the feature is opt-in and gated behind the user's own macOS Automation consent, and the app is fully functional without it.
+
+To see the feature: Settings > Preferences > Music, paste any Spotify playlist link, and press Test. macOS will ask for Automation permission. If you decline, reminders still fire, just without music. Spotify does not need to be installed to review the rest of the app; if it is absent the section says so.
+
+EXERCISE IMPORT, AND THE ONE NETWORK FEATURE. A reminder can carry an exercise programme. In the editor, switch the type to Exercise, then "Import from Text" and "Read Text" parses pasted text on the Mac with no network request. An "Interpret with AI" button appears only after the user adds their own OpenAI API key in Settings > Preferences > Exercise Import. That request goes directly from the user's Mac to OpenAI with their own key against their own account; we never receive the text or the key. With no key stored, the app makes no network requests at all. No key is needed to review the app.
+
+NOTIFICATIONS. macOS asks for notification permission on first launch. If it is declined, reminders are shown as the app's own on-screen card rather than being dropped, so nothing is silently lost.
+
+DATA. Everything is stored in one JSON file inside the app's container. There is no account, no sync and no telemetry.
+
+TESTING. This build was verified running under the App Sandbox before submission: it launches, writes its data file, and produces no sandbox denials.

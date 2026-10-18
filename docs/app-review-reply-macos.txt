@@ -1,0 +1,47 @@
+2. PURPOSE AND TARGET AUDIENCE
+
+Pauselet is a menu bar app for recurring physical routines. Each reminder carries its own level of interruption, from a quiet card that fades by itself to a full-screen overlay on every display. Ordinary reminder apps deliver everything at the same volume, so a frequent nudge looks identical to one with a medical consequence behind it.
+
+It was written for a wheelchair user who must shift their weight every twenty minutes and tilt back for five minutes every hour, to avoid pressure injuries.
+
+Audience: wheelchair users managing pressure relief, people doing physiotherapy at home, and anyone sitting at a Mac too long.
+
+The app makes no medical claim and does not diagnose, monitor or treat.
+
+3. SETTING UP AND ACCESSING THE MAIN FEATURES
+
+No login, account or credentials; nothing is gated.
+
+IMPORTANT: Pauselet has no Dock icon and no app-switcher entry by design; it is a menu bar app (LSUIElement). After launching, look for its icon in the menu bar at the top right. Click it for the popover; right-click for pause options, Settings and Quit. Four example reminders, one per level, are installed on first launch.
+
+The four levels:
+- Subtle: a small card near the menu bar that fades on its own, no sound
+- Normal: a standard notification
+- Important: the app's own card with sound; stays until ticked done or snoozed
+- Critical: a full-screen overlay on every display, until acknowledged
+
+To see any level immediately, open Settings > Reminders, click a reminder, and press Preview at the bottom of the editor. That shows it exactly as it will appear without altering its schedule.
+
+Exercise reminders: switch a reminder's type to Exercise and it carries a list of exercises rather than one message. Add rows by hand, or press Import from Text and paste a physiotherapist's handout ("2 sets of 10 shoulder shrugs, holding for 5 seconds. Then neck rotations: 1 set of 20 each side."). Read Text parses it on the Mac into editable rows; nothing is added until confirmed. When the reminder fires, Start on a row coaches that exercise, counting each repetition and rest. Start All runs the whole programme.
+
+Music: Settings > Preferences > Music accepts a Spotify playlist link, which drives the Spotify app on the same Mac through AppleScript and needs the user's macOS Automation consent. If refused, reminders still fire without music.
+
+No sample files or credentials needed.
+
+4. EXTERNAL SERVICES
+
+Required: none. No server, no account system, no analytics, no crash reporting, no third-party SDK. Everything is stored in one file inside the app's sandbox container.
+
+Optional, off until the user turns it on: an AI service used only by the "Interpret with AI" button in the exercise importer. That button does not exist until the user enters their own API key in Settings. When used, only the pasted exercise text is sent, direct from their Mac, with their own key against their own account. We never receive the text or the key; it is stored in the macOS keychain.
+
+With no key stored, the app makes no network requests at all. The on-device parser handles the same task and is the default. No key is needed to review the app. China mainland has been deselected in Availability.
+
+Apple frameworks: UserNotifications, AVFoundation speech synthesis, AppKit, SwiftUI.
+
+5. REGIONAL DIFFERENCES
+
+The app functions identically in all regions where it is offered. No regional content, no server, no geolocation. Scheduling uses the Mac's own clock and time zone. English only. China mainland has been deselected in Availability.
+
+6. REGULATED INDUSTRY OR PROTECTED MATERIAL
+
+Neither applies. The app is not a regulated medical device: it schedules reminders and times exercises the user entered, takes no measurements, and does not diagnose, monitor or treat. All exercise content is entered by the user; the app ships no exercise programme, clinical content or licensed material.
