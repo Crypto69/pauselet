@@ -322,7 +322,13 @@ jobs:
           else
             mac='This build is unsigned: right-click the app → *Open* and confirm the first time. Note that an un-notarized build is not granted notification permission, so the Normal and Important tiers fall back to the app’s own card.'
           fi
-          cat > notes.md <<EOF_NOTES
+          # What changed, written by hand, goes above the install instructions.
+          : > notes.md
+          if [ -f "docs/release-notes/$v.md" ]; then
+            cat "docs/release-notes/$v.md" >> notes.md
+            printf '\n' >> notes.md
+          fi
+          cat >> notes.md <<EOF_NOTES
           ## Install
 
           **macOS 13 or later** — \`Pauselet-$v.zip\`
