@@ -7,16 +7,21 @@ missing everyone else.
 
 ## Cutting a release
 
-1. Bump `VERSION` at the repository root — the one place the number lives.
-2. Commit it.
-3. Tag and push:
+1. Bump `VERSION` at the repository root — the one place the number lives
+   (and the local-build floor in `Windows/Directory.Build.props`, which
+   should track it).
+2. Write what changed in `docs/release-notes/<version>.md`. The release
+   workflow puts it above the install instructions; without it the release
+   has only GitHub's generated commit list.
+3. Commit both.
+4. Tag and push:
 
    ```sh
    git tag v1.0.0
    git push origin v1.0.0
    ```
 
-4. Watch it at <https://github.com/Crypto69/pauselet/actions>. It takes roughly
+5. Watch it at <https://github.com/Crypto69/pauselet/actions>. It takes roughly
    ten minutes, most of it Apple's notary service.
 
 The tag is authoritative: if `VERSION` disagrees, the tag wins and the run logs
