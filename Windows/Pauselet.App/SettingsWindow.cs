@@ -98,7 +98,7 @@ internal sealed class SettingsWindow : Window
         Reminder Reminder, string Glyph, string Title, string Schedule,
         string Priority, bool Enabled)
     {
-        public string EnabledText => Enabled ? "On" : "Off";
+        public string EnabledTooltip => Enabled ? "Turn off" : "Turn on";
     }
 
     private UIElement BuildRemindersTab()
@@ -150,13 +150,24 @@ internal sealed class SettingsWindow : Window
 
         layout.Children.Add(buttons);
 
-        _reminderList = new ListView();
+        _reminderList = new ListView
+        {
+            // Cells hug the left edge by default; stretching them lets the
+            // Enabled checkbox sit centred under its header.
+            ItemContainerStyle = new Style(typeof(ListViewItem))
+            {
+                Setters =
+                {
+                    new Setter(HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch),
+                },
+            },
+        };
         var view = new GridView();
         view.Columns.Add(Column("", nameof(ReminderRowModel.Glyph), 36, iconFont: true));
         view.Columns.Add(Column("Title", nameof(ReminderRowModel.Title), 220));
         view.Columns.Add(Column("Schedule", nameof(ReminderRowModel.Schedule), 190));
         view.Columns.Add(Column("Priority", nameof(ReminderRowModel.Priority), 90));
-        view.Columns.Add(Column("Enabled", nameof(ReminderRowModel.EnabledText), 70));
+        view.Columns.Add(EnabledColumn());
         _reminderList.View = view;
         _reminderList.MouseDoubleClick += (_, _) =>
         {
@@ -178,6 +189,42 @@ internal sealed class SettingsWindow : Window
         {
             factory.SetValue(TextBlock.FontFamilyProperty, SymbolMap.IconFont);
         }
+        column.CellTemplate = new DataTemplate { VisualTree = factory };
+        return column;
+    }
+
+    /// <summary>
+    /// The on/off switch, as on the Mac's reminder list. A label saying
+    /// "On" here invited clicks that did nothing; the tray flyout's checkbox
+    /// was the only switch and nobody found it.
+    /// </summary>
+    private GridViewColumn EnabledColumn()
+    {
+        var column = new GridViewColumn { Header = "Enabled", Width = 70 };
+        var factory = new FrameworkElementFactory(typeof(CheckBox));
+        // One-way: every toggle persists, and the persist reloads the rows.
+        factory.SetBinding(
+            System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,
+            new System.Windows.Data.Binding(nameof(ReminderRowModel.Enabled))
+            {
+                Mode = System.Windows.Data.BindingMode.OneWay,
+            }
+        );
+        factory.SetBinding(
+            ToolTipProperty,
+            new System.Windows.Data.Binding(nameof(ReminderRowModel.EnabledTooltip))
+        );
+        factory.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        factory.AddHandler(
+            System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+            new RoutedEventHandler((sender, _) =>
+            {
+                if (sender is CheckBox { DataContext: ReminderRowModel row } box)
+                {
+                    _engine.SetEnabled(box.IsChecked == true, row.Reminder.Id);
+                }
+            })
+        );
         column.CellTemplate = new DataTemplate { VisualTree = factory };
         return column;
     }
