@@ -208,7 +208,8 @@ internal sealed class FlyoutWindow : Window
                 Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 2, 0, 0),
             };
-            var glyph = Ui.Glyph(next.Reminder.SymbolName, 14, Theme.Brush(palette.Accent));
+            var glyph = Ui.Glyph(
+                next.Reminder.SymbolName, 14, Theme.PriorityBrush(next.Reminder.Priority));
             glyph.Margin = new Thickness(0, 0, 6, 0);
             line.Children.Add(glyph);
             line.Children.Add(Ui.Text(
@@ -320,7 +321,9 @@ internal sealed class FlyoutWindow : Window
 
         var glyph = Ui.Glyph(
             reminder.SymbolName, 15,
-            Theme.Brush(reminder.IsEnabled ? palette.Accent : palette.TertiaryForeground)
+            reminder.IsEnabled
+                ? Theme.PriorityBrush(reminder.Priority)
+                : Theme.Brush(palette.TertiaryForeground)
         );
         glyph.Width = 22;
         glyph.Margin = new Thickness(0, 0, 12, 0);
@@ -341,7 +344,7 @@ internal sealed class FlyoutWindow : Window
         {
             Width = 6,
             Height = 6,
-            Fill = PriorityBrush(reminder.Priority, palette),
+            Fill = Theme.PriorityBrush(reminder.Priority),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 5, 0),
             ToolTip = reminder.Priority.DisplayName(),
@@ -407,16 +410,6 @@ internal sealed class FlyoutWindow : Window
 
         return grid;
     }
-
-    private static Brush PriorityBrush(Priority priority, Theme.Palette palette) =>
-        priority switch
-        {
-            Priority.Subtle => Theme.Brush(palette.SecondaryForeground),
-            Priority.Normal => Theme.Brush(Color.FromRgb(0x3B, 0x82, 0xF6)),
-            Priority.Important => Theme.Brush(Color.FromRgb(0xE8, 0x8A, 0x2E)),
-            Priority.Critical => Theme.Brush(Color.FromRgb(0xE0, 0x4F, 0x4F)),
-            _ => Brushes.Gray,
-        };
 
     private UIElement BuildFooter(Theme.Palette palette)
     {

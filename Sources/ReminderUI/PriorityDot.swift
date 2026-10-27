@@ -13,9 +13,15 @@ public struct PriorityDot: View {
         self.priority = priority
     }
 
+    /// Subtle's colour: the calm teal its corner card has always used, so the
+    /// dot and the card agree without the card turning a disabled-looking grey.
+    public static let subtleTeal = Color(red: 0.36, green: 0.72, blue: 0.67)
+
+    /// The tier's colour, also used for the icon on the surfaces a reminder
+    /// fires on, so a blue dot in the list means a blue icon on screen.
     public static func color(for priority: Priority) -> Color {
         switch priority {
-        case .subtle: return Color.secondary
+        case .subtle: return subtleTeal
         case .normal: return Color.blue
         case .important: return Color.orange
         case .critical: return Color.red

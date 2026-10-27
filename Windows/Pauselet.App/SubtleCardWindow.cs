@@ -103,9 +103,10 @@ internal sealed class SubtleCardWindow : Window
         );
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var icon = Ui.Glyph(
-            reminder.SymbolName, 24, Theme.Brush(Color.FromRgb(92, 184, 171))
-        );
+        // The tier's colour, matching the reminder's dot in the flyout: this
+        // card also stands in for Normal and Important when a toast fails.
+        var tier = Theme.PriorityColor(reminder.Priority);
+        var icon = Ui.Glyph(reminder.SymbolName, 24, Theme.Brush(tier));
         icon.Width = 30;
         icon.Margin = new Thickness(0, 0, 14, 0);
         Grid.SetColumn(icon, 0);
@@ -148,7 +149,11 @@ internal sealed class SubtleCardWindow : Window
         var card = new Border
         {
             Background = Theme.Brush(palette.CardBackground),
-            BorderBrush = Theme.Brush(palette.Divider),
+            // Important's card carries an orange hairline, as on the Mac, so
+            // one that will not time out is told apart from a passing nudge.
+            BorderBrush = reminder.Priority == Priority.Important
+                ? Theme.Brush(Color.FromArgb(89, tier.R, tier.G, tier.B))
+                : Theme.Brush(palette.Divider),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(16, 14, 16, 14),

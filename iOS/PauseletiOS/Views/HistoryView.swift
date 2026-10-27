@@ -1,5 +1,6 @@
 import SwiftUI
 import ReminderCore
+import ReminderUI
 
 /// Adherence and recent events over 24 h / 7 d / 30 d windows — the ported
 /// macOS History tab, with the §3.3 honesty caveat in copy: iOS delivers
@@ -119,7 +120,7 @@ struct AdherenceRow: View {
         HStack(spacing: 10) {
             Image(systemName: reminder.symbolName)
                 .frame(width: 22)
-                .foregroundStyle(.tint)
+                .foregroundStyle(PriorityDot.color(for: reminder.priority))
             Text(reminder.title)
                 .font(.subheadline)
             Spacer()

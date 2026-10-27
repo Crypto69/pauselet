@@ -1,5 +1,6 @@
 import SwiftUI
 import ReminderCore
+import ReminderUI
 
 /// The quiet in-app card for `.subtle` reminders while the app is frontmost —
 /// the ported macOS corner hint. It must register without hijacking
@@ -15,7 +16,8 @@ struct SubtleCardView: View {
         HStack(spacing: 14) {
             Image(systemName: reminder.symbolName)
                 .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(Color(red: 0.36, green: 0.72, blue: 0.67))
+                // The tier's colour, matching the reminder's dot in the list.
+                .foregroundStyle(PriorityDot.color(for: reminder.priority))
                 .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 3) {

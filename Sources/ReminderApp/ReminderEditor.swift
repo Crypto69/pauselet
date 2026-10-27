@@ -236,6 +236,7 @@ struct ReminderEditor: View {
                         if type == .exercise {
                             HStack(spacing: 6) {
                                 Image(systemName: Priority.critical.symbolName)
+                                    .foregroundStyle(PriorityDot.color(for: .critical))
                                 Text(Priority.critical.displayName)
                             }
                             Text(
@@ -251,6 +252,7 @@ struct ReminderEditor: View {
                                 ForEach(Priority.allCases, id: \.self) { level in
                                     HStack {
                                         Image(systemName: level.symbolName)
+                                            .foregroundStyle(PriorityDot.color(for: level))
                                         Text(level.displayName)
                                     }
                                     .tag(level)

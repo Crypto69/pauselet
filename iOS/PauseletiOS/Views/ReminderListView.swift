@@ -183,7 +183,7 @@ private struct NextUpHeader: View {
                 } else if let next = engine.nextUp {
                     HStack(spacing: 7) {
                         Image(systemName: next.reminder.symbolName)
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(PriorityDot.color(for: next.reminder.priority))
                         Text(next.reminder.title)
                             .font(.system(.headline, design: .rounded).weight(.medium))
                         Text("· \(Scheduler.countdownText(from: now, to: next.date))")
@@ -285,7 +285,7 @@ private struct ReminderRow: View {
                 .font(.title3)
                 .frame(width: 28)
                 .foregroundStyle(
-                    reminder.isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary)
+                    reminder.isEnabled ? AnyShapeStyle(PriorityDot.color(for: reminder.priority)) : AnyShapeStyle(.tertiary)
                 )
 
             VStack(alignment: .leading, spacing: 3) {

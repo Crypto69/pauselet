@@ -99,6 +99,11 @@ internal sealed class SettingsWindow : Window
         string Priority, bool Enabled)
     {
         public string EnabledTooltip => Enabled ? "Turn off" : "Turn on";
+
+        /// <summary>The tier's colour, grey while the reminder is off — as on the Mac.</summary>
+        public Brush GlyphBrush => Enabled
+            ? Theme.PriorityBrush(Reminder.Priority)
+            : Theme.Brush(Theme.Current.TertiaryForeground);
     }
 
     private UIElement BuildRemindersTab()
@@ -188,6 +193,10 @@ internal sealed class SettingsWindow : Window
         if (iconFont)
         {
             factory.SetValue(TextBlock.FontFamilyProperty, SymbolMap.IconFont);
+            factory.SetBinding(
+                TextBlock.ForegroundProperty,
+                new System.Windows.Data.Binding(nameof(ReminderRowModel.GlyphBrush))
+            );
         }
         column.CellTemplate = new DataTemplate { VisualTree = factory };
         return column;
@@ -1042,7 +1051,7 @@ internal sealed class SettingsWindow : Window
         var palette = Theme.Current;
         var row = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
 
-        var icon = Ui.Glyph(reminder.SymbolName, 13, Theme.Brush(palette.Accent));
+        var icon = Ui.Glyph(reminder.SymbolName, 13, Theme.PriorityBrush(reminder.Priority));
         icon.Width = 20;
         icon.VerticalAlignment = VerticalAlignment.Center;
         DockPanel.SetDock(icon, Dock.Left);

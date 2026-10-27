@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Pauselet.Core;
 
@@ -366,6 +367,7 @@ internal sealed class CriticalOverlayWindow : Window
     private UIElement BuildContent()
     {
         var root = BuildBackdrop();
+        root.Children.Add(BuildEdgeGlow());
         root.Children.Add(_reminder.IsExercise ? BuildExerciseLayout() : BuildPlainLayout());
         return root;
     }
@@ -383,6 +385,26 @@ internal sealed class CriticalOverlayWindow : Window
         ),
         Focusable = true,
     };
+
+    /// <summary>
+    /// A soft red glow feathering in from every edge of the screen: the
+    /// Critical tier's colour, saying "critical" without an alarm-red
+    /// backdrop. Static, so it adds no motion at the edge of vision. The
+    /// band starts off-screen (the negative margin) so, blurred, it is
+    /// brightest at the edge rather than peaking a little way in.
+    /// </summary>
+    private static Border BuildEdgeGlow()
+    {
+        var red = Theme.PriorityColor(Priority.Critical);
+        return new Border
+        {
+            BorderBrush = Theme.Brush(Color.FromArgb(71, red.R, red.G, red.B)),
+            BorderThickness = new Thickness(70),
+            Margin = new Thickness(-60),
+            Effect = new BlurEffect { Radius = 60 },
+            IsHitTestVisible = false,
+        };
+    }
 
     /// <summary>The ordinary reminder: one centred stack, header over footer.</summary>
     private UIElement BuildPlainLayout()

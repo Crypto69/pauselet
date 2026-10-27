@@ -48,6 +48,7 @@ risk.
 | History — event log | ✅ | ✅ | ✅ |
 | History — adherence + range picker | ✅ | ✅ | ✅ |
 | Shared `EditorCatalog` | ✅ | ✅ | ✅ |
+| Tier colours on the fired surfaces + red edge glow on the takeover | ✅ | ✅ | ✅ *unseen* |
 | Music / Spotify | ✅ | ➖ *by design* | ➖ *deferred to v2* |
 
 ✅ done ⚠️ partial ❌ missing ➖ deliberately out of scope · *unseen* = built and compiling, never run

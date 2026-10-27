@@ -58,6 +58,21 @@ struct TakeoverView: View {
         ))
     }
 
+    /// A soft red glow feathering in from every edge of the screen: the
+    /// Critical tier's colour, saying "critical" without an alarm-red
+    /// backdrop. Static, so it adds no motion at the edge of vision. Narrower
+    /// than the Mac's, which has a whole display to spread over. The band
+    /// starts off-screen so it is brightest at the edge, not a little way in.
+    private var criticalEdgeGlow: some View {
+        Rectangle()
+            .strokeBorder(PriorityDot.color(for: .critical).opacity(0.28), lineWidth: 40)
+            .padding(-36)
+            .blur(radius: 16)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
     private var hasCountdown: Bool { (reminder.activityDurationSeconds ?? 0) > 0 }
 
     private var progress: Double {
@@ -179,6 +194,10 @@ struct TakeoverView: View {
                 )
                 .opacity(appeared ? 1 : 0)
             }
+
+            // On top rather than under the content: the pinned button bar's
+            // opaque fade would otherwise hide the glow along the bottom.
+            criticalEdgeGlow
         }
         .interactiveDismissDisabled()
         .onAppear {

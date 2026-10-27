@@ -173,7 +173,7 @@ struct ReminderEditRow: View {
             Image(systemName: reminder.symbolName)
                 .font(.system(size: 17))
                 .frame(width: 26)
-                .foregroundStyle(reminder.isEnabled ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(reminder.isEnabled ? AnyShapeStyle(PriorityDot.color(for: reminder.priority)) : AnyShapeStyle(.tertiary))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(reminder.title)
@@ -569,7 +569,7 @@ struct AdherenceRow: View {
         HStack(spacing: 10) {
             Image(systemName: reminder.symbolName)
                 .frame(width: 20)
-                .foregroundStyle(.tint)
+                .foregroundStyle(PriorityDot.color(for: reminder.priority))
             Text(reminder.title)
                 .font(.system(size: 12))
             Spacer()

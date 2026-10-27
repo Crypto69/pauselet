@@ -363,6 +363,18 @@ enum SnapshotHarness {
                 named: "overlay-subtle",
                 into: directory
             )
+            // Normal fires as a system notification, but previews and the
+            // fallback use the corner card, tinted blue for the tier.
+            if let normal = engine.reminders.first(where: { $0.priority == .normal }) {
+                snapshot(
+                    SubtleHintView(reminder: normal, onComplete: {})
+                        .padding(20)
+                        .background(Color.gray.opacity(0.25)),
+                    size: NSSize(width: 360, height: 132),
+                    named: "overlay-normal",
+                    into: directory
+                )
+            }
             snapshot(
                 ImportantCardView(
                     reminder: engine.reminders.first { $0.priority == .important }

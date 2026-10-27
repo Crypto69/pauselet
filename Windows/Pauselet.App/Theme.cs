@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using System.Windows.Media;
+using Pauselet.Core;
 
 namespace Pauselet.App;
 
@@ -89,4 +90,23 @@ internal static class Theme
         brush.Freeze();
         return brush;
     }
+
+    /// <summary>
+    /// The tier's colour: the dot in the flyout, and the icon on the surface
+    /// the reminder fires on, so a blue dot in the list means a blue icon on
+    /// screen. Subtle is the teal its corner card has always used. The same
+    /// in light and dark, like the Mac's system colours it stands in for.
+    /// </summary>
+    public static Color PriorityColor(Priority priority) =>
+        priority switch
+        {
+            Priority.Subtle => Color.FromRgb(0x5C, 0xB8, 0xAB),
+            Priority.Normal => Color.FromRgb(0x3B, 0x82, 0xF6),
+            Priority.Important => Color.FromRgb(0xE8, 0x8A, 0x2E),
+            Priority.Critical => Color.FromRgb(0xE0, 0x4F, 0x4F),
+            _ => Colors.Gray,
+        };
+
+    public static SolidColorBrush PriorityBrush(Priority priority) =>
+        Brush(PriorityColor(priority));
 }

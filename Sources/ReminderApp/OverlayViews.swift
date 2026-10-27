@@ -44,6 +44,23 @@ struct CriticalOverlayView: View {
         self.onSnooze = onSnooze
     }
 
+    /// A soft red glow feathering in from every edge of the screen: the
+    /// Critical tier's colour, saying "critical" without an alarm-red
+    /// backdrop. Static, so it adds no motion at the edge of vision.
+    ///
+    /// The band starts off-screen: blurred, a band inside the frame fades
+    /// out towards the edge too, peaking a little way in like a picture
+    /// frame. Pushed past the edge, it is brightest at the edge itself.
+    private var criticalEdgeGlow: some View {
+        Rectangle()
+            .strokeBorder(PriorityDot.color(for: .critical).opacity(0.28), lineWidth: 70)
+            .padding(-60)
+            .blur(radius: 30)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
     private var hasCountdown: Bool { countdown.isAvailable }
 
     private var progress: Double { countdown.progress }
@@ -60,6 +77,8 @@ struct CriticalOverlayView: View {
                 endPoint: .bottom
             )
             .ignoresSafeArea()
+
+            criticalEdgeGlow
 
             VStack(spacing: reminder.isExercise ? 22 : 34) {
                 Image(systemName: reminder.symbolName)
@@ -424,13 +443,16 @@ struct ImportantCardView: View {
 
     @State private var appeared = false
 
+    /// The done tick's colour, the same teal on every card.
     private static let accent = Color(red: 0.36, green: 0.72, blue: 0.67)
+    /// The icon and hairline take the tier's colour, matching its dot.
+    private static let tierColor = PriorityDot.color(for: .important)
 
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: reminder.symbolName)
                 .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(Self.accent)
+                .foregroundStyle(Self.tierColor)
                 .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -483,7 +505,7 @@ struct ImportantCardView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Self.accent.opacity(0.35), lineWidth: 1)
+                .stroke(Self.tierColor.opacity(0.35), lineWidth: 1)
         )
         .padding(6)
         .opacity(appeared ? 1 : 0)
@@ -503,9 +525,11 @@ struct SubtleHintView: View {
 
     var body: some View {
         HStack(spacing: 14) {
+            // The tier's colour, matching the reminder's dot in the list: this
+            // card also stands in for Normal (previews and the fallback).
             Image(systemName: reminder.symbolName)
                 .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(Color(red: 0.36, green: 0.72, blue: 0.67))
+                .foregroundStyle(PriorityDot.color(for: reminder.priority))
                 .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 3) {
