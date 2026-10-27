@@ -68,8 +68,21 @@ if [ "$rc" -ne 0 ] || ! echo "$out" | grep -q '^ *status: Accepted'; then
   exit 1
 fi
 
+# Stapling fetches the ticket from Apple's CloudKit, which on GitHub's runners
+# has dropped the connection ("network connection was lost", stapler error
+# 68) seconds after notarization was accepted, twice in a row for 1.1.0. The
+# ticket is already issued by then, so a retry after a pause is all it needs.
 echo "==> Stapling the ticket to the app"
-xcrun stapler staple "$APP"
+attempt=1
+until xcrun stapler staple "$APP"; do
+  if [ "$attempt" -ge 5 ]; then
+    echo "notarize.sh: stapling failed $attempt times" >&2
+    exit 1
+  fi
+  echo "notarize.sh: staple attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+  sleep $((attempt * 15))
+  attempt=$((attempt + 1))
+done
 xcrun stapler validate "$APP"
 
 # Stapling changes the bundle, so the zip that was submitted no longer matches
