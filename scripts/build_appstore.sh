@@ -95,11 +95,15 @@ fi
 cp Sources/ReminderApp/Resources/AppIcon.icns "$APP/Contents/Resources/" 2>/dev/null || true
 cp Sources/ReminderApp/Resources/MenuBarIconTemplate*.png "$APP/Contents/Resources/" 2>/dev/null || true
 
-# The store requires a build number that increases with every upload for a
-# given version string. CFBundleVersion carries it; CFBundleShortVersionString
-# stays the marketing version. BUILD_NUMBER overrides it for a re-upload of
-# the same version.
-BUILD_NUMBER="${BUILD_NUMBER:-$VERSION}"
+# The store requires a build number higher than every earlier upload's, and
+# it compares them as numbers across versions, not per version: 1.0.0 went up
+# again as build 2, after which "1.1.0" was rejected as lower. So it is the
+# commit count from scripts/version.sh, the same number the iOS build uses,
+# which only goes up. CFBundleShortVersionString stays the marketing version.
+# BUILD_NUMBER still overrides it.
+if [ -z "${BUILD_NUMBER:-}" ]; then
+  eval "$(sh scripts/version.sh)"
+fi
 
 SPOTIFY_USAGE=""
 if [ "$SPOTIFY" = "1" ]; then
