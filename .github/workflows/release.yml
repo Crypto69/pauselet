@@ -311,6 +311,15 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # The website links to releases/latest/download/<name>, which GitHub
+      # resolves against the newest release by exact file name. The versioned
+      # names change every release, so each one also carries these copies.
+      - name: Add the fixed-name copies the website links to
+        run: |
+          v='${{ needs.version.outputs.app_version }}'
+          cp "artifacts/Pauselet-$v.zip" artifacts/Pauselet-macOS.zip
+          cp "artifacts/Pauselet-$v-windows-x64.zip" artifacts/Pauselet-Windows-x64.zip
+
       - name: Write the release notes header
         run: |
           v='${{ needs.version.outputs.app_version }}'
@@ -352,4 +361,7 @@ jobs:
           name: Pauselet ${{ needs.version.outputs.app_version }}
           body_path: notes.md
           generate_release_notes: true
+          # A tag with a suffix (v0.0.1-test, v1.5.0-rc1) must never become
+          # "latest": the website's download links would serve it.
+          prerelease: ${{ contains(needs.version.outputs.app_version, '-') }}
           files: artifacts/*.zip

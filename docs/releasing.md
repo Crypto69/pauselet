@@ -36,6 +36,18 @@ on Windows.
 | `Pauselet-<v>.zip` | macOS 13+, Developer ID signed and notarized |
 | `Pauselet-<v>-windows-x64.zip` | Windows 10 1809+, self-contained — no .NET to install |
 | `Pauselet-<v>-ios-archive.zip` | An unsigned `.xcarchive`, proof the iPhone build is good |
+| `Pauselet-macOS.zip`, `Pauselet-Windows-x64.zip` | Copies of the Mac and Windows zips under names that never change |
+
+The website's download buttons use the fixed names:
+
+- <https://github.com/Crypto69/pauselet/releases/latest/download/Pauselet-macOS.zip>
+- <https://github.com/Crypto69/pauselet/releases/latest/download/Pauselet-Windows-x64.zip>
+
+GitHub resolves `latest` to the newest release that is not a prerelease, so
+those links follow each new release without the site changing. A tag with a
+suffix (`v0.0.1-test`, `v1.5.0-rc1`) is published as a prerelease for that
+reason. Do not rename the fixed-name copies: every download link out there
+would break.
 
 Each platform runs its own suite before building — `swift test`, `dotnet test`
 and `PauseletTests` on a simulator — and the release job needs all three, so a
