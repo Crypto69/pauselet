@@ -120,16 +120,26 @@ struct TakeoverView: View {
                     if let session = coach.session {
                         coachPanel(session)
                     } else if coach.suggestedExerciseID != nil {
+                        // The style adds no padding of its own, like Done and
+                        // Snooze below; bare labels left these text-tight.
                         HStack(spacing: 12) {
-                            Button("Start", action: coach.startSuggested)
-                                .buttonStyle(TakeoverButtonStyle(kind: .primary))
-                                .accessibilityIdentifier("takeoverCoachStart")
+                            Button(action: coach.startSuggested) {
+                                Text("Start")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
+                            .buttonStyle(TakeoverButtonStyle(kind: .primary))
+                            .accessibilityIdentifier("takeoverCoachStart")
                             if coach.canStartAll {
                                 // Runs every exercise still to do, in order,
                                 // with the reminder's rest between them.
-                                Button("Start All", action: coach.startAll)
-                                    .buttonStyle(TakeoverButtonStyle(kind: .secondary))
-                                    .accessibilityIdentifier("takeoverCoachStartAll")
+                                Button(action: coach.startAll) {
+                                    Text("Start All")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                }
+                                .buttonStyle(TakeoverButtonStyle(kind: .secondary))
+                                .accessibilityIdentifier("takeoverCoachStartAll")
                             }
                         }
                         .frame(maxWidth: coach.canStartAll ? 320 : 200)

@@ -73,9 +73,9 @@ screen credits Chris.
 ### Promotional text (170, can be changed without a new build)
 
 ```
-Reminders that scale from a quiet nudge to a full-screen alarm, with a voice coach that talks you through your physio exercises. No account, no tracking.
+Colour-coded reminders that scale from a quiet nudge to a full-screen alarm, with a voice coach that talks you through your physio exercises. No account, no tracking.
 ```
-(150 characters)
+(166 characters)
 
 ### Description (4000)
 
@@ -90,6 +90,8 @@ Every reminder has a priority, and the priority decides how loudly it arrives:
 • Normal: a standard notification.
 • Important: a time-sensitive notification with sound that can get through a Focus mode.
 • Critical: a real alarm that breaks through Silent mode and takes over the screen until you acknowledge it.
+
+Each level has its own colour, teal, blue, orange and red, carried on the reminder's icon in the list, in History and on the reminder itself, so you can tell at a glance what matters. A critical reminder glows red at the edges of the screen.
 
 Use Subtle for the nudges you want ten times a day and Critical for the one thing that genuinely cannot wait.
 
@@ -557,9 +559,9 @@ a menu bar, overlays on every display, and Spotify.
 ### Promotional text (170)
 
 ```
-Reminders that scale from a quiet card to a full-screen takeover on every display, with a voice coach for your physio exercises. Lives in the menu bar.
+Colour-coded reminders that scale from a quiet card to a full-screen takeover on every display, with a voice coach for your physio exercises. Lives in the menu bar.
 ```
-(151 characters)
+(164 characters)
 
 ### Description (4000)
 
@@ -574,6 +576,8 @@ Every reminder has a priority, and the priority decides how loudly it arrives:
 • Normal: a standard notification, in Notification Centre with everything else.
 • Important: a card with sound that stays on screen until you tick it done or snooze it, whatever Focus mode or notification style is set.
 • Critical: a full-screen overlay on every connected display, which stays until you acknowledge it.
+
+Each level has its own colour, teal, blue, orange and red, carried on the reminder's icon in the menu bar, in Settings and History and on the reminder itself, so you can tell at a glance what matters. A critical takeover glows red at the edges of the screen.
 
 Use Subtle for the nudges you want ten times a day and Critical for the one thing that genuinely cannot wait.
 
@@ -611,9 +615,18 @@ No account, no sync, no tracking. Everything stays on your Mac in one plain JSON
 
 Pauselet is free, and its source is public. It is also available for iPhone, iPad and Windows.
 ```
-(3629 characters)
+(3929 characters)
 
 ### What's New (4000)
+
+For 1.1.0 (both platforms; iOS shows no What's New box until its first
+version is live):
+
+```
+Every reminder now wears its priority colour: teal for Subtle, blue for Normal, orange for Important and red for Critical. You'll see it in the reminder list, History, the reminder cards and the editor. Critical reminders also get a soft red glow around the edges of the screen. Switched-off reminders stay grey.
+```
+
+For the first Mac release (1.0.0):
 
 ```
 Pauselet's first release on the Mac App Store.
