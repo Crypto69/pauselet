@@ -86,12 +86,12 @@ It was built for a wheelchair user who needed pressure-relief reminders that cou
 
 FOUR LEVELS OF INTERRUPTION
 Every reminder has a priority, and the priority decides how loudly it arrives:
-• Subtle: a small card that fades on its own. No sound.
+• Subtle: silent. A small card that fades on its own while the app is open, and a quiet entry in Notification Centre otherwise.
 • Normal: a standard notification.
 • Important: a time-sensitive notification with sound that can get through a Focus mode.
 • Critical: a real alarm that breaks through Silent mode and takes over the screen until you acknowledge it.
 
-Each level has its own colour, teal, blue, orange and red, carried on the reminder's icon in the list, in History and on the reminder itself, so you can tell at a glance what matters. A critical reminder glows red at the edges of the screen.
+Each level has its own colour: teal, blue, orange or red. The reminder's icon wears it in the list and in History, so you can see at a glance what matters, and a critical reminder glows red around the edges of the screen.
 
 Use Subtle for the nudges you want ten times a day and Critical for the one thing that genuinely cannot wait.
 
@@ -127,9 +127,9 @@ Pauselet is free, and its source is public. It is also available for Mac and Win
 ### Keywords (100, comma-separated, no spaces after commas)
 
 ```
-break,stretch,exercise,physio,rehab,pressure relief,posture,water,alarm,habit,timer,wheelchair
+break,stretch,exercise,physio,rehab,pressure relief,posture,water,alarm,habit,timer,wheelchair,pill
 ```
-(94 characters)
+(99 characters)
 
 Do not repeat words that are already in the name or subtitle ("reminders",
 "Pauselet"); Apple indexes those fields already.
