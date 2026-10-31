@@ -244,7 +244,7 @@ Following the previous review, China mainland has been removed from the app's av
 HOW TO SEE THE FOUR PRIORITY TIERS
 1. Open the app and allow notifications and alarms when asked.
 2. Fastest: tap any of the four example reminders installed on first launch (one per tier), scroll to the bottom of the editor and tap Preview. Subtle shows an in-app card, Normal and Important post a real notification, and Critical shows the full-screen takeover. Preview never changes the reminder's schedule or history.
-3. To see a real firing, including the AlarmKit alarm: add a reminder, choose Repeating > Custom, step down to 1 minute, pick a priority and save. A Critical reminder then schedules an AlarmKit alarm that breaks through Silent mode, and opening it shows the takeover.
+3. To see a real firing, including the AlarmKit alarm: add a reminder, choose Repeating, set Every to Custom, and tap the minus button until it reads "Every 1 min" (six taps from the default 30), then pick a priority and save. A Critical reminder then schedules an AlarmKit alarm that breaks through Silent mode, and opening it shows the takeover.
 
 ALARMKIT
 The app uses AlarmKit only for the Critical tier, so a medically necessary reminder (the app was built for a wheelchair user's pressure-relief schedule) cannot be missed. The usage description explains this. If alarm authorisation is denied, critical reminders fall back to time-sensitive notifications.
