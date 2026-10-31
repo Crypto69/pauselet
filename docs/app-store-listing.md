@@ -235,17 +235,25 @@ Optional. Skip for the first submission.
 ```
 Pauselet is a reminder app with no account, no server and no analytics. All data stays on the device.
 
-How to see the four priority tiers quickly:
+WHAT IS NEW IN 1.1.0
+Each priority tier now has its own colour (teal Subtle, blue Normal, orange Important, red Critical), shown on the reminder's icon in the list and History, and the Critical full-screen takeover has a soft red glow at the screen edges. The takeover's Start and Start All buttons were also re-laid out. No new permissions, entitlements or network features.
+
+AVAILABILITY: CHINA MAINLAND REMOVED
+Following the previous review, China mainland has been removed from the app's availability, because the optional "Interpret with AI" feature can send text to OpenAI. The app is not offered in China mainland.
+
+HOW TO SEE THE FOUR PRIORITY TIERS
 1. Open the app and allow notifications and alarms when asked.
-2. Add a reminder, set it to Repeating every 1 minute, and pick a priority. Subtle shows an in-app card; Normal and Important post notifications; Critical schedules an AlarmKit alarm that breaks through Silent mode and shows the full-screen takeover.
-3. The four example reminders installed on first launch also cover one tier each.
+2. Fastest: tap any of the four example reminders installed on first launch (one per tier), scroll to the bottom of the editor and tap Preview. Subtle shows an in-app card, Normal and Important post a real notification, and Critical shows the full-screen takeover. Preview never changes the reminder's schedule or history.
+3. To see a real firing, including the AlarmKit alarm: add a reminder, choose Repeating > Custom, step down to 1 minute, pick a priority and save. A Critical reminder then schedules an AlarmKit alarm that breaks through Silent mode, and opening it shows the takeover.
 
-AlarmKit: the app uses AlarmKit only for the Critical tier, so a medically necessary reminder (the app was built for a wheelchair user's pressure-relief schedule) cannot be missed. The usage description explains this. If alarm authorisation is denied, critical reminders fall back to time-sensitive notifications.
+ALARMKIT
+The app uses AlarmKit only for the Critical tier, so a medically necessary reminder (the app was built for a wheelchair user's pressure-relief schedule) cannot be missed. The usage description explains this. If alarm authorisation is denied, critical reminders fall back to time-sensitive notifications.
 
-Exercise import and the one network feature: in the exercise editor, "Import from Text" > "Read Text" parses the pasted text on the device with no network. An "Interpret with AI" button appears only after the user adds their own OpenAI API key in Settings > Exercise Import. That request goes directly from the device to OpenAI using the user's key; we never receive the text or the key. With no key stored, the app makes no network requests at all. No key is needed to review the app.
+EXERCISE IMPORT AND THE ONE NETWORK FEATURE
+In the exercise editor, "Import from Text" > "Read Text" parses the pasted text on the device with no network. An "Interpret with AI" button appears only after the user adds their own OpenAI API key in Settings > Exercise Import. That request goes directly from the device to OpenAI using the user's own key; we never receive the text or the key, and the app has no built-in chatbot or AI service of its own. With no key stored, the app makes no network requests at all. No key is needed to review the app.
 
+OTHER
 The Live Activity / widget extension exists only to display the AlarmKit alarm UI; it has no standalone Home Screen widget.
-
 Background modes: "fetch" is used to re-arm upcoming reminders; nothing runs continuously.
 ```
 
