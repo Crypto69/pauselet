@@ -27,6 +27,23 @@ public static class Program
     private static ToastPresenter? _notifier;
     private static DispatcherTimer? _tickTimer;
 
+    /// <summary>How often the watchdog checks that ticks are still arriving.</summary>
+    private static readonly TimeSpan WatchdogInterval = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long without a tick before the watchdog rebuilds the timer: three
+    /// missed ticks, so an ordinary busy moment on the UI thread never trips it.
+    /// </summary>
+    private static readonly TimeSpan TickStaleAfter = TimeSpan.FromSeconds(20);
+
+    private static System.Threading.Timer? _watchdog;
+
+    /// <summary>
+    /// When the last tick ran, as UTC ticks. Written on the UI thread and
+    /// read by the watchdog on the thread pool, hence Interlocked.
+    /// </summary>
+    private static long _lastTickUtcTicks = DateTime.UtcNow.Ticks;
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -149,21 +166,64 @@ public static class Program
 
     private static void StartTicking()
     {
+        RestartTicking("startup");
+        _watchdog = new System.Threading.Timer(
+            _ => CheckTickIsAlive(), null, WatchdogInterval, WatchdogInterval
+        );
+    }
+
+    /// <summary>
+    /// Throws the tick timer away and starts a fresh one, then ticks at once.
+    ///
+    /// A DispatcherTimer that was running when the PC hibernated can come
+    /// back stalled: it stays silent for about as long as the machine was
+    /// off, so every reminder after wake arrives that much late, until a
+    /// relaunch builds a new timer. Building a new timer here does what the
+    /// relaunch did. The engine works from the wall clock, so ticking late
+    /// never loses a reminder; it only delays it.
+    /// </summary>
+    private static void RestartTicking(string reason)
+    {
+        _tickTimer?.Stop();
         _tickTimer = new DispatcherTimer { Interval = TickInterval };
-        _tickTimer.Tick += (_, _) =>
-        {
-            _engine?.Tick();
-            _tray?.Refresh();
-        };
+        _tickTimer.Tick += (_, _) => RunTick();
         _tickTimer.Start();
+        if (reason != "startup") Log.Line($"ticking restarted: {reason}");
+        RunTick();
+    }
+
+    private static void RunTick()
+    {
+        Interlocked.Exchange(ref _lastTickUtcTicks, DateTime.UtcNow.Ticks);
         _engine?.Tick();
         _tray?.Refresh();
     }
 
     /// <summary>
-    /// Tick immediately on wake and on unlock. The timer does not fire while
-    /// the machine sleeps, so without this the first post-wake reminder would
-    /// be late by up to one tick and the tooltip would show a stale value.
+    /// The backstop for the wake handler. Windows does not always say it
+    /// resumed: SystemEvents reports no resume for an unattended wake, and
+    /// Modern Standby machines send no suspend or resume at all. This timer
+    /// runs on the thread pool, whose clock is separate from the dispatcher's,
+    /// and rebuilds the tick timer whenever the wall clock shows no tick for
+    /// several intervals: after any sleep, hibernate, or a stalled timer.
+    /// A clock set backwards counts too, since the gap then reads as
+    /// negative.
+    /// </summary>
+    private static void CheckTickIsAlive()
+    {
+        var last = new DateTime(Interlocked.Read(ref _lastTickUtcTicks), DateTimeKind.Utc);
+        var gap = DateTime.UtcNow - last;
+        if (gap >= TimeSpan.Zero && gap < TickStaleAfter) return;
+        // Push the stamp forward so a busy dispatcher is not sent a queue of
+        // restarts while the first one is still waiting to run.
+        Interlocked.Exchange(ref _lastTickUtcTicks, DateTime.UtcNow.Ticks);
+        RunOnDispatcher(() => RestartTicking($"no tick for {gap.TotalSeconds:F0} s"));
+    }
+
+    /// <summary>
+    /// Restart ticking on wake and on unlock, so the first reminder after
+    /// wake is not late and the tooltip is never stale. The timer is rebuilt,
+    /// not just nudged; see <see cref="RestartTicking"/>.
     /// </summary>
     private static void ObserveSystemEvents()
     {
@@ -182,11 +242,7 @@ public static class Program
             return;
         }
         if (e.Mode != PowerModes.Resume) return;
-        RunOnDispatcher(() =>
-        {
-            _engine?.Tick();
-            _tray?.Refresh();
-        });
+        RunOnDispatcher(() => RestartTicking("resume"));
     }
 
     private static void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -204,8 +260,7 @@ public static class Program
             // A toast that fired against the lock screen may have been
             // swallowed; the availability re-check keeps the fallback honest.
             _notifier?.RefreshAvailability();
-            _engine?.Tick();
-            _tray?.Refresh();
+            RestartTicking("unlock");
         });
     }
 
@@ -221,6 +276,7 @@ public static class Program
 
     private static void Stop()
     {
+        _watchdog?.Dispose();
         _tickTimer?.Stop();
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         SystemEvents.SessionSwitch -= OnSessionSwitch;
