@@ -54,21 +54,15 @@ public sealed class FileDataStore : IDataStoring
     public string FilePath { get; }
     private readonly object _gate = new();
 
-    /// <summary>The folder the app stores data in, under the roaming app-data directory.</summary>
-    internal const string DirectoryName = "Pauselet";
-
     /// <summary>
-    /// The default location: <c>%APPDATA%\Pauselet\data.json</c> on Windows.
-    /// (The Mac app's legacy-directory migration has no counterpart here —
-    /// there has never been a Windows install under the old name.)
+    /// The default location: <c>data.json</c> in <see cref="DataLocation.Directory"/>,
+    /// which is <c>%APPDATA%\Pauselet</c> for the zip build. (The Mac app's
+    /// legacy-directory migration has no counterpart here — there has never
+    /// been a Windows install under the old name.)
     /// </summary>
     public static string DefaultFilePath()
     {
-        var baseDirectory = Environment.GetFolderPath(
-            Environment.SpecialFolder.ApplicationData,
-            Environment.SpecialFolderOption.Create
-        );
-        var directory = Path.Combine(baseDirectory, DirectoryName);
+        var directory = DataLocation.Directory;
         Directory.CreateDirectory(directory);
         return Path.Combine(directory, "data.json");
     }

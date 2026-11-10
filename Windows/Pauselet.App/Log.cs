@@ -1,9 +1,11 @@
 using System.IO;
+using Pauselet.Core;
 
 namespace Pauselet.App;
 
 /// <summary>
-/// A minimal append-only log at <c>%APPDATA%\Pauselet\app.log</c>.
+/// A minimal append-only log: <c>app.log</c> in <see cref="DataLocation.Directory"/>
+/// (<c>%APPDATA%\Pauselet</c> for the zip build).
 ///
 /// The app is a resident background process with no console: when something
 /// goes wrong at 3am — or during a headless VM test — this file is the only
@@ -19,10 +21,7 @@ internal static class Log
         if (_path is not null) return _path;
         try
         {
-            var directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Pauselet"
-            );
+            var directory = DataLocation.Directory;
             Directory.CreateDirectory(directory);
             _path = Path.Combine(directory, "app.log");
             return _path;

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Microsoft Store (MSIX) package manifest. Windows/Packaging/build_msix.ps1
+  replaces $VERSION$ (a.b.c.0; the Store owns the fourth part) and $ARCH$.
+
+  Identity Name, Publisher and PublisherDisplayName are Partner Center's
+  (Pauselet → Product identity) and must match it exactly, or the upload is
+  rejected. PackageInfo.StoreFamilyName in Pauselet.App is derived from them.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap5 desktop com rescap">
+
+  <Identity
+    Name="ChristianVenter.Pauselet"
+    Publisher="CN=A9FDB87E-0797-430A-BD2F-CE93A83762B7"
+    Version="$VERSION$"
+    ProcessorArchitecture="$ARCH$" />
+
+  <Properties>
+    <DisplayName>Pauselet</DisplayName>
+    <PublisherDisplayName>Christian Venter</PublisherDisplayName>
+    <Logo>Images\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- MinVersion matches TargetPlatformMinVersion in Pauselet.App.csproj (Windows 10 1809). -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-AU" />
+  </Resources>
+
+  <Applications>
+    <!-- Must stay the first (only) Application: the notification toolkit reads Application[1]. -->
+    <Application Id="Pauselet" Executable="Pauselet.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Pauselet"
+        Description="Break and exercise reminders that interrupt only as much as you choose."
+        BackgroundColor="transparent"
+        Square150x150Logo="Images\Square150x150Logo.png"
+        Square44x44Logo="Images\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- Launch at login. TaskId must match LaunchAtLogin.StartupTaskId.
+             Off until the user ticks it in Settings, like the zip build. -->
+        <uap5:Extension Category="windows.startupTask" Executable="Pauselet.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask TaskId="PauseletStartup" Enabled="false" DisplayName="Pauselet" />
+        </uap5:Extension>
+
+        <!-- Notification buttons (Done, Snooze) activate the app through this
+             COM class. Arguments must be exactly -ToastActivated: the toolkit
+             checks it, and Program treats such a launch as a background one. -->
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="Pauselet.exe" Arguments="-ToastActivated" DisplayName="Pauselet notifications">
+              <com:Class Id="44CEE83D-C596-4796-A9E5-0F1758218182" DisplayName="Pauselet notifications" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="44CEE83D-C596-4796-A9E5-0F1758218182" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Only the optional AI import goes online, to api.openai.com. -->
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

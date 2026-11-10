@@ -381,6 +381,20 @@ internal sealed class SettingsWindow : Window
                 // the data file in sync with it.
                 LaunchAtLogin.SetEnabled(value);
                 UpdateSettings(s => s with { LaunchAtLogin = LaunchAtLogin.IsEnabled });
+                if (value && LaunchAtLogin.IsBlockedBySystem)
+                {
+                    // Store build only: Windows keeps the user's own "off"
+                    // and will not let the app override it.
+                    MessageBox.Show(
+                        this,
+                        "Windows has Pauselet switched off as a startup app. " +
+                        "Turn it on in Windows Settings → Apps → Startup.",
+                        "Launch at login",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information
+                    );
+                    OpenUri("ms-settings:startupapps");
+                }
             }
         ));
         stack.Children.Add(CheckRow(

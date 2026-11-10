@@ -218,6 +218,23 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
+      # An unsigned MSIX for the Microsoft Store: Partner Center signs it when
+      # it publishes. It cannot be installed as it is, so it goes to its own
+      # workflow artifact and never to the GitHub Release (which attaches only
+      # the zips). Download it from the run and upload it in Partner Center.
+      - name: Package MSIX for the Microsoft Store
+        shell: pwsh
+        run: |
+          $v = '${{ needs.version.outputs.app_version }}'
+          ./Windows/Packaging/build_msix.ps1 -PublishDir publish/win-x64 -Version $v -Arch x64 `
+            -Output "msix/Pauselet-$v-windows-x64.msix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-msix
+          path: msix/*.msix
+          if-no-files-found: error
+
   ios:
     name: iOS
     needs: version

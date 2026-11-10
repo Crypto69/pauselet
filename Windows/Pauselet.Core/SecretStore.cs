@@ -58,11 +58,8 @@ public sealed class DpapiSecretStore : ISecretStore
         _path = path ?? DefaultPath();
     }
 
-    /// <summary>Beside data.json, under the app's roaming application data.</summary>
-    public static string DefaultPath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Pauselet",
-        "secrets.dat");
+    /// <summary>Beside data.json, in <see cref="DataLocation.Directory"/>.</summary>
+    public static string DefaultPath() => Path.Combine(DataLocation.Directory, "secrets.dat");
 
     public string? Read(string account)
     {

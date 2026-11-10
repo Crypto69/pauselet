@@ -17,6 +17,9 @@ namespace Pauselet.App;
 /// </summary>
 internal sealed class ExerciseImportWindow : Window
 {
+    /// <summary>Where "Report a problem with an AI result" goes.</summary>
+    private const string ReportAIProblemUrl = "https://github.com/Crypto69/pauselet/issues";
+
     private const string Placeholder =
         "3 sets of 10 chin tucks, hold 5 seconds, rest 30 seconds between sets\n"
         + "Wall slides 3 x 15";
@@ -178,6 +181,38 @@ internal sealed class ExerciseImportWindow : Window
         _clear.Click += (_, _) => Reset();
         actions.Children.Add(_clear);
         body.Children.Add(actions);
+
+        // Microsoft Store policy 11.16: an app that shows generative-AI output
+        // must give users a way to report a bad result to the developer.
+        if (_ai.IsConfigured)
+        {
+            var report = new System.Windows.Documents.Hyperlink(
+                new System.Windows.Documents.Run("Report a problem with an AI result")
+            )
+            {
+                NavigateUri = new Uri(ReportAIProblemUrl),
+                Foreground = Theme.Brush(palette.SecondaryForeground),
+            };
+            report.RequestNavigate += (_, e) =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }
+                    );
+                }
+                catch
+                {
+                    // No browser: nothing useful to do.
+                }
+                e.Handled = true;
+            };
+            body.Children.Add(new TextBlock(report)
+            {
+                FontSize = 11,
+                Margin = new Thickness(0, 6, 0, 0),
+            });
+        }
 
         _errorMessage = new TextBlock
         {

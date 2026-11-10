@@ -44,18 +44,46 @@ public static class Program
     /// </summary>
     private static long _lastTickUtcTicks = DateTime.UtcNow.Ticks;
 
+    /// <summary>
+    /// Set by a second copy to ask the running one to show its window: under
+    /// the Store, opening Pauselet from Start while it already runs in the
+    /// tray is the normal way to "open" it.
+    /// </summary>
+    private const string ShowEventName = "com.pauselet.pauselet.show";
+
+    private static LaunchKind _launchKind;
+    private static EventWaitHandle? _showEvent;
+    private static RegisteredWaitHandle? _showWait;
+
     [STAThread]
     public static void Main(string[] args)
     {
+        // Before anything logs, loads or saves: the Store build keeps its
+        // files in the package's own folder.
+        PackageInfo.ConfigureDataLocation();
+        _launchKind = PackageInfo.ReadLaunchKind(args);
+
+        // The zip copy steps aside once the Store copy is installed.
+        if (PackageInfo.HandOverToStoreBuildIfInstalled())
+        {
+            return;
+        }
+
         // Single instance: LaunchServices did this for free on the Mac; here a
-        // named mutex does. A second copy simply exits.
+        // named mutex does. A second copy asks the first to show its window,
+        // unless it was only started for a notification button, then exits.
         using var mutex = new Mutex(
             initiallyOwned: true, "com.pauselet.pauselet.single-instance", out var isFirst
         );
         if (!isFirst)
         {
+            if (!args.Any(a => a.Equals("-ToastActivated", StringComparison.OrdinalIgnoreCase)))
+            {
+                SignalRunningCopyToShow();
+            }
             return;
         }
+        PackageInfo.ImportZipDataIfNeeded();
 
         var app = new Application
         {
@@ -155,12 +183,50 @@ public static class Program
         ObserveSystemEvents();
         Log.Line("startup: ticking");
 
+        ListenForShowRequests();
+
         // `--open-settings` opens the settings window straight after launch —
         // handy for testing, since it is otherwise only reachable through the
-        // tray.
-        if (args.Contains("--open-settings"))
+        // tray. The Store build also opens it when the user starts Pauselet
+        // from Start or the Store: a tray-only app that shows nothing looks
+        // broken, and Windows 11 hides new tray icons in the overflow.
+        if (args.Contains("--open-settings") || _launchKind == LaunchKind.Interactive)
         {
             _tray.OpenSettings();
+        }
+    }
+
+    private static void SignalRunningCopyToShow()
+    {
+        try
+        {
+            if (EventWaitHandle.TryOpenExisting(ShowEventName, out var handle))
+            {
+                using (handle) handle.Set();
+            }
+        }
+        catch
+        {
+            // The running copy just stays in the tray.
+        }
+    }
+
+    private static void ListenForShowRequests()
+    {
+        try
+        {
+            _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+            _showWait = ThreadPool.RegisterWaitForSingleObject(
+                _showEvent,
+                (_, _) => RunOnDispatcher(() => _tray?.OpenSettings()),
+                null,
+                Timeout.Infinite,
+                executeOnlyOnce: false
+            );
+        }
+        catch (Exception exception)
+        {
+            Log.Error("show requests unavailable", exception);
         }
     }
 
@@ -277,6 +343,8 @@ public static class Program
     private static void Stop()
     {
         _watchdog?.Dispose();
+        _showWait?.Unregister(null);
+        _showEvent?.Dispose();
         _tickTimer?.Stop();
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         SystemEvents.SessionSwitch -= OnSessionSwitch;
