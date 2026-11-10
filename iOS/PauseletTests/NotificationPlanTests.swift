@@ -74,6 +74,67 @@ final class NotificationPlanTests: XCTestCase {
         XCTAssertEqual(Set(plan.items.map(\.reminderID)).count, 31)
     }
 
+    // MARK: - Advance warnings
+
+    private func warned(createdAt: Date) -> Reminder {
+        Reminder(
+            title: "Screen break",
+            schedule: .timedInterval(
+                minutes: 50, startHour: 5, startMinute: 45,
+                endHour: 13, endMinute: 0, weekdays: [2, 3, 4, 5, 6]
+            ),
+            priority: .critical, warningMinutes: 5, createdAt: createdAt
+        )
+    }
+
+    /// The alarm carries the takeover; the warning before it is still a
+    /// notification — under its own prefix, so it is never reconciled as the
+    /// reminder firing.
+    func testWarningsAreScheduledEvenWhenAlarmsCarryTheTakeover() {
+        let now = date(2026, 3, 9, 5, 0) // a Monday
+        let r = warned(createdAt: now)
+        let plan = NotificationPlan.build(
+            reminders: [r], settings: Settings(), now: now,
+            alarmsCarrying: [r.id], calendar: calendar
+        )
+        XCTAssertFalse(plan.items.isEmpty)
+        XCTAssertTrue(plan.items.allSatisfy(\.isWarning))
+        let first = plan.items.min { $0.fireDate < $1.fireDate }
+        XCTAssertEqual(first?.fireDate, date(2026, 3, 9, 5, 40))
+        XCTAssertEqual(first?.stampDate, date(2026, 3, 9, 5, 45))
+        XCTAssertEqual(first?.title, "Coming up: Screen break")
+        XCTAssertEqual(first?.body, "Takes over your screen at 05:45.")
+        XCTAssertEqual(first?.interruption, .timeSensitive)
+        XCTAssertTrue(first?.identifier.hasPrefix(NotificationPlan.warningPrefix) ?? false)
+        XCTAssertFalse(first?.identifier.hasPrefix(NotificationPlan.identifierPrefix) ?? true)
+    }
+
+    func testUncarriedCriticalGetsBothItsFiresAndItsWarnings() {
+        let now = date(2026, 3, 9, 5, 0)
+        let r = warned(createdAt: now)
+        let plan = NotificationPlan.build(
+            reminders: [r], settings: Settings(), now: now,
+            alarmsCarrying: [], calendar: calendar
+        )
+        XCTAssertTrue(plan.items.contains { !$0.isWarning && $0.fireDate == date(2026, 3, 9, 5, 45) })
+        XCTAssertTrue(plan.items.contains { $0.isWarning && $0.fireDate == date(2026, 3, 9, 5, 40) })
+        XCTAssertLessThanOrEqual(plan.items.count, NotificationPlan.budget)
+    }
+
+    /// Nothing records that a warning was shown, so one already due is left
+    /// out rather than posted again on every refill.
+    func testAWarningAlreadyDueIsNotScheduled() {
+        let r = warned(createdAt: date(2026, 3, 9, 5, 0))
+        let plan = NotificationPlan.build(
+            reminders: [r], settings: Settings(), now: date(2026, 3, 9, 5, 43),
+            alarmsCarrying: [r.id], calendar: calendar
+        )
+        XCTAssertFalse(plan.items.contains { $0.stampDate == date(2026, 3, 9, 5, 45) })
+        XCTAssertEqual(
+            plan.items.map(\.fireDate).min(), date(2026, 3, 9, 6, 30)
+        )
+    }
+
     func testCriticalExcludedWhenAlarmsCarryIt() {
         let now = date(2026, 3, 10, 9, 0)
         let critical = reminder(priority: .critical, createdAt: now)

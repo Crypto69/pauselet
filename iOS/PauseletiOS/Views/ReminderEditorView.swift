@@ -35,6 +35,8 @@ struct ReminderEditorView: View {
     @State private var hasEndTime: Bool
     @State private var endTime: Date
     @State private var hasActivityDuration: Bool
+    @State private var hasWarning: Bool
+    @State private var warningMinutes: Int
     @State private var activityMinutes: Int
     @State private var soundName: String?
     @State private var usesCustomDisplaySeconds: Bool
@@ -89,6 +91,8 @@ struct ReminderEditorView: View {
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
+        _hasWarning = State(initialValue: reminder?.warningMinutes != nil)
+        _warningMinutes = State(initialValue: reminder?.warningMinutes ?? 5)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
 
         // Seed every schedule control with a sensible default, then override
@@ -335,6 +339,55 @@ struct ReminderEditorView: View {
                             )
                         }
                     }
+
+                    Section {
+                        HelpRow(
+                            title: "Warn me before it takes over",
+                            help: "Sends a notification a set time before the "
+                                + "full-screen takeover, so it never arrives "
+                                + "unannounced."
+                        ) {
+                            Toggle("", isOn: $hasWarning.animation()).labelsHidden()
+                        }
+                        .accessibilityIdentifier("editorWarning")
+                        if hasWarning {
+                            Stepper(value: $warningMinutes, in: Scheduler.warningMinutesRange) {
+                                HStack(spacing: 6) {
+                                    TextField("", value: $warningMinutes, format: .number)
+                                        .keyboardType(.numberPad)
+                                        .multilineTextAlignment(.trailing)
+                                        .monospacedDigit()
+                                        .frame(width: 56)
+                                        .accessibilityLabel("Minutes before")
+                                    Text(warningMinutes == 1 ? "minute before" : "minutes before")
+                                }
+                            }
+                            .onChange(of: warningMinutes) { _, value in
+                                let range = Scheduler.warningMinutesRange
+                                let clamped = min(max(value, range.lowerBound), range.upperBound)
+                                if clamped != value { warningMinutes = clamped }
+                            }
+                            if Scheduler.warningOutlastsInterval(
+                                warningMinutes, schedule: composedSchedule
+                            ) {
+                                Label(
+                                    "That is as long as the repeat interval, so there is "
+                                        + "no time to warn before each takeover.",
+                                    systemImage: "exclamationmark.triangle"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            }
+                        }
+                    } header: {
+                        Text("Warning")
+                    } footer: {
+                        Text(
+                            "A time-sensitive notification. To keep it on screen until "
+                                + "you clear it, set Pauselet's banner style to "
+                                + "Persistent in Settings › Notifications."
+                        )
+                    }
                 }
 
                 Section {
@@ -525,6 +578,12 @@ struct ReminderEditorView: View {
         // Cleared for any tier that cannot show it (see the editor section).
         reminder.activityDurationSeconds =
             effectivePriority == .critical && hasActivityDuration ? activityMinutes * 60 : nil
+        reminder.warningMinutes = effectivePriority == .critical && hasWarning
+            ? min(
+                max(warningMinutes, Scheduler.warningMinutesRange.lowerBound),
+                Scheduler.warningMinutesRange.upperBound
+            )
+            : nil
         // Tidied (trimmed, line endings unified, empty collapsed to nil) so
         // the same list serializes identically on every platform.
         reminder.exercises = type == .exercise ? Exercise.normalized(exercises) : nil

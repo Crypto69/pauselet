@@ -85,6 +85,11 @@ Three kinds of schedule:
 - **A countdown** — Critical reminders only: for a timed activity ("tilt back
   for five minutes"), the takeover runs a timer of that length. The option is
   hidden for other tiers, whose surfaces have nowhere to show it
+- **A warning** — Critical reminders only: a card that appears any number of
+  minutes before the takeover (one minute up to a day) — "Coming up: Tilt Back.
+  Takes over your screen at 05:45." — and stays until you tick it. Ticking it
+  does not move the takeover. On iPhone it is a time-sensitive notification;
+  set Pauselet's banner style to Persistent to keep it on screen
 - **A sound** — the tier default, or a specific one you pick
 - **How long a subtle card lingers** — per reminder, overriding the global setting
 - **Music** — a Spotify playlist to start when it fires (see below)

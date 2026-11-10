@@ -17,16 +17,26 @@ namespace Pauselet.App;
 /// hijacking attention, so it is quiet, small, disappears on its own, and —
 /// via WS_EX_NOACTIVATE — never steals keyboard focus from what the user is
 /// typing into. It stays clickable: the checkmark marks the reminder done.
+///
+/// The same card carries a Critical reminder's advance warning: given
+/// <c>warning</c> text and no display time, it shows that text in the
+/// Critical colour and stays until its tick is clicked.
 /// </summary>
 internal sealed class SubtleCardWindow : Window
 {
     private readonly Action _onComplete;
     private readonly Action _onTimedOut;
-    private readonly DispatcherTimer _dismissTimer;
+    private readonly DispatcherTimer? _dismissTimer;
     private bool _closing;
 
+    /// <param name="displaySeconds">
+    /// How long before the card dismisses itself; <c>null</c> keeps it until
+    /// the tick is clicked.
+    /// </param>
+    /// <param name="warning">Title and message replacing the reminder's own.</param>
     public SubtleCardWindow(
-        Reminder reminder, int displaySeconds, Action onComplete, Action onTimedOut)
+        Reminder reminder, int? displaySeconds, Action onComplete, Action onTimedOut,
+        (string Title, string Message)? warning = null)
     {
         _onComplete = onComplete;
         _onTimedOut = onTimedOut;
@@ -49,7 +59,7 @@ internal sealed class SubtleCardWindow : Window
         Left = workArea.Right - Width - 16;
         Top = workArea.Top + 16;
 
-        Content = BuildContent(reminder);
+        Content = BuildContent(reminder, warning);
 
         SourceInitialized += (_, _) =>
         {
@@ -69,16 +79,17 @@ internal sealed class SubtleCardWindow : Window
             );
         };
 
-        _dismissTimer = new DispatcherTimer
+        if (displaySeconds is { } seconds)
         {
-            Interval = TimeSpan.FromSeconds(displaySeconds),
-        };
-        _dismissTimer.Tick += (_, _) =>
-        {
-            _dismissTimer.Stop();
-            _onTimedOut();
-        };
-        _dismissTimer.Start();
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                _onTimedOut();
+            };
+            timer.Start();
+            _dismissTimer = timer;
+        }
     }
 
     /// <summary>Fades out and closes; safe to call more than once.</summary>
@@ -86,13 +97,13 @@ internal sealed class SubtleCardWindow : Window
     {
         if (_closing) return;
         _closing = true;
-        _dismissTimer.Stop();
+        _dismissTimer?.Stop();
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(200));
         fade.Completed += (_, _) => Close();
         BeginAnimation(OpacityProperty, fade);
     }
 
-    private UIElement BuildContent(Reminder reminder)
+    private UIElement BuildContent(Reminder reminder, (string Title, string Message)? warning)
     {
         var palette = Theme.Current;
 
@@ -105,7 +116,10 @@ internal sealed class SubtleCardWindow : Window
 
         // The tier's colour, matching the reminder's dot in the flyout: this
         // card also stands in for Normal and Important when a toast fails.
-        var tier = Theme.PriorityColor(reminder.Priority);
+        // A warning takes the Critical colour: that is what is coming.
+        var tier = Theme.PriorityColor(warning is null ? reminder.Priority : Priority.Critical);
+        var titleText = warning?.Title ?? reminder.Title;
+        var messageText = warning?.Message ?? reminder.Message;
         var icon = Ui.Glyph(reminder.SymbolName, 24, Theme.Brush(tier));
         icon.Width = 30;
         icon.Margin = new Thickness(0, 0, 14, 0);
@@ -114,13 +128,13 @@ internal sealed class SubtleCardWindow : Window
 
         var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var title = Ui.Text(
-            reminder.Title, 14, Theme.Brush(palette.Foreground), FontWeights.SemiBold
+            titleText, 14, Theme.Brush(palette.Foreground), FontWeights.SemiBold
         );
         textStack.Children.Add(title);
-        if (reminder.Message.Length > 0)
+        if (messageText.Length > 0)
         {
             var message = Ui.Text(
-                reminder.Message, 12, Theme.Brush(palette.SecondaryForeground)
+                messageText, 12, Theme.Brush(palette.SecondaryForeground)
             );
             // Four lines rather than two: at two, a normal sentence was being
             // cut off mid-word, and a reminder you cannot finish reading has
@@ -133,11 +147,12 @@ internal sealed class SubtleCardWindow : Window
         Grid.SetColumn(textStack, 1);
         grid.Children.Add(textStack);
 
-        // Completing from the card is the fast path for "done".
+        // Completing from the card is the fast path for "done". A warning's
+        // tick is full strength: it is the only way the card goes away.
         var check = Ui.IconButton(
             Ui.Glyph("checkmark.circle.fill", 21,
-                Theme.Brush(Color.FromArgb(160, 92, 184, 171))),
-            tooltip: "Mark as done"
+                Theme.Brush(Color.FromArgb(warning is null ? (byte)160 : (byte)255, 92, 184, 171))),
+            tooltip: warning is null ? "Mark as done" : "Got it"
         );
         check.VerticalAlignment = VerticalAlignment.Center;
         check.Margin = new Thickness(10, 0, 0, 0);
@@ -151,7 +166,7 @@ internal sealed class SubtleCardWindow : Window
             Background = Theme.Brush(palette.CardBackground),
             // Important's card carries an orange hairline, as on the Mac, so
             // one that will not time out is told apart from a passing nudge.
-            BorderBrush = reminder.Priority == Priority.Important
+            BorderBrush = reminder.Priority == Priority.Important || warning is not null
                 ? Theme.Brush(Color.FromArgb(89, tier.R, tier.G, tier.B))
                 : Theme.Brush(palette.Divider),
             BorderThickness = new Thickness(1),

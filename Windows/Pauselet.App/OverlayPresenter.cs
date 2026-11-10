@@ -34,6 +34,16 @@ internal sealed class OverlayPresenter : IReminderPresenting
     private ExerciseCoach? _criticalCoach;
 
     private SubtleCardWindow? _subtleCard;
+
+    /// <summary>
+    /// A Critical reminder's advance warning: its own corner card above the
+    /// Subtle one, staying until its tick is clicked. One at a time; others
+    /// wait their turn.
+    /// </summary>
+    private SubtleCardWindow? _warningCard;
+    private Guid? _warningFor;
+    private readonly List<(Reminder Reminder, Instant TakeoverAt, Core.Settings Settings)>
+        _warningQueue = [];
     private readonly List<(Reminder Reminder, Core.Settings Settings, int MinimumSeconds)>
         _subtleQueue = [];
 
@@ -74,10 +84,90 @@ internal sealed class OverlayPresenter : IReminderPresenting
         }
     }
 
+    public void PresentWarning(Reminder reminder, Instant takeoverAt, Core.Settings settings)
+    {
+        if (_warningCard is not null)
+        {
+            var pending = _warningFor == reminder.Id
+                || _warningQueue.Any(q => q.Reminder.Id == reminder.Id);
+            if (!pending) _warningQueue.Add((reminder, takeoverAt, settings));
+            return;
+        }
+        DisplayWarning(reminder, takeoverAt, settings);
+    }
+
+    private void DisplayWarning(Reminder reminder, Instant takeoverAt, Core.Settings settings)
+    {
+        // The default chime: the reminder's own sound belongs to the takeover.
+        if (settings.PlaysSound(Priority.Important)) Sounds.Play("Glass");
+        var card = new SubtleCardWindow(
+            reminder,
+            displaySeconds: null,
+            // The tick only takes the warning down; the takeover still comes.
+            onComplete: DismissWarningAndAdvance,
+            onTimedOut: DismissWarningAndAdvance,
+            warning: (Warnings.Title(reminder), Warnings.Message(takeoverAt, SystemZone.Current))
+        );
+        _warningCard = card;
+        _warningFor = reminder.Id;
+        card.Loaded += (_, _) => LayoutCorner();
+        card.Show();
+        LayoutCorner();
+    }
+
+    private void DismissWarningAndAdvance()
+    {
+        CloseWarningCard();
+        if (_warningQueue.Count > 0)
+        {
+            var next = _warningQueue[0];
+            _warningQueue.RemoveAt(0);
+            DisplayWarning(next.Reminder, next.TakeoverAt, next.Settings);
+        }
+    }
+
+    private void CloseWarningCard()
+    {
+        var card = _warningCard;
+        _warningCard = null;
+        _warningFor = null;
+        card?.CloseCard();
+        LayoutCorner();
+    }
+
+    /// <summary>
+    /// A warning has nothing left to say once its takeover arrives: take it
+    /// off screen, and out of the queue, before the takeover covers it.
+    /// </summary>
+    private void DropWarnings(Guid id)
+    {
+        _warningQueue.RemoveAll(q => q.Reminder.Id == id);
+        if (_warningFor == id) DismissWarningAndAdvance();
+    }
+
+    /// <summary>
+    /// Stacks the corner: a warning at the top, the Subtle card just under
+    /// it — the Mac's Important-over-Subtle arrangement — so neither covers
+    /// the other.
+    /// </summary>
+    private void LayoutCorner()
+    {
+        var top = System.Windows.SystemParameters.WorkArea.Top + 16;
+        if (_warningCard is { } warning)
+        {
+            warning.Top = top;
+            // The window's bottom margin already leaves the shadow room.
+            top += warning.ActualHeight > 0 ? warning.ActualHeight - 4 : 104;
+        }
+        if (_subtleCard is { } subtle) subtle.Top = top;
+    }
+
     public void DismissAll()
     {
         _criticalQueue.Clear();
         _subtleQueue.Clear();
+        _warningQueue.Clear();
+        CloseWarningCard();
         // The coach goes with the takeover; left running it would keep
         // speaking and chiming with nothing on screen.
         ShutDownCoach();
@@ -116,6 +206,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
 
     private void ShowCritical(Reminder reminder, Core.Settings settings, bool isPreview)
     {
+        if (!isPreview) DropWarnings(reminder.Id);
         if (_criticalWindows.Count > 0)
         {
             if (isPreview)
@@ -373,6 +464,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
         );
         _subtleCard = card;
         card.Show();
+        LayoutCorner();
     }
 
     /// <summary>Takes the current card down and shows the next queued one, if any.</summary>

@@ -191,6 +191,11 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// means none; only meaningful on an exercise reminder, and never stored
     /// as 0 — the editor collapses that to `nil`.
     public var restBetweenExercisesSeconds: Int?
+    /// Minutes before a Critical takeover to show a warning card, so it does
+    /// not land unannounced. `nil` means no warning; only meaningful on the
+    /// Critical tier, and never stored as 0 — the editor collapses that to
+    /// `nil`.
+    public var warningMinutes: Int?
     /// When the reminder last fired. Drives interval scheduling.
     public var lastFiredAt: Date?
     /// When the reminder was last acknowledged (completed or dismissed).
@@ -213,6 +218,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         music: MusicChoice = .none,
         exercises: [Exercise]? = nil,
         restBetweenExercisesSeconds: Int? = nil,
+        warningMinutes: Int? = nil,
         lastFiredAt: Date? = nil,
         lastAcknowledgedAt: Date? = nil,
         snoozedUntil: Date? = nil,
@@ -231,6 +237,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.music = music
         self.exercises = exercises
         self.restBetweenExercisesSeconds = restBetweenExercisesSeconds
+        self.warningMinutes = warningMinutes
         self.lastFiredAt = lastFiredAt
         self.lastAcknowledgedAt = lastAcknowledgedAt
         self.snoozedUntil = snoozedUntil
@@ -280,6 +287,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         restBetweenExercisesSeconds = try container.decodeIfPresent(
             Int.self, forKey: .restBetweenExercisesSeconds
         )
+        warningMinutes = try container.decodeIfPresent(Int.self, forKey: .warningMinutes)
         lastFiredAt = try container.decodeIfPresent(Date.self, forKey: .lastFiredAt)
         lastAcknowledgedAt = try container.decodeIfPresent(
             Date.self, forKey: .lastAcknowledgedAt

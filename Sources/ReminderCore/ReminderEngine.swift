@@ -9,6 +9,10 @@ import Combine
 @MainActor
 public protocol ReminderPresenting: AnyObject {
     func present(_ reminder: Reminder, settings: Settings)
+    /// Shows a Critical reminder's advance warning: it takes over the screen
+    /// at `takeoverAt`. The warning stays until the user ticks it, and ticking
+    /// it changes nothing in the engine — it is a heads-up, not the reminder.
+    func presentWarning(_ reminder: Reminder, takeoverAt: Date, settings: Settings)
     /// Called when a subtle/normal reminder should be taken off screen because
     /// the engine was paused or the reminder was disabled.
     func dismissAll()
@@ -64,6 +68,10 @@ public final class ReminderEngine: ObservableObject {
     private let dateProvider: DateProviding
     private weak var presenter: ReminderPresenting?
     private let calendar: Calendar
+    /// The takeover each reminder was last warned about, so a warning is
+    /// shown once rather than on every tick of its window. In memory only: a
+    /// relaunch inside the window shows it once more, which is harmless.
+    private var warnedTakeovers: [UUID: Date] = [:]
 
     /// History is capped so the file cannot grow without bound over years of use.
     public static let maxStoredEvents = 2000
@@ -475,9 +483,26 @@ public final class ReminderEngine: ObservableObject {
         if !fired.isEmpty || skippedAny {
             persist()
         }
+        presentDueWarnings(at: current)
 
         refreshNextUp()
         return fired
+    }
+
+    /// Shows the advance warning of every Critical reminder whose warning
+    /// moment has arrived and whose takeover is still ahead. A reminder that
+    /// fired on this tick is judged on its *next* takeover, so it is never
+    /// warned about the one already on screen.
+    private func presentDueWarnings(at current: Date) {
+        for reminder in reminders where reminder.warningMinutes != nil {
+            guard let warning = Scheduler.projectedWarnings(
+                for: reminder, from: current, limit: 1, settings: settings, calendar: calendar
+            ).first, warning.warnAt <= current,
+                warnedTakeovers[reminder.id] != warning.takeoverAt
+            else { continue }
+            warnedTakeovers[reminder.id] = warning.takeoverAt
+            presenter?.presentWarning(reminder, takeoverAt: warning.takeoverAt, settings: settings)
+        }
     }
 
     /// Machine sleep, seen from the tick: several interval reminders lapsed

@@ -14,6 +14,12 @@ public interface IReminderPresenting
 {
     void Present(Reminder reminder, Settings settings);
     /// <summary>
+    /// Shows a Critical reminder's advance warning: it takes over the screen
+    /// at <paramref name="takeoverAt"/>. The warning stays until the user
+    /// ticks it, and ticking it changes nothing in the engine.
+    /// </summary>
+    void PresentWarning(Reminder reminder, Instant takeoverAt, Settings settings);
+    /// <summary>
     /// Called when a subtle/normal reminder should be taken off screen because
     /// the engine was paused or the reminder was disabled.
     /// </summary>
@@ -91,6 +97,12 @@ public sealed class ReminderEngine : ObservableObject
     private readonly IDataStoring _store;
     private readonly IDateProviding _dateProvider;
     private IReminderPresenting? _presenter;
+    /// <summary>
+    /// The takeover each reminder was last warned about, so a warning shows
+    /// once rather than on every tick of its window. In memory only: a
+    /// relaunch inside the window shows it once more, which is harmless.
+    /// </summary>
+    private readonly Dictionary<Guid, Instant> _warnedTakeovers = [];
     private readonly DateTimeZone _zone;
 
     /// <summary>History is capped so the file cannot grow without bound over years of use.</summary>
@@ -590,9 +602,30 @@ public sealed class ReminderEngine : ObservableObject
         {
             Persist();
         }
+        PresentDueWarnings(current);
 
         RefreshNextUp();
         return fired;
+    }
+
+    /// <summary>
+    /// Shows the advance warning of every Critical reminder whose warning
+    /// moment has arrived and whose takeover is still ahead. A reminder that
+    /// fired on this tick is judged on its next takeover.
+    /// </summary>
+    private void PresentDueWarnings(Instant current)
+    {
+        foreach (var reminder in _reminders)
+        {
+            if (reminder.WarningMinutes is null) continue;
+            var warnings = Warnings.Projected(reminder, current, 1, _settings, _zone);
+            if (warnings.Count == 0 || warnings[0].WarnAt > current) continue;
+            var warning = warnings[0];
+            if (_warnedTakeovers.TryGetValue(reminder.Id, out var warned)
+                && warned == warning.TakeoverAt) continue;
+            _warnedTakeovers[reminder.Id] = warning.TakeoverAt;
+            _presenter?.PresentWarning(reminder, warning.TakeoverAt, _settings);
+        }
     }
 
     /// <summary>

@@ -270,6 +270,12 @@ public sealed record Reminder
     /// never stored as 0 — the editor collapses that to <c>null</c>.
     /// </summary>
     public int? RestBetweenExercisesSeconds { get; init; }
+    /// <summary>
+    /// Minutes before a Critical takeover to show a warning card, so it does
+    /// not land unannounced. <c>null</c> means no warning; only meaningful on
+    /// the Critical tier, and never stored as 0.
+    /// </summary>
+    public int? WarningMinutes { get; init; }
     /// <summary>When the reminder last fired. Drives interval scheduling.</summary>
     public Instant? LastFiredAt { get; init; }
     /// <summary>When the reminder was last acknowledged (completed or dismissed).</summary>
@@ -313,6 +319,7 @@ public sealed record Reminder
         && Music == other.Music
         && ExercisesEqual(other.Exercises)
         && RestBetweenExercisesSeconds == other.RestBetweenExercisesSeconds
+        && WarningMinutes == other.WarningMinutes
         && LastFiredAt == other.LastFiredAt
         && LastAcknowledgedAt == other.LastAcknowledgedAt
         && SnoozedUntil == other.SnoozedUntil

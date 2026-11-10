@@ -38,6 +38,8 @@ public sealed class RoutingPresenter : IReminderPresenting
         Routed.Add((reminder.Title, SurfaceFor(reminder.Priority)));
     }
 
+    public void PresentWarning(Reminder reminder, NodaTime.Instant takeoverAt, Settings settings) { }
+
     public void DismissAll() => DismissAllCount += 1;
 }
 

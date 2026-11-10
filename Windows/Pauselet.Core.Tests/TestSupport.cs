@@ -28,9 +28,17 @@ public sealed class RecordingPresenter : IReminderPresenting
     public List<Reminder> Presented { get; } = [];
     public int DismissAllCount { get; private set; }
 
+    /// <summary>Advance warnings, as (reminder title, takeover moment).</summary>
+    public List<(string Title, Instant TakeoverAt)> Warnings { get; } = [];
+
     public void Present(Reminder reminder, Settings settings)
     {
         Presented.Add(reminder);
+    }
+
+    public void PresentWarning(Reminder reminder, Instant takeoverAt, Settings settings)
+    {
+        Warnings.Add((reminder.Title, takeoverAt));
     }
 
     public void DismissAll()

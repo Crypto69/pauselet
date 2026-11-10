@@ -16,6 +16,9 @@ final class NotificationScheduler: NSObject {
         static let complete = "pauselet.complete"
         static let snooze = "pauselet.snooze"
         static let category = "pauselet.reminder"
+        /// An advance warning: one "Got it" button, which only clears it.
+        static let warningCategory = "pauselet.warning"
+        static let gotIt = "pauselet.gotit"
     }
 
     enum ResponseAction {
@@ -32,6 +35,11 @@ final class NotificationScheduler: NSObject {
 
     private nonisolated static let reminderIDKey = "reminderID"
     private nonisolated static let stampKey = "stamp"
+    /// A warning's userInfo deliberately lacks `reminderIDKey`/`stampKey`, so
+    /// the reconciliation paths ignore it; these keys serve only to clear it
+    /// once its takeover has passed or its reminder is gone.
+    private nonisolated static let warningForKey = "warningFor"
+    private nonisolated static let takeoverKey = "takeoverAt"
 
     init(engine: ReminderEngine) {
         self.engine = engine
@@ -54,7 +62,16 @@ final class NotificationScheduler: NSObject {
             // records it, so this one does as well.
             options: [.customDismissAction]
         )
-        center.setNotificationCategories([category])
+        let gotIt = UNNotificationAction(
+            identifier: ActionID.gotIt, title: "Got it", options: []
+        )
+        let warningCategory = UNNotificationCategory(
+            identifier: ActionID.warningCategory,
+            actions: [gotIt],
+            intentIdentifiers: [],
+            options: []
+        )
+        center.setNotificationCategories([category, warningCategory])
     }
 
     @discardableResult
@@ -106,6 +123,7 @@ final class NotificationScheduler: NSObject {
         let pending = await center.pendingNotificationRequests()
         let pendingOurs = Set(pending.map(\.identifier).filter {
             $0.hasPrefix(NotificationPlan.identifierPrefix)
+                || $0.hasPrefix(NotificationPlan.warningPrefix)
         })
 
         let stale = pendingOurs.subtracting(wanted.keys)
@@ -129,6 +147,16 @@ final class NotificationScheduler: NSObject {
         let delivered = await center.deliveredNotifications()
         let orphaned = delivered.compactMap { notification -> String? in
             let request = notification.request
+            if request.identifier.hasPrefix(NotificationPlan.warningPrefix) {
+                // A warning has said its piece once the takeover arrives.
+                let info = request.content.userInfo
+                let takeover = (info[Self.takeoverKey] as? TimeInterval)
+                    .map(Date.init(timeIntervalSince1970:))
+                let id = (info[Self.warningForKey] as? String).flatMap(UUID.init(uuidString:))
+                let lapsed = takeover.map { $0 <= now } ?? true
+                let gone = id.map { !active.contains($0) } ?? true
+                return lapsed || gone ? request.identifier : nil
+            }
             guard request.identifier.hasPrefix(NotificationPlan.identifierPrefix)
                     || request.identifier.hasPrefix(Self.livePrefix),
                   let id = Self.reminderID(from: request.content.userInfo),
@@ -169,11 +197,19 @@ final class NotificationScheduler: NSObject {
         let content = UNMutableNotificationContent()
         content.title = item.title
         if !item.body.isEmpty { content.body = item.body }
-        content.categoryIdentifier = ActionID.category
-        content.userInfo = [
-            Self.reminderIDKey: item.reminderID.uuidString,
-            Self.stampKey: item.stampDate.timeIntervalSince1970,
-        ]
+        if item.isWarning {
+            content.categoryIdentifier = ActionID.warningCategory
+            content.userInfo = [
+                Self.warningForKey: item.reminderID.uuidString,
+                Self.takeoverKey: item.stampDate.timeIntervalSince1970,
+            ]
+        } else {
+            content.categoryIdentifier = ActionID.category
+            content.userInfo = [
+                Self.reminderIDKey: item.reminderID.uuidString,
+                Self.stampKey: item.stampDate.timeIntervalSince1970,
+            ]
+        }
         if item.playsSound {
             if let name = item.soundName {
                 content.sound = UNNotificationSound(
@@ -276,7 +312,9 @@ extension NotificationScheduler: UNUserNotificationCenterDelegate {
 
     /// Foreground delivery policy: pre-scheduled requests are suppressed while
     /// the app is frontmost — the engine's own tick presents the reminder
-    /// in-app within seconds — while live posts and previews show as banners.
+    /// in-app within seconds — while live posts, previews and advance
+    /// warnings (which the in-app presenter leaves to these notifications)
+    /// show as banners.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,

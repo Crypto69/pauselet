@@ -437,30 +437,44 @@ struct OverlayButtonStyle: ButtonStyle {
 /// it silently in a Developer ID build. A window the app owns is subject to
 /// neither, the same reasoning that makes the Critical tier an overlay.
 struct ImportantCardView: View {
+    /// A Critical reminder's advance warning, shown in the same card: its
+    /// own text, the Critical tier's colour, and only the tick — there is
+    /// nothing to snooze, since the warning is not the reminder.
+    struct Warning {
+        let title: String
+        let message: String
+    }
+
     let reminder: Reminder
+    var warning: Warning? = nil
     let onComplete: () -> Void
-    let onSnooze: () -> Void
+    var onSnooze: () -> Void = {}
 
     @State private var appeared = false
 
     /// The done tick's colour, the same teal on every card.
     private static let accent = Color(red: 0.36, green: 0.72, blue: 0.67)
-    /// The icon and hairline take the tier's colour, matching its dot.
-    private static let tierColor = PriorityDot.color(for: .important)
+    /// The icon and hairline take the tier's colour, matching its dot: the
+    /// Critical tier's for a warning, since that is what is coming.
+    private var tierColor: Color {
+        PriorityDot.color(for: warning == nil ? .important : .critical)
+    }
+    private var title: String { warning?.title ?? reminder.title }
+    private var message: String { warning?.message ?? reminder.message }
 
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: reminder.symbolName)
                 .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(Self.tierColor)
+                .foregroundStyle(tierColor)
                 .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(reminder.title)
+                Text(title)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
-                if !reminder.message.isEmpty {
-                    Text(reminder.message)
+                if !message.isEmpty {
+                    Text(message)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(4)
@@ -481,18 +495,20 @@ struct ImportantCardView: View {
                         .foregroundStyle(Self.accent)
                 }
                 .buttonStyle(.plain)
-                .help("Mark as done")
-                .accessibilityLabel("Done")
+                .help(warning == nil ? "Mark as done" : "Got it")
+                .accessibilityLabel(warning == nil ? "Done" : "Got it")
 
-                Button(action: onSnooze) {
-                    Text("Snooze")
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                if warning == nil {
+                    Button(action: onSnooze) {
+                        Text("Snooze")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Snooze")
                 }
-                .buttonStyle(.plain)
-                .help("Snooze")
             }
         }
         .padding(.horizontal, 16)
@@ -505,7 +521,7 @@ struct ImportantCardView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Self.tierColor.opacity(0.35), lineWidth: 1)
+                .stroke(tierColor.opacity(0.35), lineWidth: 1)
         )
         .padding(6)
         .opacity(appeared ? 1 : 0)

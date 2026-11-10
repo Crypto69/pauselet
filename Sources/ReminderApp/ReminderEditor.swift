@@ -38,6 +38,8 @@ struct ReminderEditor: View {
     @State private var endHour: Int
     @State private var endMinute: Int
     @State private var hasActivityDuration: Bool
+    @State private var hasWarning: Bool
+    @State private var warningMinutes: Int
     @State private var activityMinutes: Int
     @State private var soundName: String?
     @State private var usesCustomDisplaySeconds: Bool
@@ -94,6 +96,9 @@ struct ReminderEditor: View {
         _restBetweenExercisesSeconds = State(
             initialValue: reminder?.restBetweenExercisesSeconds ?? 0
         )
+
+        _hasWarning = State(initialValue: reminder?.warningMinutes != nil)
+        _warningMinutes = State(initialValue: reminder?.warningMinutes ?? 5)
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
@@ -405,6 +410,12 @@ struct ReminderEditor: View {
                                 )
                             }
                         }
+
+                        ReminderWarningSection(
+                            hasWarning: $hasWarning,
+                            minutes: $warningMinutes,
+                            schedule: composedSchedule
+                        )
                     }
                 }
                 .formStyle(.grouped)
@@ -522,8 +533,13 @@ struct ReminderEditor: View {
         reminder.activityDurationSeconds = effectivePriority == .critical && hasActivityDuration
             ? activityMinutes * 60
             : nil
+        reminder.warningMinutes = effectivePriority == .critical && hasWarning
+            ? min(max(warningMinutes, Self.warningRange.lowerBound), Self.warningRange.upperBound)
+            : nil
         return reminder
     }
+
+    private static let warningRange = Scheduler.warningMinutesRange
 
     /// A daily or weekly time inside quiet hours is skipped every time it
     /// comes round; better said here than discovered from a silent history.
@@ -614,6 +630,72 @@ struct SymbolPicker: View {
                             .foregroundStyle(isSelected ? .white : .primary)
                     }
                     .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+/// The Critical tier's advance-warning controls: whether to warn, and how
+/// many minutes ahead. Its own view so the snapshot harness can render it —
+/// the editor fixes its height, and this sits below the fold.
+struct ReminderWarningSection: View {
+    @Binding var hasWarning: Bool
+    @Binding var minutes: Int
+    /// The schedule being edited, to say when the lead outlasts its interval.
+    let schedule: Schedule
+
+    /// A warning as long as the repeat interval would have to come before
+    /// the previous takeover, so none is shown; say so rather than leave the
+    /// user waiting for a card that never comes.
+    private var caution: String? {
+        guard Scheduler.warningOutlastsInterval(minutes, schedule: schedule) else { return nil }
+        return "That is as long as the repeat interval, so there is no time to "
+            + "warn before each takeover."
+    }
+
+    var body: some View {
+        Section("Warning") {
+            Toggle("Warn me before it takes over", isOn: $hasWarning)
+                .help(
+                    "Show a card in the corner a set time before "
+                        + "the full-screen takeover, so it never "
+                        + "arrives unannounced."
+                )
+            if hasWarning {
+                Stepper(value: $minutes, in: Scheduler.warningMinutesRange) {
+                    HStack(spacing: 6) {
+                        TextField(
+                            "", value: $minutes, format: .number
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .monospacedDigit()
+                        .frame(width: 56)
+                        .labelsHidden()
+                        .accessibilityLabel("Minutes before")
+                        Text(minutes == 1 ? "minute before" : "minutes before")
+                    }
+                }
+                .onChange(of: minutes) { value in
+                    let clamped = min(
+                        max(value, Scheduler.warningMinutesRange.lowerBound),
+                        Scheduler.warningMinutesRange.upperBound
+                    )
+                    if clamped != value { minutes = clamped }
+                }
+                Text(
+                    "A card appears in the top-right corner and stays "
+                    + "until you tick it. Ticking it does not change "
+                    + "when the takeover comes."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                if let caution {
+                    Label(caution, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
         }

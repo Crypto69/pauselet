@@ -344,6 +344,27 @@ final class NotificationBudgetTests: XCTestCase {
                        "The daily reminder must not be starved by the frequent one")
     }
 
+    /// A reminder's next warning sits in the first layer beside every next
+    /// fire, so a frequent reminder's second fire cannot squeeze it out.
+    func testAWarningCompetesInTheFirstLayer() {
+        let frequent = UUID()
+        let critical = UUID()
+        let projections: [(reminderID: UUID, fires: [ProjectedFire])] = [
+            (frequent, [fire(5), fire(10), fire(15)]),
+            (critical, [fire(600)]),
+        ]
+        let warning = ReminderWarning(
+            warnAt: fire(595).fireDate, takeoverAt: fire(600).fireDate
+        )
+        let entries = NotificationBudget.allocate(
+            projections: projections, warnings: [(critical, [warning])], budget: 3
+        )
+        XCTAssertEqual(entries.count, 3)
+        XCTAssertEqual(entries.filter(\.isWarning).map(\.fire.fireDate), [warning.warnAt])
+        XCTAssertEqual(entries.filter(\.isWarning).first?.fire.stampDate, warning.takeoverAt)
+        XCTAssertEqual(entries.filter { !$0.isWarning }.count, 2)
+    }
+
     func testWithinALayerSoonerFiresWin() {
         let a = UUID(), b = UUID(), c = UUID()
         let projections: [(reminderID: UUID, fires: [ProjectedFire])] = [

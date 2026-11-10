@@ -62,6 +62,93 @@ public static class Projection
 }
 
 /// <summary>
+/// An advance warning of a Critical takeover: shown at <c>WarnAt</c>, saying
+/// the screen will be taken over at <c>TakeoverAt</c>.
+/// </summary>
+public sealed record ReminderWarning(Instant WarnAt, Instant TakeoverAt);
+
+/// <summary>Advance warnings before a Critical takeover. Mirrors the Swift core.</summary>
+public static class Warnings
+{
+    /// <summary>
+    /// The lead an editor accepts: one minute up to a day — long enough for
+    /// any heads-up, short enough that a typo cannot set one weeks ahead.
+    /// </summary>
+    public const int MinMinutes = 1;
+    public const int MaxMinutes = 1440;
+
+    /// <summary>
+    /// The next <paramref name="limit"/> advance warnings of the reminder's
+    /// takeovers, judged from <paramref name="from"/>. Built on the same
+    /// <see cref="Scheduler.NextStep"/> walk as
+    /// <see cref="Projection.ProjectedFires"/>, so a warning only ever
+    /// announces a takeover the engine will deliver. No warning for a snooze
+    /// coming back, for a moment inside a pause or inside quiet hours the
+    /// takeover respects, or when the moment is not after the previous fire
+    /// (a lead as long as the interval). A warning whose moment has passed is
+    /// still returned while its takeover is ahead.
+    /// </summary>
+    public static IReadOnlyList<ReminderWarning> Projected(
+        Reminder reminder, Instant from, int limit, Settings settings, DateTimeZone zone)
+    {
+        if (!reminder.IsEnabled || reminder.Priority != Priority.Critical
+            || reminder.WarningMinutes is not { } minutes || minutes <= 0 || limit <= 0)
+            return [];
+        var lead = Duration.FromMinutes(minutes);
+
+        var sim = reminder;
+        var cursor = from;
+        var warnings = new List<ReminderWarning>();
+        var iterations = 0;
+        var maxIterations = limit * 16 + 64;
+
+        while (warnings.Count < limit && iterations < maxIterations)
+        {
+            iterations += 1;
+            var wasSnoozed = sim.SnoozedUntil is not null;
+            var previous = sim.LastFiredAt ?? sim.CreatedAt;
+            if (Scheduler.NextStep(sim, cursor, settings, zone) is not { } step) break;
+            sim = step.Apply(sim);
+            cursor = step.FireDate;
+            if (step.StepOutcome != Scheduler.FireStep.Outcome.Deliver || wasSnoozed
+                || step.FireDate <= from) continue;
+            var warnAt = step.FireDate - lead;
+            if (warnAt <= previous
+                || Scheduler.IsPaused(settings, warnAt)
+                || Scheduler.IsSuppressedByQuietHours(Priority.Critical, settings, warnAt, zone))
+                continue;
+            warnings.Add(new ReminderWarning(warnAt, step.FireDate));
+        }
+        return warnings;
+    }
+
+    /// <summary>
+    /// Whether a warning of <paramref name="minutes"/> would have to come
+    /// before the previous takeover of a repeating schedule, so none would be
+    /// shown. The editors say so.
+    /// </summary>
+    public static bool OutlastsInterval(int minutes, Schedule schedule) => schedule switch
+    {
+        Schedule.Interval interval => minutes >= interval.Minutes,
+        Schedule.TimedInterval timed => minutes >= timed.Minutes,
+        _ => false,
+    };
+
+    /// <summary>The warning card's title, the same on every platform.</summary>
+    public static string Title(Reminder reminder) => $"Coming up: {reminder.Title}";
+
+    /// <summary>
+    /// The warning card's text, naming the takeover's time rather than a
+    /// countdown so it stays true however long it sits on screen.
+    /// </summary>
+    public static string Message(Instant takeoverAt, DateTimeZone zone)
+    {
+        var time = takeoverAt.InZone(zone).TimeOfDay;
+        return $"Takes over your screen at {time.Hour:D2}:{time.Minute:D2}.";
+    }
+}
+
+/// <summary>
 /// Divides a pending-notification budget across reminders.
 ///
 /// iOS caps an app at 64 pending notification requests. Breadth-first

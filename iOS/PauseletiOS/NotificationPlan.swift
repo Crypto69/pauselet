@@ -35,6 +35,10 @@ struct NotificationPlan: Equatable {
         /// absolute moment (an interval elapsing, a snooze ending, a
         /// catch-up), which must not shift if the zone changes.
         let isWallClockSlot: Bool
+        /// A Critical reminder's advance warning rather than the reminder:
+        /// `fireDate` is when it shows and `stampDate` the takeover it
+        /// announces. Never reconciled as a fire.
+        var isWarning = false
     }
 
     let items: [Item]
@@ -48,6 +52,16 @@ struct NotificationPlan: Equatable {
     static let projectionDepth = 8
 
     static let identifierPrefix = "pauselet-scheduled-"
+    /// Advance warnings use their own prefix so nothing that reconciles
+    /// fires (which keys on `identifierPrefix`) can mistake one for the
+    /// reminder itself.
+    static let warningPrefix = "pauselet-warning-"
+
+    static func warningIdentifier(
+        reminderID: UUID, takeoverAt: Date, contentKey: String
+    ) -> String {
+        "\(warningPrefix)\(reminderID.uuidString)-\(Int(takeoverAt.timeIntervalSince1970))-\(contentKey)"
+    }
 
     /// The request identifier encodes the reminder, the stamp, and a digest of
     /// everything else baked into the request, so a refill can tell an
@@ -100,10 +114,31 @@ struct NotificationPlan: Equatable {
                 )
             )
         }
-        let entries = NotificationBudget.allocate(projections: projections, budget: budget)
+        // Warnings are scheduled whoever carries the takeover: an AlarmKit
+        // alarm covers the takeover itself, not the heads-up before it. Only
+        // future ones: a warning already due would be posted again on every
+        // refill, since nothing records that it was shown.
+        let warnings = reminders.compactMap { reminder -> (reminderID: UUID, warnings: [ReminderWarning])? in
+            let upcoming = Scheduler.projectedWarnings(
+                for: reminder, from: now, limit: projectionDepth,
+                settings: settings, calendar: calendar
+            ).filter { $0.warnAt > now }
+            return upcoming.isEmpty ? nil : (reminder.id, upcoming)
+        }
+        let entries = NotificationBudget.allocate(
+            projections: projections, warnings: warnings, budget: budget
+        )
+        let byIDAll = Dictionary(uniqueKeysWithValues: reminders.map { ($0.id, $0) })
         let byID = Dictionary(uniqueKeysWithValues: eligible.map { ($0.id, $0) })
 
         let items = entries.compactMap { entry -> Item? in
+            if entry.isWarning {
+                guard let reminder = byIDAll[entry.reminderID] else { return nil }
+                return warningItem(
+                    for: reminder, warnAt: entry.fire.fireDate,
+                    takeoverAt: entry.fire.stampDate, settings: settings, calendar: calendar
+                )
+            }
             guard let reminder = byID[entry.reminderID] else { return nil }
             let soundName = Sounds.bundledName(for: reminder.soundName)
             let playsSound = settings.playsSound(for: reminder.priority)
@@ -138,6 +173,41 @@ struct NotificationPlan: Equatable {
     /// §3.2 of the plan: subtle goes straight to Notification Center, normal
     /// behaves normally, important (and critical, when demoted to a
     /// notification) pierces Focus modes that allow time-sensitive delivery.
+    /// A warning is a time-sensitive notification with the default chime: it
+    /// must get through a Focus to be any use, and its sound belongs to the
+    /// takeover, not to the heads-up.
+    static func warningItem(
+        for reminder: Reminder,
+        warnAt: Date,
+        takeoverAt: Date,
+        settings: Settings,
+        calendar: Calendar
+    ) -> Item {
+        let title = Scheduler.warningTitle(for: reminder)
+        let body = Scheduler.warningMessage(takeoverAt: takeoverAt, calendar: calendar)
+        let playsSound = settings.playsSound(for: .important)
+        let key = contentKey(
+            title: title, body: body, fireDate: warnAt, soundName: nil,
+            playsSound: playsSound, interruption: .timeSensitive, isWallClockSlot: false
+        )
+        return Item(
+            identifier: warningIdentifier(
+                reminderID: reminder.id, takeoverAt: takeoverAt, contentKey: key
+            ),
+            reminderID: reminder.id,
+            title: title,
+            body: body,
+            fireDate: warnAt,
+            stampDate: takeoverAt,
+            priority: reminder.priority,
+            soundName: nil,
+            playsSound: playsSound,
+            interruption: .timeSensitive,
+            isWallClockSlot: false,
+            isWarning: true
+        )
+    }
+
     static func interruption(for priority: Priority) -> Interruption {
         switch priority {
         case .subtle: return .passive

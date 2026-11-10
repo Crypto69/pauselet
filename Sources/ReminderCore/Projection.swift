@@ -61,6 +61,106 @@ extension Scheduler {
     }
 }
 
+/// An advance warning of a Critical takeover: shown at `warnAt`, saying the
+/// screen will be taken over at `takeoverAt`.
+public struct ReminderWarning: Equatable, Sendable {
+    public let warnAt: Date
+    public let takeoverAt: Date
+
+    public init(warnAt: Date, takeoverAt: Date) {
+        self.warnAt = warnAt
+        self.takeoverAt = takeoverAt
+    }
+}
+
+extension Scheduler {
+
+    /// The next `limit` advance warnings of `reminder`'s takeovers, judged
+    /// from `now`.
+    ///
+    /// Built on the same `nextStep` walk as `projectedFires`, so a warning
+    /// can only ever announce a takeover the engine will actually deliver —
+    /// quiet hours, pauses and skipped slots move or remove it exactly as
+    /// they move or remove the takeover. A takeover gets no warning when:
+    /// - it is a snooze coming back (the user just chose when);
+    /// - the warning moment falls inside a pause, or inside quiet hours that
+    ///   the takeover itself respects;
+    /// - the warning moment is not after the previous fire, which happens
+    ///   when the lead is as long as the interval.
+    ///
+    /// A warning whose moment has passed is still returned while its takeover
+    /// is ahead, so an app that starts inside the window can still warn; the
+    /// warning names the takeover's time, so it stays true however late.
+    public static func projectedWarnings(
+        for reminder: Reminder,
+        from now: Date,
+        limit: Int,
+        settings: Settings,
+        calendar: Calendar = .current
+    ) -> [ReminderWarning] {
+        guard reminder.isEnabled, reminder.priority == .critical,
+              let minutes = reminder.warningMinutes, minutes > 0, limit > 0
+        else { return [] }
+        let lead = TimeInterval(minutes * 60)
+
+        var sim = reminder
+        var cursor = now
+        var warnings: [ReminderWarning] = []
+        var iterations = 0
+        let maxIterations = limit * 16 + 64
+
+        while warnings.count < limit, iterations < maxIterations {
+            iterations += 1
+            let wasSnoozed = sim.snoozedUntil != nil
+            let previous = sim.lastFiredAt ?? sim.createdAt
+            guard let step = nextStep(
+                for: sim, from: cursor, settings: settings, calendar: calendar
+            ) else { break }
+            step.apply(to: &sim)
+            cursor = step.fireDate
+            guard step.outcome == .deliver, !wasSnoozed, step.fireDate > now else { continue }
+            let warnAt = step.fireDate.addingTimeInterval(-lead)
+            guard warnAt > previous,
+                  !isPaused(settings: settings, now: warnAt),
+                  !isSuppressedByQuietHours(
+                    priority: .critical, settings: settings, now: warnAt, calendar: calendar
+                  )
+            else { continue }
+            warnings.append(ReminderWarning(warnAt: warnAt, takeoverAt: step.fireDate))
+        }
+        return warnings
+    }
+
+    /// The lead an editor accepts: one minute up to a day — long enough for
+    /// any heads-up, short enough that a typo cannot set one weeks ahead.
+    public static let warningMinutesRange = 1...1440
+
+    /// Whether a warning of `minutes` would have to come before the previous
+    /// takeover of a repeating `schedule` — so none would ever be shown. The
+    /// editors say so rather than leave the user waiting for a card.
+    public static func warningOutlastsInterval(_ minutes: Int, schedule: Schedule) -> Bool {
+        switch schedule {
+        case .interval(let interval), .timedInterval(let interval, _, _, _, _, _):
+            return minutes >= interval
+        case .dailyAt, .weeklyAt:
+            return false
+        }
+    }
+
+    /// The warning card's title, the same on every platform.
+    public static func warningTitle(for reminder: Reminder) -> String {
+        "Coming up: \(reminder.title)"
+    }
+
+    /// The warning card's text, naming the takeover's time rather than a
+    /// countdown so it stays true however long it sits on screen.
+    public static func warningMessage(takeoverAt: Date, calendar: Calendar = .current) -> String {
+        let comps = calendar.dateComponents([.hour, .minute], from: takeoverAt)
+        let time = Schedule.humanTime(hour: comps.hour ?? 0, minute: comps.minute ?? 0)
+        return "Takes over your screen at \(time)."
+    }
+}
+
 /// Divides the system's pending-notification budget across reminders.
 ///
 /// iOS caps an app at 64 pending notification requests. Breadth-first
@@ -72,19 +172,28 @@ public enum NotificationBudget {
 
     public struct Entry: Equatable, Sendable {
         public let reminderID: UUID
+        /// For a warning, `fireDate` is when it is shown and `stampDate` the
+        /// takeover it announces.
         public let fire: ProjectedFire
+        public let isWarning: Bool
 
-        public init(reminderID: UUID, fire: ProjectedFire) {
+        public init(reminderID: UUID, fire: ProjectedFire, isWarning: Bool = false) {
             self.reminderID = reminderID
             self.fire = fire
+            self.isWarning = isWarning
         }
     }
 
     /// Allocates up to `budget` slots across `projections`, layer by layer.
     /// Within a layer, sooner fires win; ties break on the reminder ID so the
     /// result is deterministic.
+    ///
+    /// Advance warnings take part as entries of their own, a reminder's next
+    /// warning sitting in the same first layer as its next fire, so the
+    /// heads-up is never the thing squeezed out.
     public static func allocate(
         projections: [(reminderID: UUID, fires: [ProjectedFire])],
+        warnings: [(reminderID: UUID, warnings: [ReminderWarning])] = [],
         budget: Int
     ) -> [Entry] {
         guard budget > 0 else { return [] }
@@ -102,6 +211,19 @@ public enum NotificationBudget {
                 candidates.append(Candidate(
                     depth: depth, key: key,
                     entry: Entry(reminderID: projection.reminderID, fire: fire)
+                ))
+            }
+        }
+        for projection in warnings {
+            let key = projection.reminderID.uuidString + "-warning"
+            for (depth, warning) in projection.warnings.enumerated() {
+                candidates.append(Candidate(
+                    depth: depth, key: key,
+                    entry: Entry(
+                        reminderID: projection.reminderID,
+                        fire: ProjectedFire(fireDate: warning.warnAt, stampDate: warning.takeoverAt),
+                        isWarning: true
+                    )
                 ))
             }
         }

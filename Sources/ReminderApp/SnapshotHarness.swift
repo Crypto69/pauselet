@@ -385,6 +385,24 @@ enum SnapshotHarness {
                 named: "overlay-important",
                 into: directory
             )
+            // A Critical reminder's advance warning, in the same corner card.
+            let warned = engine.reminders.first { $0.priority == .critical }
+                ?? engine.reminders[0]
+            snapshot(
+                ImportantCardView(
+                    reminder: warned,
+                    warning: .init(
+                        title: Scheduler.warningTitle(for: warned),
+                        message: Scheduler.warningMessage(
+                            takeoverAt: Date().addingTimeInterval(5 * 60)
+                        )
+                    ),
+                    onComplete: {}
+                ),
+                size: NSSize(width: 360, height: 132),
+                named: "overlay-warning",
+                into: directory
+            )
         }
 
         // Editors render at their real sheet size. The form scrolls in the app,
@@ -446,6 +464,28 @@ enum SnapshotHarness {
             named: "editor-timed",
             into: directory
         )
+
+        // The Critical tier's warning controls on their own, like
+        // editor-music: the editor fixes its height and they sit below the
+        // fold. One case with the caution showing, one without.
+        for (name, interval) in [("editor-warning", 50), ("editor-warning-caution", 5)] {
+            snapshot(
+                Form {
+                    ReminderWarningSection(
+                        hasWarning: .constant(true),
+                        minutes: .constant(5),
+                        schedule: .timedInterval(
+                            minutes: interval, startHour: 5, startMinute: 45,
+                            endHour: 13, endMinute: 0, weekdays: [2, 3, 4, 5, 6]
+                        )
+                    )
+                }
+                .formStyle(.grouped),
+                size: NSSize(width: 470, height: 230),
+                named: name,
+                into: directory
+            )
+        }
     }
 
     private static func snapshot<V: View>(

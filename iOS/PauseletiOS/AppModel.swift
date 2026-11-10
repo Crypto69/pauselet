@@ -265,6 +265,13 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
         route(reminder, settings: settings, isPreview: false)
     }
 
+    /// Nothing to do here: every warning is a pre-scheduled notification
+    /// (see `NotificationPlan`), shown even while the app is open, so a live
+    /// post from the tick would only duplicate it.
+    func presentWarning(
+        _ reminder: Reminder, takeoverAt: Date, settings: ReminderCore.Settings
+    ) {}
+
     /// Shows `reminder` exactly as it would appear when it fires, without
     /// touching schedule or history. Buttons on previewed surfaces only close
     /// them.

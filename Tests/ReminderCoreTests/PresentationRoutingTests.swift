@@ -30,6 +30,8 @@ final class RoutingPresenter: ReminderPresenting {
         routed.append((reminder.title, Self.surface(for: reminder.priority)))
     }
 
+    func presentWarning(_ reminder: Reminder, takeoverAt: Date, settings: Settings) {}
+
     func dismissAll() { dismissAllCount += 1 }
 }
 

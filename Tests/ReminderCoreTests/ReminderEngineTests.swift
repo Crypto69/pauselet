@@ -6,9 +6,15 @@ import XCTest
 final class RecordingPresenter: ReminderPresenting {
     var presented: [Reminder] = []
     var dismissAllCount = 0
+    /// Advance warnings, as (reminder title, takeover moment).
+    var warnings: [(title: String, takeoverAt: Date)] = []
 
     func present(_ reminder: Reminder, settings: Settings) {
         presented.append(reminder)
+    }
+
+    func presentWarning(_ reminder: Reminder, takeoverAt: Date, settings: Settings) {
+        warnings.append((reminder.title, takeoverAt))
     }
 
     func dismissAll() {

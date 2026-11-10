@@ -72,9 +72,13 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
     /// The Important tier's sticky card. Its own slot, so an unanswered
     /// Important reminder never blocks the Subtle cards that keep coming.
+    /// The same corner also carries a Critical reminder's advance warning:
+    /// a card with `warningFor` set, which says when the takeover comes.
     private var importantPanel: OverlayPanel?
-    private var importantShowing: Reminder?
-    private var importantQueue: [(reminder: Reminder, settings: ReminderCore.Settings)] = []
+    private var importantShowing: (reminder: Reminder, warningFor: Date?)?
+    private var importantQueue: [(
+        reminder: Reminder, settings: ReminderCore.Settings, warningFor: Date?
+    )] = []
 
     private var subtlePanel: OverlayPanel?
     private var subtleQueue: [(
@@ -141,6 +145,22 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         }
     }
 
+    func presentWarning(
+        _ reminder: Reminder, takeoverAt: Date, settings: ReminderCore.Settings
+    ) {
+        showImportant(reminder, settings: settings, warningFor: takeoverAt)
+    }
+
+    /// A warning has nothing left to say once its takeover arrives: take it
+    /// off screen, and out of the queue, before the takeover covers it.
+    private func dropWarnings(for id: UUID) {
+        importantQueue.removeAll { $0.reminder.id == id && $0.warningFor != nil }
+        if let showing = importantShowing, showing.reminder.id == id,
+           showing.warningFor != nil {
+            dismissImportantAndAdvance()
+        }
+    }
+
     func dismissAll() {
         criticalQueue.removeAll()
         subtleQueue.removeAll()
@@ -188,6 +208,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         settings: ReminderCore.Settings,
         isPreview: Bool = false
     ) {
+        if !isPreview { dropWarnings(for: reminder.id) }
         if !criticalPanels.isEmpty {
             if isPreview {
                 closeCriticalPanels()
@@ -472,7 +493,8 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
     fileprivate func showImportant(
         _ reminder: Reminder,
         settings: ReminderCore.Settings,
-        isPreview: Bool = false
+        isPreview: Bool = false,
+        warningFor takeoverAt: Date? = nil
     ) {
         if importantPanel != nil {
             if isPreview {
@@ -481,42 +503,69 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
                 // One is already waiting to be answered. The same reminder
                 // firing again (a repeating one left unanswered) adds nothing;
                 // a different one queues and appears once this is dealt with.
-                let alreadyPending = importantShowing?.id == reminder.id
-                    || importantQueue.contains { $0.reminder.id == reminder.id }
-                if !alreadyPending { importantQueue.append((reminder, settings)) }
+                // A warning and its reminder are different cards.
+                let isWarning = takeoverAt != nil
+                let alreadyPending =
+                    (importantShowing.map {
+                        $0.reminder.id == reminder.id && ($0.warningFor != nil) == isWarning
+                    } ?? false)
+                    || importantQueue.contains {
+                        $0.reminder.id == reminder.id && ($0.warningFor != nil) == isWarning
+                    }
+                if !alreadyPending { importantQueue.append((reminder, settings, takeoverAt)) }
                 return
             }
         }
-        displayImportant(reminder, settings: settings, isPreview: isPreview)
+        displayImportant(
+            reminder, settings: settings, isPreview: isPreview, warningFor: takeoverAt
+        )
     }
 
     private func displayImportant(
-        _ reminder: Reminder, settings: ReminderCore.Settings, isPreview: Bool
+        _ reminder: Reminder,
+        settings: ReminderCore.Settings,
+        isPreview: Bool,
+        warningFor takeoverAt: Date? = nil
     ) {
         guard let screen = NSScreen.main else { return }
 
         // The sound a notification would have carried. Played here because
         // the card is ours; a preview plays it too, since hearing the reminder
-        // is part of previewing it.
+        // is part of previewing it. A warning takes the default chime: the
+        // reminder's own sound belongs to the takeover.
         if settings.playsSound(for: .important) {
-            Sounds.play(named: reminder.soundName ?? "Glass")
+            Sounds.play(named: takeoverAt == nil ? (reminder.soundName ?? "Glass") : "Glass")
         }
 
-        let view = ImportantCardView(
-            reminder: reminder,
-            onComplete: { [weak self] in
-                guard let self else { return }
-                if !isPreview { self.engine?.complete(id: reminder.id) }
-                self.music.stopReminderMusic()
-                self.dismissImportantAndAdvance()
-            },
-            onSnooze: { [weak self] in
-                guard let self else { return }
-                if !isPreview { self.engine?.snooze(id: reminder.id) }
-                self.music.stopReminderMusic()
-                self.dismissImportantAndAdvance()
-            }
-        )
+        let view: ImportantCardView
+        if let takeoverAt {
+            // The tick only takes the warning down: the takeover is the
+            // reminder, and it still comes at its time.
+            view = ImportantCardView(
+                reminder: reminder,
+                warning: .init(
+                    title: Scheduler.warningTitle(for: reminder),
+                    message: Scheduler.warningMessage(takeoverAt: takeoverAt)
+                ),
+                onComplete: { [weak self] in self?.dismissImportantAndAdvance() }
+            )
+        } else {
+            view = ImportantCardView(
+                reminder: reminder,
+                onComplete: { [weak self] in
+                    guard let self else { return }
+                    if !isPreview { self.engine?.complete(id: reminder.id) }
+                    self.music.stopReminderMusic()
+                    self.dismissImportantAndAdvance()
+                },
+                onSnooze: { [weak self] in
+                    guard let self else { return }
+                    if !isPreview { self.engine?.snooze(id: reminder.id) }
+                    self.music.stopReminderMusic()
+                    self.dismissImportantAndAdvance()
+                }
+            )
+        }
 
         let size = Self.importantSize
         let margin: CGFloat = 16
@@ -535,7 +584,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             panel.animator().alphaValue = 1
         }
         importantPanel = panel
-        importantShowing = reminder
+        importantShowing = (reminder, takeoverAt)
 
         // A Subtle card already in the corner moves down to make room.
         if let subtle = subtlePanel {
@@ -578,7 +627,10 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         closeImportantPanel()
         if let next = importantQueue.first {
             importantQueue.removeFirst()
-            displayImportant(next.reminder, settings: next.settings, isPreview: false)
+            displayImportant(
+                next.reminder, settings: next.settings, isPreview: false,
+                warningFor: next.warningFor
+            )
         }
     }
 

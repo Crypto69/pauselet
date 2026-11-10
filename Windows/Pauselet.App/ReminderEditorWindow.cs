@@ -78,6 +78,21 @@ internal sealed class ReminderEditorWindow : Window
     private readonly ComboBox _soundPicker = new() { Width = 160 };
     private readonly TextBox _displaySeconds = new() { Width = 60 };
     private readonly TextBox _activityMinutes = new() { Width = 60 };
+    /// <summary>
+    /// Minutes before the takeover to show a warning card; blank for none.
+    /// Lives in the Critical-only activity panel.
+    /// </summary>
+    private readonly TextBox _warningMinutes = new() { Width = 60 };
+    private readonly TextBlock _warningCaution = new()
+    {
+        Text = "That is as long as the repeat interval, so there is no time to warn "
+            + "before each takeover.",
+        Foreground = Theme.Brush(System.Windows.Media.Color.FromRgb(0xE0, 0x8A, 0x1E)),
+        FontSize = 11,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 4, 0, 0),
+        Visibility = Visibility.Collapsed,
+    };
     private readonly List<ExerciseRow> _exerciseRows = [];
     /// <summary>
     /// The reminder's rest between one exercise and the next when the
@@ -504,6 +519,21 @@ internal sealed class ReminderEditorWindow : Window
         _activityPanel = new StackPanel();
         _activityPanel.Children.Add(FieldLabel("Activity countdown (minutes, blank = none)"));
         _activityPanel.Children.Add(_activityMinutes);
+        _activityPanel.Children.Add(FieldLabel("Warn before it takes over (minutes, blank = none)"));
+        _activityPanel.Children.Add(_warningMinutes);
+        _activityPanel.Children.Add(new TextBlock
+        {
+            Text = "A card appears in the corner and stays until you tick it. "
+                + "Ticking it does not change when the takeover comes.",
+            Foreground = Theme.Brush(Theme.Current.SecondaryForeground),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+        });
+        _activityPanel.Children.Add(_warningCaution);
+        _warningMinutes.TextChanged += (_, _) => UpdateWarningCaution();
+        _intervalMinutes.TextChanged += (_, _) => UpdateWarningCaution();
+        _scheduleKind.SelectionChanged += (_, _) => UpdateWarningCaution();
         optionsGrid.Children.Add(_activityPanel);
 
         stack.Children.Add(optionsGrid);
@@ -799,6 +829,19 @@ internal sealed class ReminderEditorWindow : Window
         }
     }
 
+    /// <summary>
+    /// Says when a warning is as long as the repeating interval, so none
+    /// could ever be shown. Daily and weekly schedules have room for any lead.
+    /// </summary>
+    private void UpdateWarningCaution()
+    {
+        var outlasts = _scheduleKind.SelectedIndex == 0
+            && int.TryParse(_warningMinutes.Text.Trim(), out var warning)
+            && int.TryParse(_intervalMinutes.Text, out var interval) && interval >= 1
+            && Warnings.OutlastsInterval(warning, new Schedule.Interval(interval));
+        _warningCaution.Visibility = outlasts ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private static TextBlock FieldLabel(string text) => new()
     {
         Text = text,
@@ -998,6 +1041,7 @@ internal sealed class ReminderEditorWindow : Window
         }
 
         _displaySeconds.Text = existing.DisplaySeconds?.ToString() ?? "";
+        _warningMinutes.Text = existing.WarningMinutes?.ToString() ?? "";
         _activityMinutes.Text = existing.ActivityDurationSeconds is { } seconds
             ? (seconds / 60).ToString()
             : "";
@@ -1137,6 +1181,24 @@ internal sealed class ReminderEditorWindow : Window
                 ? activity * 60
                 : null;
 
+        int? warningMinutes = null;
+        if (EffectivePriority() == Priority.Critical && _warningMinutes.Text.Trim().Length > 0)
+        {
+            if (!int.TryParse(_warningMinutes.Text.Trim(), out var warning)
+                || warning < Warnings.MinMinutes || warning > Warnings.MaxMinutes)
+            {
+                MessageBox.Show(
+                    this,
+                    $"The warning needs a number of minutes from {Warnings.MinMinutes} "
+                        + $"to {Warnings.MaxMinutes}, or blank for none.",
+                    "Pauselet"
+                );
+                _warningMinutes.Focus();
+                return null;
+            }
+            warningMinutes = warning;
+        }
+
         var baseline = _existing ?? new Reminder { Title = title, Schedule = schedule };
         return baseline with
         {
@@ -1148,6 +1210,7 @@ internal sealed class ReminderEditorWindow : Window
             SoundName = sound,
             DisplaySeconds = displaySeconds,
             ActivityDurationSeconds = activitySeconds,
+            WarningMinutes = warningMinutes,
             Exercises = exercises,
             RestBetweenExercisesSeconds = restBetweenExercises,
         };
