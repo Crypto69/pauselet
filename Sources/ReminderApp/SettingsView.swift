@@ -432,6 +432,11 @@ struct TimeComponentField: View {
     /// stepper itself needs, which is the same phantom-label space.
     static let separatorCorrection: CGFloat = 11
 
+    /// The same correction for a capitalised label ("At", "From", "Until")
+    /// leading a row of these controls in the reminder editor. Measured from a
+    /// rendered editor: 9 puts the label's cap height exactly on the digits'.
+    static let labelCorrection: CGFloat = 9
+
     var body: some View {
         // A Stepper wrapping an EmptyView still reserves space for that label
         // above its arrows, which pushed it up off the digits. Giving the

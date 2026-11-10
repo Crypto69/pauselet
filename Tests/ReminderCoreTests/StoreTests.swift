@@ -64,6 +64,14 @@ final class StoreTests: XCTestCase {
             .interval(minutes: 20),
             .dailyAt(hour: 17, minute: 30, dayInterval: 2),
             .weeklyAt(hour: 8, minute: 0, weekdays: [2, 4, 6]),
+            .timedInterval(
+                minutes: 50, startHour: 5, startMinute: 40,
+                endHour: 13, endMinute: 0, weekdays: [2, 3, 4, 5, 6]
+            ),
+            .timedInterval(
+                minutes: 45, startHour: 9, startMinute: 0,
+                endHour: nil, endMinute: nil, weekdays: [1, 7]
+            ),
         ]
         let reminders = schedules.enumerated().map { index, schedule in
             Reminder(title: "R\(index)", schedule: schedule)

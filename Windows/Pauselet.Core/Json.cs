@@ -192,6 +192,25 @@ public static class AppDataJson
                 payload.Members["weekdays"] = weekdays;
                 wrapper.Members["weeklyAt"] = payload;
                 break;
+            case Schedule.TimedInterval timed:
+                // Swift's synthesized enum coding: an absent end is a missing
+                // key, not null.
+                payload.Members["minutes"] = new JVal.Num(timed.Minutes);
+                payload.Members["startHour"] = new JVal.Num(timed.StartHour);
+                payload.Members["startMinute"] = new JVal.Num(timed.StartMinute);
+                if (timed.EndHour is { } endHour && timed.EndMinute is { } endMinute)
+                {
+                    payload.Members["endHour"] = new JVal.Num(endHour);
+                    payload.Members["endMinute"] = new JVal.Num(endMinute);
+                }
+                var timedDays = new JVal.Arr();
+                foreach (var day in timed.Weekdays.OrderBy(d => d))
+                {
+                    timedDays.Items.Add(new JVal.Num(day));
+                }
+                payload.Members["weekdays"] = timedDays;
+                wrapper.Members["timedInterval"] = payload;
+                break;
             default:
                 throw new InvalidOperationException();
         }
@@ -499,6 +518,25 @@ public static class AppDataJson
             return new Schedule.WeeklyAt(
                 Require(weekly, "hour").GetInt32(),
                 Require(weekly, "minute").GetInt32(),
+                weekdays
+            );
+        }
+        if (element.TryGetProperty("timedInterval", out var timed))
+        {
+            var weekdays = new HashSet<int>();
+            foreach (var day in Require(timed, "weekdays").EnumerateArray())
+            {
+                weekdays.Add(day.GetInt32());
+            }
+            var endHour = OptionalInt(timed, "endHour");
+            var endMinute = OptionalInt(timed, "endMinute");
+            var hasEnd = endHour is not null && endMinute is not null;
+            return new Schedule.TimedInterval(
+                Require(timed, "minutes").GetInt32(),
+                Require(timed, "startHour").GetInt32(),
+                Require(timed, "startMinute").GetInt32(),
+                hasEnd ? endHour : null,
+                hasEnd ? endMinute : null,
                 weekdays
             );
         }

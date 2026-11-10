@@ -428,6 +428,24 @@ enum SnapshotHarness {
             named: "editor-new",
             into: directory
         )
+
+        // A repeating reminder on a set timetable, to review the extra rows.
+        snapshot(
+            ReminderEditor(reminder: Reminder(
+                title: "Break in 5 minutes",
+                schedule: .timedInterval(
+                    minutes: 50, startHour: 5, startMinute: 40,
+                    endHour: 13, endMinute: 0, weekdays: [2, 3, 4, 5, 6]
+                ),
+                symbolName: "bell"
+            )) { _ in }
+                .environmentObject(engine)
+                .environmentObject(music)
+                .environmentObject(ai),
+            size: NSSize(width: 470, height: 760),
+            named: "editor-timed",
+            into: directory
+        )
     }
 
     private static func snapshot<V: View>(

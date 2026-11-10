@@ -70,7 +70,11 @@ tier, so there is something to look at before you write your own.
 
 Three kinds of schedule:
 
-- **Repeating** — every *n* minutes or hours, measured from the last time it fired
+- **Repeating** — every *n* minutes or hours, measured from the last time it fired.
+  Or turn on **Start at a set time** to repeat on a fixed timetable instead:
+  from a start time, on the weekdays you choose, optionally until an end time —
+  "every 50 minutes from 05:40, Monday to Friday, until 13:00" fires at 05:40,
+  06:30, 07:20 and so on, which keeps it in step with another app's breaks
 - **Daily** — at a fixed time, every day or every *n* days
 - **Weekly** — at a fixed time on the weekdays you choose
 
@@ -268,7 +272,7 @@ default, so something genuinely important is not swallowed by the schedule.
 A repeating reminder that falls due inside the window is held and delivered
 when the window ends. A daily or weekly one scheduled *at* a quiet time is
 skipped instead and recorded as missed — "daily at 23:00" is not something you
-want arriving at 07:00. The menu bar countdown accounts for this, so it always
+want arriving at 07:00. The same goes for each time on a set timetable. The menu bar countdown accounts for this, so it always
 shows when a reminder will actually reach you.
 
 **Pausing** stops everything, either indefinitely or for a set period, from
@@ -279,7 +283,10 @@ pause never ends in a burst of overdue reminders.
 **Marking something done** means what you would expect for each schedule kind.
 For a repeating reminder, done buys you a full interval of peace. For a daily
 or weekly one, doing the task early consumes the upcoming slot rather than
-letting it fire again hours later.
+letting it fire again hours later. A set timetable works like a daily one, and
+a time on it that was missed while the computer slept is only delivered late if
+less than half the interval has passed; otherwise it is recorded as missed and
+the next time arrives on schedule.
 
 Reminders that fire while another is already on screen are queued rather than
 dropped, but anything that has been waiting more than two minutes is discarded

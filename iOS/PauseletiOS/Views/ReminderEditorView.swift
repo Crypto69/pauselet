@@ -29,6 +29,11 @@ struct ReminderEditorView: View {
     @State private var time: Date
     @State private var dayInterval: Int
     @State private var weekdays: Set<Int>
+    /// Repeating on a clock grid (`.timedInterval`) rather than from the last
+    /// fire. `time` is the grid's start.
+    @State private var hasStartTime: Bool
+    @State private var hasEndTime: Bool
+    @State private var endTime: Date
     @State private var hasActivityDuration: Bool
     @State private var activityMinutes: Int
     @State private var soundName: String?
@@ -100,10 +105,23 @@ struct ReminderEditorView: View {
         var time = timeDate(hour: 9, minute: 0)
         var dayInterval = 1
         var weekdays: Set<Int> = [2, 3, 4, 5, 6]
+        var hasStartTime = false
+        var hasEndTime = false
+        var endTime = timeDate(hour: 17, minute: 0)
 
         switch reminder?.schedule {
         case .interval(let minutes):
             intervalMinutes = minutes
+        case .timedInterval(let minutes, let startHour, let startMinute,
+                            let untilHour, let untilMinute, let days):
+            intervalMinutes = minutes
+            hasStartTime = true
+            time = timeDate(hour: startHour, minute: startMinute)
+            if let untilHour, let untilMinute {
+                hasEndTime = true
+                endTime = timeDate(hour: untilHour, minute: untilMinute)
+            }
+            weekdays = days
         case .dailyAt(let hour, let minute, let interval):
             scheduleKind = .daily
             time = timeDate(hour: hour, minute: minute)
@@ -121,11 +139,28 @@ struct ReminderEditorView: View {
         _time = State(initialValue: time)
         _dayInterval = State(initialValue: dayInterval)
         _weekdays = State(initialValue: weekdays)
+        _hasStartTime = State(initialValue: hasStartTime)
+        _hasEndTime = State(initialValue: hasEndTime)
+        _endTime = State(initialValue: endTime)
+    }
+
+    private static func minuteOfDay(_ date: Date) -> Int {
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+    }
+
+    /// A timed interval's end must come after its start: the grid does not
+    /// run past midnight.
+    private var endIsBeforeStart: Bool {
+        scheduleKind == .interval && hasStartTime && hasEndTime
+            && Self.minuteOfDay(endTime) <= Self.minuteOfDay(time)
     }
 
     private var isValid: Bool {
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         if scheduleKind == .weekly && weekdays.isEmpty { return false }
+        if scheduleKind == .interval && hasStartTime && weekdays.isEmpty { return false }
+        if endIsBeforeStart { return false }
         if type == .exercise && (exercises.isEmpty || !exercises.allSatisfy(\.isValid)) {
             return false
         }
@@ -147,6 +182,16 @@ struct ReminderEditorView: View {
         let hour = comps.hour ?? 9
         let minute = comps.minute ?? 0
         switch scheduleKind {
+        case .interval where hasStartTime:
+            let end = Self.minuteOfDay(endTime)
+            return .timedInterval(
+                minutes: max(1, intervalMinutes),
+                startHour: hour,
+                startMinute: minute,
+                endHour: hasEndTime ? end / 60 : nil,
+                endMinute: hasEndTime ? end % 60 : nil,
+                weekdays: weekdays
+            )
         case .interval:
             return .interval(minutes: max(1, intervalMinutes))
         case .daily:
@@ -198,6 +243,26 @@ struct ReminderEditorView: View {
                     switch scheduleKind {
                     case .interval:
                         IntervalPicker(minutes: $intervalMinutes)
+                        Toggle("Start at a set time", isOn: $hasStartTime.animation())
+                            .accessibilityIdentifier("editorStartAtSetTime")
+                        if hasStartTime {
+                            DatePicker("From", selection: $time, displayedComponents: .hourAndMinute)
+                            Toggle("End at a set time", isOn: $hasEndTime.animation())
+                            if hasEndTime {
+                                DatePicker(
+                                    "Until", selection: $endTime, displayedComponents: .hourAndMinute
+                                )
+                            }
+                            WeekdayPicker(selection: $weekdays)
+                            if endIsBeforeStart {
+                                Label(
+                                    "The end time must be after the start time.",
+                                    systemImage: "exclamationmark.circle"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            }
+                        }
                     case .daily:
                         DatePicker("At", selection: $time, displayedComponents: .hourAndMinute)
                         Stepper(
@@ -427,6 +492,11 @@ struct ReminderEditorView: View {
     /// A daily or weekly time inside quiet hours is skipped every time it
     /// comes round; better said here than discovered from a silent history.
     private var quietHoursWarning: String? {
+        if case .timedInterval = composedSchedule {
+            return Scheduler.timedIntervalQuietHoursWarning(
+                composedSchedule, priority: effectivePriority, settings: model.engine.settings
+            )
+        }
         guard scheduleKind != .interval else { return nil }
         let comps = Calendar.current.dateComponents([.hour, .minute], from: time)
         guard let hour = comps.hour, let minute = comps.minute,

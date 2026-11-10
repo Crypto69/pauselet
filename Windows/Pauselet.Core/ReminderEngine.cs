@@ -357,6 +357,7 @@ public sealed class ReminderEngine : ObservableObject
 
                     case Schedule.DailyAt:
                     case Schedule.WeeklyAt:
+                    case Schedule.TimedInterval:
                         // Stamping the elapsed slot consumes the whole backlog
                         // at once while keeping an "every N days" grid in
                         // phase. A slot inside the grace window is left for
@@ -722,6 +723,7 @@ public sealed class ReminderEngine : ObservableObject
 
             case Schedule.DailyAt:
             case Schedule.WeeklyAt:
+            case Schedule.TimedInterval:
             {
                 // Distinguish acknowledging a fire that just happened from
                 // marking the task done ahead of its slot. A fire newer than

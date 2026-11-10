@@ -73,6 +73,26 @@ public enum Schedule: Codable, Equatable, Sendable {
     /// Weekdays use `Calendar` numbering: 1 = Sunday ... 7 = Saturday.
     case weeklyAt(hour: Int, minute: Int, weekdays: Set<Int>)
 
+    /// Fires every `minutes` minutes on a grid pinned to the clock: at
+    /// `startHour:startMinute` on each selected weekday, then every `minutes`
+    /// after that, up to and including `endHour:endMinute` — or until
+    /// midnight when there is no end. Each selected day starts the grid again
+    /// at its start time.
+    ///
+    /// Unlike `.interval`, the grid does not move with the last fire, so it
+    /// can be kept in step with another app's schedule ("every 50 minutes from
+    /// 05:40" lands on 05:40, 06:30, 07:20 …). The end is either both set or
+    /// both `nil`, and when set it is after the start.
+    /// Weekdays use `Calendar` numbering: 1 = Sunday ... 7 = Saturday.
+    case timedInterval(
+        minutes: Int,
+        startHour: Int,
+        startMinute: Int,
+        endHour: Int?,
+        endMinute: Int?,
+        weekdays: Set<Int>
+    )
+
     public var summary: String {
         switch self {
         case .interval(let minutes):
@@ -85,11 +105,21 @@ public enum Schedule: Codable, Equatable, Sendable {
             let time = Self.humanTime(hour: hour, minute: minute)
             let names = weekdays.sorted().map { Self.weekdayName($0) }.joined(separator: ", ")
             return "\(names) at \(time)"
+        case .timedInterval(let minutes, let startHour, let startMinute,
+                            let endHour, let endMinute, let weekdays):
+            let every = "Every \(Self.humanDuration(minutes: minutes))"
+            let start = Self.humanTime(hour: startHour, minute: startMinute)
+            let names = weekdays.sorted().map { Self.weekdayName($0) }.joined(separator: ", ")
+            if let endHour, let endMinute {
+                let end = Self.humanTime(hour: endHour, minute: endMinute)
+                return "\(every), \(start)–\(end), \(names)"
+            }
+            return "\(every) from \(start), \(names)"
         }
     }
 
-    /// Whether this schedule fires at fixed wall-clock moments (daily/weekly)
-    /// rather than a rolling interval. Wall-clock slots that pass unheard
+    /// Whether this schedule fires at fixed wall-clock moments (daily, weekly,
+    /// timed interval) rather than a rolling interval. Wall-clock slots that pass unheard
     /// inside quiet hours are skipped; interval reminders are delivered once
     /// the window ends.
     public var isWallClock: Bool {

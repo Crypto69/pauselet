@@ -31,6 +31,12 @@ struct ReminderEditor: View {
     @State private var timeMinute: Int
     @State private var dayInterval: Int
     @State private var weekdays: Set<Int>
+    /// Repeating on a clock grid (`.timedInterval`) rather than from the last
+    /// fire. `timeHour`/`timeMinute` are the grid's start.
+    @State private var hasStartTime: Bool
+    @State private var hasEndTime: Bool
+    @State private var endHour: Int
+    @State private var endMinute: Int
     @State private var hasActivityDuration: Bool
     @State private var activityMinutes: Int
     @State private var soundName: String?
@@ -102,10 +108,26 @@ struct ReminderEditor: View {
         var timeMinute = 0
         var dayInterval = 1
         var weekdays: Set<Int> = [2, 3, 4, 5, 6]
+        var hasStartTime = false
+        var hasEndTime = false
+        var endHour = 17
+        var endMinute = 0
 
         switch reminder?.schedule {
         case .interval(let minutes):
             intervalMinutes = minutes
+        case .timedInterval(let minutes, let startHour, let startMinute,
+                            let untilHour, let untilMinute, let days):
+            intervalMinutes = minutes
+            hasStartTime = true
+            timeHour = startHour
+            timeMinute = startMinute
+            if let untilHour, let untilMinute {
+                hasEndTime = true
+                endHour = untilHour
+                endMinute = untilMinute
+            }
+            weekdays = days
         case .dailyAt(let hour, let minute, let interval):
             scheduleKind = .daily
             timeHour = hour
@@ -126,11 +148,24 @@ struct ReminderEditor: View {
         _timeMinute = State(initialValue: timeMinute)
         _dayInterval = State(initialValue: dayInterval)
         _weekdays = State(initialValue: weekdays)
+        _hasStartTime = State(initialValue: hasStartTime)
+        _hasEndTime = State(initialValue: hasEndTime)
+        _endHour = State(initialValue: endHour)
+        _endMinute = State(initialValue: endMinute)
+    }
+
+    /// A timed interval's end must come after its start: the grid does not
+    /// run past midnight.
+    private var endIsBeforeStart: Bool {
+        scheduleKind == .interval && hasStartTime && hasEndTime
+            && endHour * 60 + endMinute <= timeHour * 60 + timeMinute
     }
 
     private var isValid: Bool {
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         if scheduleKind == .weekly && weekdays.isEmpty { return false }
+        if scheduleKind == .interval && hasStartTime && weekdays.isEmpty { return false }
+        if endIsBeforeStart { return false }
         if type == .exercise && (exercises.isEmpty || !exercises.allSatisfy(\.isValid)) {
             return false
         }
@@ -149,6 +184,15 @@ struct ReminderEditor: View {
 
     private var composedSchedule: Schedule {
         switch scheduleKind {
+        case .interval where hasStartTime:
+            return .timedInterval(
+                minutes: max(1, intervalMinutes),
+                startHour: timeHour,
+                startMinute: timeMinute,
+                endHour: hasEndTime ? endHour : nil,
+                endMinute: hasEndTime ? endMinute : nil,
+                weekdays: weekdays
+            )
         case .interval:
             return .interval(minutes: max(1, intervalMinutes))
         case .daily:
@@ -202,9 +246,45 @@ struct ReminderEditor: View {
                         switch scheduleKind {
                         case .interval:
                             IntervalPicker(minutes: $intervalMinutes)
+                            HelpRow(
+                                title: "Start at a set time",
+                                help: "Repeat on a fixed timetable — from a start "
+                                    + "time, on the days you pick — instead of "
+                                    + "counting from when the reminder last "
+                                    + "fired. Useful for keeping in step with "
+                                    + "another app's breaks."
+                            ) {
+                                Toggle("", isOn: $hasStartTime)
+                                    .labelsHidden()
+                            }
+                            if hasStartTime {
+                                HStack {
+                                    Text("From")
+                                        .offset(y: TimeComponentField.labelCorrection)
+                                    TimeField(hour: $timeHour, minute: $timeMinute)
+                                }
+                                Toggle("End at a set time", isOn: $hasEndTime)
+                                if hasEndTime {
+                                    HStack {
+                                        Text("Until")
+                                            .offset(y: TimeComponentField.labelCorrection)
+                                        TimeField(hour: $endHour, minute: $endMinute)
+                                    }
+                                }
+                                WeekdayPicker(selection: $weekdays)
+                                if endIsBeforeStart {
+                                    Label(
+                                        "The end time must be after the start time.",
+                                        systemImage: "exclamationmark.circle"
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                }
+                            }
                         case .daily:
                             HStack {
                                 Text("At")
+                                    .offset(y: TimeComponentField.labelCorrection)
                                 TimeField(hour: $timeHour, minute: $timeMinute)
                             }
                             Stepper(
@@ -217,6 +297,7 @@ struct ReminderEditor: View {
                         case .weekly:
                             HStack {
                                 Text("At")
+                                    .offset(y: TimeComponentField.labelCorrection)
                                 TimeField(hour: $timeHour, minute: $timeMinute)
                             }
                             WeekdayPicker(selection: $weekdays)
@@ -447,6 +528,11 @@ struct ReminderEditor: View {
     /// A daily or weekly time inside quiet hours is skipped every time it
     /// comes round; better said here than discovered from a silent history.
     private var quietHoursWarning: String? {
+        if case .timedInterval = composedSchedule {
+            return Scheduler.timedIntervalQuietHoursWarning(
+                composedSchedule, priority: effectivePriority, settings: settings
+            )
+        }
         guard scheduleKind != .interval,
               Scheduler.wallClockTimeIsSilenced(
                 hour: timeHour, minute: timeMinute, priority: effectivePriority, settings: settings

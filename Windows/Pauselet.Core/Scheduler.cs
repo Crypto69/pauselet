@@ -180,6 +180,9 @@ public static class Scheduler
                     anchor, weekly.Hour, weekly.Minute, weekly.Weekdays, zone
                 );
 
+            case Schedule.TimedInterval timed:
+                return TimedGrid.From(timed)?.FirstSlot(anchor, zone);
+
             default:
                 throw new InvalidOperationException();
         }
@@ -293,9 +296,146 @@ public static class Scheduler
                 return null;
             }
 
+            case Schedule.TimedInterval timed:
+            {
+                if (TimedGrid.From(timed)?.LatestSlot(now, zone) is not { } slot) return null;
+                return slot > anchor ? slot : null;
+            }
+
             default:
                 throw new InvalidOperationException();
         }
+    }
+
+    /// <summary>
+    /// The slots of a <see cref="Schedule.TimedInterval"/>, as minutes past
+    /// midnight on each selected weekday: <c>Start</c>, <c>Start + Step</c>,
+    /// … up to <c>Last</c>. Slots are wall-clock times materialised through
+    /// the zone, like daily and weekly ones, so a DST change moves none of
+    /// them. Walking a day's slots starts from an arithmetic guess, so a
+    /// one-minute grid costs a few iterations, not a thousand.
+    /// </summary>
+    internal sealed record TimedGrid(int Step, int Start, int Last, IReadOnlySet<int> Weekdays)
+    {
+        private const int LastMinuteOfDay = 24 * 60 - 1;
+
+        /// <summary><c>null</c> when the schedule has no days or no slots.</summary>
+        internal static TimedGrid? From(Schedule.TimedInterval timed)
+        {
+            if (timed.Weekdays.Count == 0) return null;
+            var step = Math.Max(1, timed.Minutes);
+            var start = timed.StartHour * 60 + timed.StartMinute;
+            var end = timed.EndHour is { } h && timed.EndMinute is { } m
+                ? Math.Min(h * 60 + m, LastMinuteOfDay)
+                : LastMinuteOfDay;
+            if (end < start) return null;
+            return new TimedGrid(step, start, start + ((end - start) / step) * step, timed.Weekdays);
+        }
+
+        private static Instant? Slot(int minuteOfDay, LocalDate day, DateTimeZone zone) =>
+            CalendarMath.SlotAt(day, minuteOfDay / 60, minuteOfDay % 60, zone);
+
+        private static int MinuteOfDay(Instant instant, DateTimeZone zone)
+        {
+            var time = instant.InZone(zone).TimeOfDay;
+            return time.Hour * 60 + time.Minute;
+        }
+
+        /// <summary>The first slot strictly after <paramref name="anchor"/>.</summary>
+        internal Instant? FirstSlot(Instant anchor, DateTimeZone zone)
+        {
+            var anchorDay = CalendarMath.DayOf(anchor, zone);
+            // The anchor day plus the next 7 covers every weekday even when the
+            // anchor day's own slots have all passed.
+            for (var offset = 0; offset <= 7; offset++)
+            {
+                var day = anchorDay.PlusDays(offset);
+                if (!Weekdays.Contains(CalendarMath.CalendarWeekday(day))) continue;
+                var m = Start;
+                if (offset == 0)
+                {
+                    // Jump to the slot at or just before the anchor; the loop
+                    // then steps past it.
+                    var elapsed = MinuteOfDay(anchor, zone) - Start;
+                    if (elapsed > 0) m = Start + (elapsed / Step) * Step;
+                }
+                for (; m <= Last; m += Step)
+                {
+                    if (Slot(m, day, zone) is { } slot && slot > anchor) return slot;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>The latest slot at or before <paramref name="now"/> in the last week.</summary>
+        internal Instant? LatestSlot(Instant now, DateTimeZone zone)
+        {
+            var today = CalendarMath.DayOf(now, zone);
+            for (var offset = 0; offset <= 7; offset++)
+            {
+                var day = today.PlusDays(-offset);
+                if (!Weekdays.Contains(CalendarMath.CalendarWeekday(day))) continue;
+                var m = Last;
+                if (offset == 0)
+                {
+                    var elapsed = MinuteOfDay(now, zone) - Start;
+                    if (elapsed < 0) continue;
+                    m = Math.Min(Last, Start + (elapsed / Step + 1) * Step);
+                }
+                for (; m >= Start; m -= Step)
+                {
+                    if (Slot(m, day, zone) is { } slot && slot <= now) return slot;
+                }
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// How late a timed-interval slot may be delivered before it is recorded
+    /// as missed instead: half its interval, and never under a minute. A timed
+    /// interval usually exists to stay in step with something else ("five
+    /// minutes before the break"), so a slot delivered most of an interval
+    /// late is wrong rather than merely late.
+    /// </summary>
+    public static Duration LateDeliveryLimit(int timedIntervalMinutes) =>
+        Duration.FromSeconds(Math.Max(60, Math.Max(1, timedIntervalMinutes) * 30));
+
+    /// <summary>
+    /// For the editor's quiet-hours warning: how many of a timed interval's
+    /// daily slots quiet hours would skip, out of how many there are.
+    /// </summary>
+    public static (int Silenced, int Total) TimedIntervalSilencedSlots(
+        Schedule.TimedInterval timed, Priority priority, Settings settings)
+    {
+        if (TimedGrid.From(timed) is not { } grid) return (0, 0);
+        var silenced = 0;
+        var total = 0;
+        for (var m = grid.Start; m <= grid.Last; m += grid.Step)
+        {
+            total++;
+            if (WallClockTimeIsSilenced(m / 60, m % 60, priority, settings)) silenced++;
+        }
+        return (silenced, total);
+    }
+
+    /// <summary>
+    /// The editor's quiet-hours warning for a timed interval, or <c>null</c>
+    /// when quiet hours skip none of its times.
+    /// </summary>
+    public static string? TimedIntervalQuietHoursWarning(
+        Schedule.TimedInterval timed, Priority priority, Settings settings)
+    {
+        var (silenced, total) = TimedIntervalSilencedSlots(timed, priority, settings);
+        if (silenced == 0) return null;
+        var q = settings.QuietHours;
+        var window = $"{q.StartHour:D2}:{q.StartMinute:D2}–{q.EndHour:D2}:{q.EndMinute:D2}";
+        if (silenced == total)
+        {
+            return $"Every time falls inside quiet hours ({window}), so it will never fire.";
+        }
+        return $"{silenced} of the {total} daily times fall inside quiet hours ({window}) "
+            + "and will be skipped.";
     }
 
     /// <summary>
@@ -507,6 +647,12 @@ public static class Scheduler
 
         var slot = LatestElapsedSlot(sim, fireAt, zone) ?? fireAt;
         var skipped = IsSuppressedByQuietHours(sim.Priority, settings, slot, zone);
+        if (sim.Schedule is Schedule.TimedInterval timed
+            && fireAt - slot > LateDeliveryLimit(timed.Minutes))
+        {
+            // Missed by too much to still be useful; see LateDeliveryLimit.
+            skipped = true;
+        }
         return new FireStep(
             fireAt, slot, skipped ? FireStep.Outcome.Skip : FireStep.Outcome.Deliver
         );

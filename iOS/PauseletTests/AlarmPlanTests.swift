@@ -104,6 +104,26 @@ final class AlarmPlanTests: XCTestCase {
         )
     }
 
+    /// A timed interval has many slots a day, which AlarmKit's weekly shape
+    /// cannot express: it is armed one slot at a time.
+    func testTimedIntervalMapsToFixedDateAtItsNextSlot() {
+        let now = date(2026, 3, 10, 9, 5) // a Tuesday
+        let reminder = critical(
+            schedule: .timedInterval(
+                minutes: 50, startHour: 5, startMinute: 40,
+                endHour: 13, endMinute: 0, weekdays: [2, 3, 4, 5, 6]
+            ),
+            createdAt: now
+        )
+        let specs = AlarmPlan.specs(
+            for: [reminder], settings: Settings(), now: now, calendar: calendar
+        )
+        XCTAssertEqual(
+            specs.first?.kind,
+            .fixed(fireDate: date(2026, 3, 10, 9, 50), stampDate: date(2026, 3, 10, 9, 50))
+        )
+    }
+
     func testSnoozeForcesAFixedDateAlarmAtTheSnooze() {
         let now = date(2026, 3, 10, 9, 0)
         let snoozed = date(2026, 3, 10, 9, 5)

@@ -110,6 +110,58 @@ public abstract record Schedule
         }
     }
 
+    /// <summary>
+    /// Fires every <c>Minutes</c> minutes on a grid pinned to the clock: at
+    /// <c>StartHour:StartMinute</c> on each selected weekday, then every
+    /// <c>Minutes</c> after that, up to and including <c>EndHour:EndMinute</c>
+    /// — or until midnight when there is no end. Each selected day starts the
+    /// grid again at its start time, so it can stay in step with another
+    /// app's schedule. The end is either both set or both <c>null</c>, and
+    /// when set it is after the start. Weekdays use Apple numbering, as in
+    /// <see cref="WeeklyAt"/>.
+    /// </summary>
+    public sealed record TimedInterval : Schedule
+    {
+        public int Minutes { get; init; }
+        public int StartHour { get; init; }
+        public int StartMinute { get; init; }
+        public int? EndHour { get; init; }
+        public int? EndMinute { get; init; }
+        public IReadOnlySet<int> Weekdays { get; init; }
+
+        public TimedInterval(
+            int minutes, int startHour, int startMinute,
+            int? endHour, int? endMinute, IReadOnlySet<int> weekdays)
+        {
+            Minutes = minutes;
+            StartHour = startHour;
+            StartMinute = startMinute;
+            EndHour = endHour;
+            EndMinute = endMinute;
+            Weekdays = weekdays;
+        }
+
+        // Set-valued property: see WeeklyAt.
+        public bool Equals(TimedInterval? other) =>
+            other is not null
+            && Minutes == other.Minutes
+            && StartHour == other.StartHour
+            && StartMinute == other.StartMinute
+            && EndHour == other.EndHour
+            && EndMinute == other.EndMinute
+            && Weekdays.Count == other.Weekdays.Count
+            && Weekdays.SetEquals(other.Weekdays);
+
+        public override int GetHashCode()
+        {
+            var contents = 0;
+            foreach (var day in Weekdays) contents ^= day * 31;
+            return HashCode.Combine(
+                Minutes, StartHour, StartMinute, EndHour, EndMinute, Weekdays.Count, contents
+            );
+        }
+    }
+
     public string Summary => this switch
     {
         Interval interval => $"Every {HumanDuration(interval.Minutes)}",
@@ -120,6 +172,14 @@ public abstract record Schedule
         WeeklyAt weekly =>
             string.Join(", ", weekly.Weekdays.OrderBy(d => d).Select(WeekdayName))
             + $" at {HumanTime(weekly.Hour, weekly.Minute)}",
+        TimedInterval timed when timed.EndHour is { } endHour && timed.EndMinute is { } endMinute =>
+            $"Every {HumanDuration(timed.Minutes)}, "
+            + $"{HumanTime(timed.StartHour, timed.StartMinute)}–{HumanTime(endHour, endMinute)}, "
+            + string.Join(", ", timed.Weekdays.OrderBy(d => d).Select(WeekdayName)),
+        TimedInterval timed =>
+            $"Every {HumanDuration(timed.Minutes)} from "
+            + $"{HumanTime(timed.StartHour, timed.StartMinute)}, "
+            + string.Join(", ", timed.Weekdays.OrderBy(d => d).Select(WeekdayName)),
         _ => throw new InvalidOperationException(),
     };
 

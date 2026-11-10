@@ -278,7 +278,7 @@ public final class ReminderEngine: ObservableObject {
                         didAbsorb = true
                     }
 
-                case .dailyAt, .weeklyAt:
+                case .dailyAt, .weeklyAt, .timedInterval:
                     // Stamping the elapsed slot consumes the whole backlog at
                     // once while keeping an "every N days" grid in phase. A
                     // slot inside the grace window is left for `tick()`.
@@ -586,7 +586,7 @@ public final class ReminderEngine: ObservableObject {
             // a full interval of peace.
             reminders[index].lastFiredAt = current
 
-        case .dailyAt, .weeklyAt:
+        case .dailyAt, .weeklyAt, .timedInterval:
             // Distinguish acknowledging a fire that just happened from marking
             // the task done ahead of its slot. A fire newer than the last
             // acknowledgement means this is the acknowledgement — keep the fire

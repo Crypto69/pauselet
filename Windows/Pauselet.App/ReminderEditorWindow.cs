@@ -49,6 +49,29 @@ internal sealed class ReminderEditorWindow : Window
     private readonly TextBox _timeHour = new() { Width = 34, Text = "17" };
     private readonly TextBox _timeMinute = new() { Width = 34, Text = "00" };
     private readonly TextBox _dayInterval = new() { Width = 40, Text = "1" };
+    /// <summary>
+    /// Repeating on a clock grid (<see cref="Schedule.TimedInterval"/>) rather
+    /// than from the last fire. Its days are the weekly panel's boxes.
+    /// </summary>
+    private readonly CheckBox _hasStartTime = new()
+    {
+        Content = "Start at a set time",
+        Margin = new Thickness(0, 6, 0, 0),
+        ToolTip = "Repeat on a fixed timetable — from a start time, on the days you pick — "
+            + "instead of counting from when the reminder last fired.",
+    };
+    private readonly TextBox _startHour = new() { Width = 34, Text = "09" };
+    private readonly TextBox _startMinute = new() { Width = 34, Text = "00" };
+    private readonly CheckBox _hasEndTime = new()
+    {
+        Content = "Until",
+        VerticalAlignment = VerticalAlignment.Center,
+        Margin = new Thickness(12, 0, 4, 0),
+    };
+    private readonly TextBox _endHour = new() { Width = 34, Text = "17" };
+    private readonly TextBox _endMinute = new() { Width = 34, Text = "00" };
+    private StackPanel? _timedPanel;
+    private UIElement? _weeklyTimeNote;
     private readonly List<CheckBox> _weekdayBoxes = [];
     private readonly List<RadioButton> _priorityButtons = [];
     private readonly ComboBox _symbolPicker = new() { Width = 200 };
@@ -145,6 +168,17 @@ internal sealed class ReminderEditorWindow : Window
         LoadFrom(existing);
 
         _timeHour.TextChanged += (_, _) => UpdateQuietHoursCaption();
+        foreach (var box in new[] { _intervalMinutes, _startHour, _startMinute, _endHour, _endMinute })
+        {
+            box.TextChanged += (_, _) => UpdateQuietHoursCaption();
+        }
+        foreach (var day in _weekdayBoxes)
+        {
+            day.Checked += (_, _) => UpdateQuietHoursCaption();
+            day.Unchecked += (_, _) => UpdateQuietHoursCaption();
+        }
+        _hasEndTime.Checked += (_, _) => UpdateQuietHoursCaption();
+        _hasEndTime.Unchecked += (_, _) => UpdateQuietHoursCaption();
         _timeMinute.TextChanged += (_, _) => UpdateQuietHoursCaption();
         _reminderType.SelectionChanged += (_, _) => UpdateQuietHoursCaption();
         foreach (var radio in _priorityButtons)
@@ -282,6 +316,38 @@ internal sealed class ReminderEditorWindow : Window
         _intervalPanel.Children.Add(presets);
         stack.Children.Add(_intervalPanel);
 
+        _hasStartTime.Foreground = Theme.Brush(Theme.Current.Foreground);
+        _hasEndTime.Foreground = Theme.Brush(Theme.Current.Foreground);
+        _hasStartTime.Checked += (_, _) =>
+        {
+            // The days are shared with the weekly kind; a fresh timetable
+            // starts on the working week rather than on no days at all.
+            if (!_weekdayBoxes.Any(box => box.IsChecked == true))
+            {
+                foreach (var box in _weekdayBoxes) box.IsChecked = (int)box.Tag is >= 2 and <= 6;
+            }
+            UpdateSchedulePanels();
+        };
+        _hasStartTime.Unchecked += (_, _) => UpdateSchedulePanels();
+        _hasEndTime.Checked += (_, _) => UpdateSchedulePanels();
+        _hasEndTime.Unchecked += (_, _) => UpdateSchedulePanels();
+        stack.Children.Add(_hasStartTime);
+
+        _timedPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        _timedPanel.Children.Add(InlineLabel("From"));
+        _timedPanel.Children.Add(_startHour);
+        _timedPanel.Children.Add(InlineLabel(":"));
+        _timedPanel.Children.Add(_startMinute);
+        _timedPanel.Children.Add(_hasEndTime);
+        _timedPanel.Children.Add(_endHour);
+        _timedPanel.Children.Add(InlineLabel(":"));
+        _timedPanel.Children.Add(_endMinute);
+        stack.Children.Add(_timedPanel);
+
         _dailyPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -295,7 +361,6 @@ internal sealed class ReminderEditorWindow : Window
         _dailyPanel.Children.Add(_dayInterval);
         _dailyPanel.Children.Add(InlineLabel("day(s)"));
         stack.Children.Add(_dailyPanel);
-        stack.Children.Add(_quietHoursCaption);
 
         _weeklyPanel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         var dayRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -324,7 +389,10 @@ internal sealed class ReminderEditorWindow : Window
         // only one panel is visible at a time.
         weeklyTime.Children.Add(InlineLabel("The time above applies to the selected days."));
         _weeklyPanel.Children.Add(weeklyTime);
+        _weeklyTimeNote = weeklyTime;
         stack.Children.Add(_weeklyPanel);
+        // Below the days, so it reads after whichever times it is about.
+        stack.Children.Add(_quietHoursCaption);
 
         _priorityPanel = new StackPanel();
         _priorityPanel.Children.Add(FieldLabel("How it interrupts"));
@@ -760,13 +828,22 @@ internal sealed class ReminderEditorWindow : Window
 
     private void UpdateSchedulePanels()
     {
-        if (_intervalPanel is null || _dailyPanel is null || _weeklyPanel is null) return;
+        if (_intervalPanel is null || _dailyPanel is null || _weeklyPanel is null
+            || _timedPanel is null || _weeklyTimeNote is null) return;
         var kind = _scheduleKind.SelectedIndex;
+        var timed = kind == 0 && _hasStartTime.IsChecked == true;
         _intervalPanel.Visibility = kind == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _hasStartTime.Visibility = _intervalPanel.Visibility;
+        _timedPanel.Visibility = timed ? Visibility.Visible : Visibility.Collapsed;
+        var endVisibility = _hasEndTime.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        _endHour.Visibility = endVisibility;
+        _endMinute.Visibility = endVisibility;
+        _timedPanel.Children[6].Visibility = endVisibility; // ":"
         _dailyPanel.Visibility = kind == 1 || kind == 2
             ? Visibility.Visible
             : Visibility.Collapsed;
-        _weeklyPanel.Visibility = kind == 2 ? Visibility.Visible : Visibility.Collapsed;
+        _weeklyPanel.Visibility = kind == 2 || timed ? Visibility.Visible : Visibility.Collapsed;
+        _weeklyTimeNote.Visibility = kind == 2 ? Visibility.Visible : Visibility.Collapsed;
         // "every N day(s)" only makes sense for the daily kind.
         _dayInterval.Visibility = kind == 1 ? Visibility.Visible : Visibility.Collapsed;
         if (_dailyPanel.Children.Count >= 7)
@@ -785,6 +862,18 @@ internal sealed class ReminderEditorWindow : Window
             ? selected
             : Priority.Normal;
         var priority = IsExerciseType ? Priority.Critical : chosen;
+        if (kind == 0 && _hasStartTime.IsChecked == true)
+        {
+            var warning = int.TryParse(_intervalMinutes.Text, out var every) && every >= 1
+                && ComposeTimedInterval(every, quiet: true) is { } timedSchedule
+                ? Scheduler.TimedIntervalQuietHoursWarning(timedSchedule, priority, _settings)
+                : null;
+            _quietHoursCaption.Text = warning ?? "";
+            _quietHoursCaption.Visibility = warning is null
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            return;
+        }
         var silenced = kind is 1 or 2
             && int.TryParse(_timeHour.Text, out var hour)
             && int.TryParse(_timeMinute.Text, out var minute)
@@ -864,6 +953,24 @@ internal sealed class ReminderEditorWindow : Window
             case Schedule.Interval interval:
                 _scheduleKind.SelectedIndex = 0;
                 _intervalMinutes.Text = interval.Minutes.ToString();
+                break;
+            case Schedule.TimedInterval timedInterval:
+                _scheduleKind.SelectedIndex = 0;
+                _intervalMinutes.Text = timedInterval.Minutes.ToString();
+                _startHour.Text = timedInterval.StartHour.ToString("D2");
+                _startMinute.Text = timedInterval.StartMinute.ToString("D2");
+                if (timedInterval.EndHour is { } endHour && timedInterval.EndMinute is { } endMinute)
+                {
+                    _hasEndTime.IsChecked = true;
+                    _endHour.Text = endHour.ToString("D2");
+                    _endMinute.Text = endMinute.ToString("D2");
+                }
+                foreach (var box in _weekdayBoxes)
+                {
+                    box.IsChecked = timedInterval.Weekdays.Contains((int)box.Tag);
+                }
+                // Last: its Checked handler seeds Mon–Fri only when no day is set.
+                _hasStartTime.IsChecked = true;
                 break;
             case Schedule.DailyAt daily:
                 _scheduleKind.SelectedIndex = 1;
@@ -973,6 +1080,12 @@ internal sealed class ReminderEditorWindow : Window
                 {
                     MessageBox.Show(this, "The interval needs a number of minutes.", "Pauselet");
                     return null;
+                }
+                if (_hasStartTime.IsChecked == true)
+                {
+                    if (ComposeTimedInterval(minutes, quiet: false) is not { } timed) return null;
+                    schedule = timed;
+                    break;
                 }
                 schedule = new Schedule.Interval(minutes);
                 break;
@@ -1133,6 +1246,60 @@ internal sealed class ReminderEditorWindow : Window
             return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// The timetable the "Start at a set time" controls describe, or
+    /// <c>null</c> when they do not describe one yet. <paramref name="quiet"/>
+    /// suppresses the message boxes, for the live quiet-hours caption.
+    /// </summary>
+    private Schedule.TimedInterval? ComposeTimedInterval(int minutes, bool quiet)
+    {
+        void Complain(string text)
+        {
+            if (!quiet) MessageBox.Show(this, text, "Pauselet");
+        }
+        if (!TryParseClock(_startHour, _startMinute, out var startHour, out var startMinute))
+        {
+            Complain("The start time needs to be HH:MM (24-hour).");
+            return null;
+        }
+        int? endHour = null;
+        int? endMinute = null;
+        if (_hasEndTime.IsChecked == true)
+        {
+            if (!TryParseClock(_endHour, _endMinute, out var h, out var m))
+            {
+                Complain("The end time needs to be HH:MM (24-hour).");
+                return null;
+            }
+            if (h * 60 + m <= startHour * 60 + startMinute)
+            {
+                Complain("The end time must be after the start time.");
+                return null;
+            }
+            endHour = h;
+            endMinute = m;
+        }
+        var weekdays = _weekdayBoxes
+            .Where(box => box.IsChecked == true)
+            .Select(box => (int)box.Tag)
+            .ToHashSet();
+        if (weekdays.Count == 0)
+        {
+            Complain("Pick at least one weekday.");
+            return null;
+        }
+        return new Schedule.TimedInterval(
+            minutes, startHour, startMinute, endHour, endMinute, weekdays
+        );
+    }
+
+    private static bool TryParseClock(TextBox hourBox, TextBox minuteBox, out int hour, out int minute)
+    {
+        minute = 0;
+        return int.TryParse(hourBox.Text, out hour) && hour is >= 0 and <= 23
+            && int.TryParse(minuteBox.Text, out minute) && minute is >= 0 and <= 59;
     }
 
     private bool TryParseTime(out int hour, out int minute)

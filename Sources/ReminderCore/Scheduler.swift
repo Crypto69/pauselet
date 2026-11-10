@@ -100,6 +100,10 @@ public enum Scheduler {
                 weekdays: weekdays,
                 calendar: calendar
             )
+
+        case .timedInterval:
+            guard let grid = TimedGrid(reminder.schedule) else { return nil }
+            return grid.firstSlot(after: anchor, calendar: calendar)
         }
     }
 
@@ -216,7 +220,163 @@ public enum Scheduler {
                 if slot <= now { return nil }
             }
             return nil
+
+        case .timedInterval:
+            guard let grid = TimedGrid(reminder.schedule),
+                  let slot = grid.latestSlot(atOrBefore: now, calendar: calendar)
+            else { return nil }
+            return slot > anchor ? slot : nil
         }
+    }
+
+    // MARK: - Timed-interval grid
+
+    /// The slots of a `.timedInterval` schedule, as minutes past midnight on
+    /// each selected weekday: `start`, `start + step`, … up to `last`.
+    ///
+    /// Slots are wall-clock times materialised through the calendar, like
+    /// daily and weekly ones, so a DST change moves none of them. Walking a
+    /// day's slots is a loop starting from an arithmetic guess rather than
+    /// from the first slot, so a one-minute grid costs a few iterations, not
+    /// a thousand.
+    struct TimedGrid {
+        let step: Int
+        let start: Int
+        /// The last slot's minute of the day; `nil` when the window holds none.
+        let last: Int?
+        let weekdays: Set<Int>
+
+        init?(_ schedule: Schedule) {
+            guard case .timedInterval(let minutes, let startHour, let startMinute,
+                                      let endHour, let endMinute, let weekdays) = schedule,
+                  !weekdays.isEmpty
+            else { return nil }
+            step = max(1, minutes)
+            start = startHour * 60 + startMinute
+            let end: Int
+            if let endHour, let endMinute {
+                end = min(endHour * 60 + endMinute, 24 * 60 - 1)
+            } else {
+                end = 24 * 60 - 1
+            }
+            last = end >= start ? start + ((end - start) / step) * step : nil
+            self.weekdays = weekdays
+        }
+
+        private func slot(_ minuteOfDay: Int, on day: Date, calendar: Calendar) -> Date? {
+            calendar.date(
+                bySettingHour: minuteOfDay / 60, minute: minuteOfDay % 60, second: 0, of: day
+            )
+        }
+
+        private func minuteOfDay(_ date: Date, calendar: Calendar) -> Int {
+            let comps = calendar.dateComponents([.hour, .minute], from: date)
+            return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        }
+
+        /// The first slot strictly after `anchor`.
+        func firstSlot(after anchor: Date, calendar: Calendar) -> Date? {
+            guard let last else { return nil }
+            let anchorDay = calendar.startOfDay(for: anchor)
+            // The anchor day plus the next 7 covers every weekday even when
+            // the anchor day's own slots have all passed.
+            for offset in 0...7 {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: anchorDay),
+                      weekdays.contains(calendar.component(.weekday, from: day))
+                else { continue }
+                var m = start
+                if offset == 0 {
+                    // Jump to the slot at or just before the anchor; the loop
+                    // then steps past it.
+                    let elapsed = minuteOfDay(anchor, calendar: calendar) - start
+                    if elapsed > 0 { m = start + (elapsed / step) * step }
+                }
+                while m <= last {
+                    if let slot = slot(m, on: day, calendar: calendar), slot > anchor {
+                        return slot
+                    }
+                    m += step
+                }
+            }
+            return nil
+        }
+
+        /// The latest slot at or before `now`, on any selected day in the
+        /// last week.
+        func latestSlot(atOrBefore now: Date, calendar: Calendar) -> Date? {
+            guard let last else { return nil }
+            let today = calendar.startOfDay(for: now)
+            for offset in 0...7 {
+                guard let day = calendar.date(byAdding: .day, value: -offset, to: today),
+                      weekdays.contains(calendar.component(.weekday, from: day))
+                else { continue }
+                var m = last
+                if offset == 0 {
+                    let elapsed = minuteOfDay(now, calendar: calendar) - start
+                    if elapsed < 0 { continue }
+                    m = min(last, start + (elapsed / step + 1) * step)
+                }
+                while m >= start {
+                    if let slot = slot(m, on: day, calendar: calendar), slot <= now {
+                        return slot
+                    }
+                    m -= step
+                }
+            }
+            return nil
+        }
+    }
+
+    /// How late a timed-interval slot may be delivered before it is recorded
+    /// as missed instead: half its interval, and never under a minute.
+    ///
+    /// A timed interval usually exists to stay in step with something else
+    /// ("five minutes before the break"), so a slot delivered most of an
+    /// interval late is wrong rather than merely late — and the next slot
+    /// would follow it within minutes. The one-minute floor keeps a very
+    /// short grid from skipping a slot over ordinary tick latency.
+    public static func lateDeliveryLimit(forTimedIntervalMinutes minutes: Int) -> TimeInterval {
+        max(60, TimeInterval(max(1, minutes)) * 30)
+    }
+
+    /// For the editor's quiet-hours warning: how many of a timed interval's
+    /// daily slots quiet hours would skip, out of how many there are.
+    public static func timedIntervalSilencedSlots(
+        _ schedule: Schedule, priority: Priority, settings: Settings
+    ) -> (silenced: Int, total: Int) {
+        guard let grid = TimedGrid(schedule), let last = grid.last else { return (0, 0) }
+        var silenced = 0
+        var total = 0
+        var m = grid.start
+        while m <= last {
+            total += 1
+            if wallClockTimeIsSilenced(
+                hour: m / 60, minute: m % 60, priority: priority, settings: settings
+            ) {
+                silenced += 1
+            }
+            m += grid.step
+        }
+        return (silenced, total)
+    }
+
+    /// The editor's quiet-hours warning for a timed interval, or `nil` when
+    /// quiet hours skip none of its times.
+    public static func timedIntervalQuietHoursWarning(
+        _ schedule: Schedule, priority: Priority, settings: Settings
+    ) -> String? {
+        let slots = timedIntervalSilencedSlots(schedule, priority: priority, settings: settings)
+        guard slots.silenced > 0 else { return nil }
+        let quiet = settings.quietHours
+        let window = String(
+            format: "%02d:%02d–%02d:%02d",
+            quiet.startHour, quiet.startMinute, quiet.endHour, quiet.endMinute
+        )
+        if slots.silenced == slots.total {
+            return "Every time falls inside quiet hours (\(window)), so it will never fire."
+        }
+        return "\(slots.silenced) of the \(slots.total) daily times fall inside "
+            + "quiet hours (\(window)) and will be skipped."
     }
 
 
@@ -453,9 +613,15 @@ public enum Scheduler {
         }
 
         let slot = latestElapsedSlot(for: sim, now: fireAt, calendar: calendar) ?? fireAt
-        let skipped = isSuppressedByQuietHours(
+        var skipped = isSuppressedByQuietHours(
             priority: sim.priority, settings: settings, now: slot, calendar: calendar
         )
+        if case .timedInterval(let minutes, _, _, _, _, _) = sim.schedule,
+           fireAt.timeIntervalSince(slot)
+            > lateDeliveryLimit(forTimedIntervalMinutes: minutes) {
+            // Missed by too much to still be useful; see `lateDeliveryLimit`.
+            skipped = true
+        }
         return FireStep(fireDate: fireAt, stampDate: slot, outcome: skipped ? .skip : .deliver)
     }
 
