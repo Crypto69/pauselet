@@ -98,8 +98,9 @@ internal sealed class OverlayPresenter : IReminderPresenting
 
     private void DisplayWarning(Reminder reminder, Instant takeoverAt, Core.Settings settings)
     {
-        // The default chime: the reminder's own sound belongs to the takeover.
-        if (settings.PlaysSound(Priority.Important)) Sounds.Play("Glass");
+        // The warning's own sound — the reminder's belongs to the takeover —
+        // unless the reminder asks for a quiet warning.
+        if (Warnings.PlaysSound(reminder, settings)) Sounds.Play(Warnings.Sound(reminder));
         var card = new SubtleCardWindow(
             reminder,
             displaySeconds: null,

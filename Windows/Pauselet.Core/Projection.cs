@@ -134,6 +134,27 @@ public static class Warnings
         _ => false,
     };
 
+    /// <summary>
+    /// Whether a reminder's advance warning chimes: sounds are on (the
+    /// warning follows the Important tier's rule, as its card does) and the
+    /// reminder has not asked for a quiet one. The takeover's own sound is
+    /// separate and unaffected.
+    /// </summary>
+    public static bool PlaysSound(Reminder reminder, Settings settings) =>
+        settings.PlaysSound(Priority.Important) && reminder.WarningIsSilent != true;
+
+    /// <summary>
+    /// The chime a warning plays when it plays one. A warning has its own
+    /// sound rather than the reminder's: that belongs to the takeover.
+    /// </summary>
+    public const string DefaultSound = "Glass";
+
+    /// <summary>
+    /// The sound <paramref name="reminder"/>'s warning plays, by name: the one
+    /// chosen in the editor, or the default chime.
+    /// </summary>
+    public static string Sound(Reminder reminder) => reminder.WarningSoundName ?? DefaultSound;
+
     /// <summary>The warning card's title, the same on every platform.</summary>
     public static string Title(Reminder reminder) => $"Coming up: {reminder.Title}";
 

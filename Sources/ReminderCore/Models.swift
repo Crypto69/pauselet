@@ -196,6 +196,15 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// Critical tier, and never stored as 0 — the editor collapses that to
     /// `nil`.
     public var warningMinutes: Int?
+    /// Whether that warning appears without its chime: a quiet heads-up
+    /// before a takeover that still sounds. `nil` means it chimes (when sounds
+    /// are on). Never stored as `false` — the editor collapses that to `nil` —
+    /// so a reminder left at the default encodes exactly as it did before
+    /// this option existed.
+    public var warningIsSilent: Bool?
+    /// The sound that warning plays, from the same list as `soundName`.
+    /// `nil` is the default chime. Only stored for a warning that chimes.
+    public var warningSoundName: String?
     /// When the reminder last fired. Drives interval scheduling.
     public var lastFiredAt: Date?
     /// When the reminder was last acknowledged (completed or dismissed).
@@ -219,6 +228,8 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         exercises: [Exercise]? = nil,
         restBetweenExercisesSeconds: Int? = nil,
         warningMinutes: Int? = nil,
+        warningIsSilent: Bool? = nil,
+        warningSoundName: String? = nil,
         lastFiredAt: Date? = nil,
         lastAcknowledgedAt: Date? = nil,
         snoozedUntil: Date? = nil,
@@ -238,6 +249,8 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.exercises = exercises
         self.restBetweenExercisesSeconds = restBetweenExercisesSeconds
         self.warningMinutes = warningMinutes
+        self.warningIsSilent = warningIsSilent
+        self.warningSoundName = warningSoundName
         self.lastFiredAt = lastFiredAt
         self.lastAcknowledgedAt = lastAcknowledgedAt
         self.snoozedUntil = snoozedUntil
@@ -288,6 +301,8 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
             Int.self, forKey: .restBetweenExercisesSeconds
         )
         warningMinutes = try container.decodeIfPresent(Int.self, forKey: .warningMinutes)
+        warningIsSilent = try container.decodeIfPresent(Bool.self, forKey: .warningIsSilent)
+        warningSoundName = try container.decodeIfPresent(String.self, forKey: .warningSoundName)
         lastFiredAt = try container.decodeIfPresent(Date.self, forKey: .lastFiredAt)
         lastAcknowledgedAt = try container.decodeIfPresent(
             Date.self, forKey: .lastAcknowledgedAt

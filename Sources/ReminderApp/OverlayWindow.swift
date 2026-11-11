@@ -531,10 +531,15 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
 
         // The sound a notification would have carried. Played here because
         // the card is ours; a preview plays it too, since hearing the reminder
-        // is part of previewing it. A warning takes the default chime: the
-        // reminder's own sound belongs to the takeover.
-        if settings.playsSound(for: .important) {
-            Sounds.play(named: takeoverAt == nil ? (reminder.soundName ?? "Glass") : "Glass")
+        // is part of previewing it. A warning plays its own sound — the
+        // reminder's belongs to the takeover — unless the reminder asks for a
+        // quiet warning.
+        if takeoverAt != nil {
+            if Scheduler.warningPlaysSound(for: reminder, settings: settings) {
+                Sounds.play(named: Scheduler.warningSound(for: reminder))
+            }
+        } else if settings.playsSound(for: .important) {
+            Sounds.play(named: reminder.soundName ?? "Glass")
         }
 
         let view: ImportantCardView

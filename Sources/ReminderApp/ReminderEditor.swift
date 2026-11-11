@@ -40,6 +40,8 @@ struct ReminderEditor: View {
     @State private var hasActivityDuration: Bool
     @State private var hasWarning: Bool
     @State private var warningMinutes: Int
+    @State private var warningPlaysSound: Bool
+    @State private var warningSoundName: String?
     @State private var activityMinutes: Int
     @State private var soundName: String?
     @State private var usesCustomDisplaySeconds: Bool
@@ -99,6 +101,8 @@ struct ReminderEditor: View {
 
         _hasWarning = State(initialValue: reminder?.warningMinutes != nil)
         _warningMinutes = State(initialValue: reminder?.warningMinutes ?? 5)
+        _warningPlaysSound = State(initialValue: reminder?.warningIsSilent != true)
+        _warningSoundName = State(initialValue: reminder?.warningSoundName)
 
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
@@ -398,6 +402,8 @@ struct ReminderEditor: View {
                         ReminderWarningSection(
                             hasWarning: $hasWarning,
                             minutes: $warningMinutes,
+                            playsSound: $warningPlaysSound,
+                            soundName: $warningSoundName,
                             schedule: composedSchedule
                         )
                     }
@@ -520,6 +526,15 @@ struct ReminderEditor: View {
         reminder.warningMinutes = effectivePriority == .critical && hasWarning
             ? min(max(warningMinutes, Self.warningRange.lowerBound), Self.warningRange.upperBound)
             : nil
+        // Only a quiet warning is written; the default (a chime) is left off
+        // the reminder entirely, as is any choice for a warning that is off.
+        reminder.warningIsSilent = reminder.warningMinutes != nil && !warningPlaysSound
+            ? true
+            : nil
+        // Likewise the sound: kept only for a warning that plays one.
+        reminder.warningSoundName = reminder.warningMinutes != nil && warningPlaysSound
+            ? warningSoundName
+            : nil
         return reminder
     }
 
@@ -626,6 +641,11 @@ struct SymbolPicker: View {
 struct ReminderWarningSection: View {
     @Binding var hasWarning: Bool
     @Binding var minutes: Int
+    /// Whether the warning card chimes. Off gives a quiet heads-up; the
+    /// takeover keeps its own sound either way.
+    @Binding var playsSound: Bool
+    /// The sound it plays; `nil` is the default chime.
+    @Binding var soundName: String?
     /// The schedule being edited, to say when the lead outlasts its interval.
     let schedule: Schedule
 
@@ -667,6 +687,31 @@ struct ReminderWarningSection: View {
                         Scheduler.warningMinutesRange.upperBound
                     )
                     if clamped != value { minutes = clamped }
+                }
+                Toggle("Play a sound with the warning", isOn: $playsSound)
+                    .help(
+                        "Turn off for a quiet heads-up. The takeover itself "
+                            + "still plays its sound. Has no effect while "
+                            + "sounds are off in Settings."
+                    )
+                if playsSound {
+                    // The same list as the reminder's own sound, and the same
+                    // habit: choosing one plays it.
+                    Picker(
+                        "Warning sound",
+                        selection: Binding(
+                            get: { soundName ?? "" },
+                            set: { soundName = $0.isEmpty ? nil : $0 }
+                        )
+                    ) {
+                        Text("Default (\(Scheduler.defaultWarningSound))").tag("")
+                        ForEach(Sounds.available, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
+                    }
+                    .onChange(of: soundName) { newValue in
+                        Sounds.play(named: newValue ?? Scheduler.defaultWarningSound)
+                    }
                 }
                 Text(
                     "A card appears in the top-right corner and stays "

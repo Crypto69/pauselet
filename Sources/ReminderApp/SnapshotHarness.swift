@@ -488,6 +488,8 @@ enum SnapshotHarness {
                     ReminderWarningSection(
                         hasWarning: .constant(true),
                         minutes: .constant(5),
+                        playsSound: .constant(true),
+                        soundName: .constant(nil),
                         schedule: .timedInterval(
                             minutes: interval, startHour: 5, startMinute: 45,
                             endHour: 13, endMinute: 0, weekdays: [2, 3, 4, 5, 6]
@@ -495,7 +497,7 @@ enum SnapshotHarness {
                     )
                 }
                 .formStyle(.grouped),
-                size: NSSize(width: 470, height: 230),
+                size: NSSize(width: 470, height: 280),
                 named: name,
                 into: directory
             )

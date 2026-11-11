@@ -147,6 +147,24 @@ extension Scheduler {
         }
     }
 
+    /// Whether a reminder's advance warning chimes: sounds are on (the warning
+    /// follows the Important tier's rule, as its card does) and the reminder
+    /// has not asked for a quiet one. The takeover's own sound is separate and
+    /// unaffected.
+    public static func warningPlaysSound(for reminder: Reminder, settings: Settings) -> Bool {
+        settings.playsSound(for: .important) && reminder.warningIsSilent != true
+    }
+
+    /// The chime a warning plays when it plays one. A warning has its own
+    /// sound rather than the reminder's: that belongs to the takeover.
+    public static let defaultWarningSound = "Glass"
+
+    /// The sound `reminder`'s warning plays, by name: the one chosen in the
+    /// editor, or the default chime.
+    public static func warningSound(for reminder: Reminder) -> String {
+        reminder.warningSoundName ?? defaultWarningSound
+    }
+
     /// The warning card's title, the same on every platform.
     public static func warningTitle(for reminder: Reminder) -> String {
         "Coming up: \(reminder.title)"

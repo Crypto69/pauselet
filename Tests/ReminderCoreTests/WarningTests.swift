@@ -235,4 +235,55 @@ final class WarningTests: XCTestCase {
         let old = try JSONSerialization.data(withJSONObject: object)
         XCTAssertNil(try JSONDecoder().decode(Reminder.self, from: old).warningMinutes)
     }
+
+    // MARK: - Sound
+
+    func testWarningChimesByDefaultAndCanBeQuiet() {
+        var r = critical(breaks, createdAt: date(2026, 3, 9))
+        XCTAssertTrue(Scheduler.warningPlaysSound(for: r, settings: Settings()))
+        r.warningIsSilent = true
+        XCTAssertFalse(Scheduler.warningPlaysSound(for: r, settings: Settings()))
+    }
+
+    func testSoundsOffSilencesEveryWarning() {
+        let r = critical(breaks, createdAt: date(2026, 3, 9))
+        XCTAssertFalse(Scheduler.warningPlaysSound(for: r, settings: Settings(soundEnabled: false)))
+    }
+
+    /// A quiet warning must not quiet the takeover it announces.
+    func testQuietWarningLeavesTheTakeoverSound() {
+        var r = critical(breaks, createdAt: date(2026, 3, 9))
+        r.warningIsSilent = true
+        XCTAssertTrue(Settings().playsSound(for: r.priority))
+    }
+
+    func testQuietWarningPersistsAndTheDefaultIsNotWritten() throws {
+        var r = critical(breaks, warning: 15, createdAt: date(2026, 3, 9))
+        let chiming = try JSONEncoder().encode(r)
+        XCTAssertFalse(String(decoding: chiming, as: UTF8.self).contains("warningIsSilent"),
+                       "the default encodes exactly as before the option existed")
+        XCTAssertNil(try JSONDecoder().decode(Reminder.self, from: chiming).warningIsSilent)
+
+        r.warningIsSilent = true
+        let quiet = try JSONEncoder().encode(r)
+        XCTAssertEqual(try JSONDecoder().decode(Reminder.self, from: quiet).warningIsSilent, true)
+    }
+
+    func testWarningPlaysTheChosenSoundOrTheDefault() {
+        var r = critical(breaks, createdAt: date(2026, 3, 9))
+        XCTAssertEqual(Scheduler.warningSound(for: r), "Glass")
+        r.warningSoundName = "Submarine"
+        XCTAssertEqual(Scheduler.warningSound(for: r), "Submarine")
+        XCTAssertNil(r.soundName, "the takeover's sound is separate")
+    }
+
+    func testWarningSoundPersistsAndTheDefaultIsNotWritten() throws {
+        var r = critical(breaks, warning: 15, createdAt: date(2026, 3, 9))
+        XCTAssertFalse(
+            String(decoding: try JSONEncoder().encode(r), as: UTF8.self).contains("warningSoundName")
+        )
+        r.warningSoundName = "Hero"
+        let data = try JSONEncoder().encode(r)
+        XCTAssertEqual(try JSONDecoder().decode(Reminder.self, from: data).warningSoundName, "Hero")
+    }
 }

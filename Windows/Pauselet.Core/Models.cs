@@ -276,6 +276,19 @@ public sealed record Reminder
     /// the Critical tier, and never stored as 0.
     /// </summary>
     public int? WarningMinutes { get; init; }
+    /// <summary>
+    /// Whether that warning appears without its chime: a quiet heads-up
+    /// before a takeover that still sounds. <c>null</c> means it chimes (when
+    /// sounds are on). Never stored as <c>false</c> — the editor collapses
+    /// that to <c>null</c> — so a reminder left at the default encodes exactly
+    /// as it did before this option existed.
+    /// </summary>
+    public bool? WarningIsSilent { get; init; }
+    /// <summary>
+    /// The sound that warning plays, from the same list as <see cref="SoundName"/>.
+    /// <c>null</c> is the default chime. Only stored for a warning that chimes.
+    /// </summary>
+    public string? WarningSoundName { get; init; }
     /// <summary>When the reminder last fired. Drives interval scheduling.</summary>
     public Instant? LastFiredAt { get; init; }
     /// <summary>When the reminder was last acknowledged (completed or dismissed).</summary>
@@ -320,6 +333,8 @@ public sealed record Reminder
         && ExercisesEqual(other.Exercises)
         && RestBetweenExercisesSeconds == other.RestBetweenExercisesSeconds
         && WarningMinutes == other.WarningMinutes
+        && WarningIsSilent == other.WarningIsSilent
+        && WarningSoundName == other.WarningSoundName
         && LastFiredAt == other.LastFiredAt
         && LastAcknowledgedAt == other.LastAcknowledgedAt
         && SnoozedUntil == other.SnoozedUntil

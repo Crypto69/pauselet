@@ -83,6 +83,23 @@ internal sealed class ReminderEditorWindow : Window
     /// Lives in the Critical-only activity panel.
     /// </summary>
     private readonly TextBox _warningMinutes = new() { Width = 60 };
+    /// <summary>Whether the warning card chimes; off gives a quiet heads-up.</summary>
+    private readonly CheckBox _warningPlaysSound = new()
+    {
+        Content = "Play a sound with the warning",
+        IsChecked = true,
+        Margin = new Thickness(0, 6, 0, 0),
+        ToolTip = "Turn off for a quiet heads-up. The takeover itself still plays its "
+            + "sound. Has no effect while sounds are off in Settings.",
+    };
+    /// <summary>The warning's sound and its Listen button.</summary>
+    private readonly StackPanel _warningSoundRow = new() { Orientation = Orientation.Horizontal };
+    /// <summary>The warning's sound; index 0 is the default chime.</summary>
+    private readonly ComboBox _warningSoundPicker = new()
+    {
+        Width = 160,
+        Margin = new Thickness(0, 4, 0, 0),
+    };
     private readonly TextBlock _warningCaution = new()
     {
         Text = "That is as long as the repeat interval, so there is no time to warn "
@@ -521,6 +538,30 @@ internal sealed class ReminderEditorWindow : Window
         _activityPanel.Children.Add(_activityMinutes);
         _activityPanel.Children.Add(FieldLabel("Warn before it takes over (minutes, blank = none)"));
         _activityPanel.Children.Add(_warningMinutes);
+        _activityPanel.Children.Add(_warningPlaysSound);
+        // The same list as the reminder's own sound, with the same Listen button.
+        _warningSoundPicker.Items.Add($"Default ({Warnings.DefaultSound})");
+        foreach (var sound in Sounds.Available) _warningSoundPicker.Items.Add(sound);
+        _warningSoundPicker.SelectedIndex = 0;
+        var warningListen = new Button
+        {
+            Content = "Listen",
+            Margin = new Thickness(8, 4, 0, 0),
+            Padding = new Thickness(10, 2, 10, 2),
+        };
+        warningListen.Click += (_, _) => Sounds.Play(_warningSoundPicker.SelectedIndex > 0
+            ? (string)_warningSoundPicker.SelectedItem
+            : Warnings.DefaultSound);
+        _warningSoundRow.Children.Add(_warningSoundPicker);
+        _warningSoundRow.Children.Add(warningListen);
+        _activityPanel.Children.Add(_warningSoundRow);
+        // Only offered while the warning plays a sound.
+        void SyncWarningSoundPicker() =>
+            _warningSoundRow.Visibility = _warningPlaysSound.IsChecked == true
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        _warningPlaysSound.Checked += (_, _) => SyncWarningSoundPicker();
+        _warningPlaysSound.Unchecked += (_, _) => SyncWarningSoundPicker();
         _activityPanel.Children.Add(new TextBlock
         {
             Text = "A card appears in the corner and stays until you tick it. "
@@ -1042,6 +1083,14 @@ internal sealed class ReminderEditorWindow : Window
 
         _displaySeconds.Text = existing.DisplaySeconds?.ToString() ?? "";
         _warningMinutes.Text = existing.WarningMinutes?.ToString() ?? "";
+        _warningPlaysSound.IsChecked = existing.WarningIsSilent != true;
+        var warningSoundIndex = existing.WarningSoundName is { } warningSound
+            ? Array.IndexOf(Sounds.Available, warningSound)
+            : -1;
+        _warningSoundPicker.SelectedIndex = warningSoundIndex >= 0 ? warningSoundIndex + 1 : 0;
+        _warningSoundRow.Visibility = _warningPlaysSound.IsChecked == true
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         _activityMinutes.Text = existing.ActivityDurationSeconds is { } seconds
             ? (seconds / 60).ToString()
             : "";
@@ -1211,6 +1260,17 @@ internal sealed class ReminderEditorWindow : Window
             DisplaySeconds = displaySeconds,
             ActivityDurationSeconds = activitySeconds,
             WarningMinutes = warningMinutes,
+            // Only a quiet warning is written; the default (a chime) is left
+            // off the reminder, as is any choice for a warning that is off.
+            WarningIsSilent = warningMinutes is not null && _warningPlaysSound.IsChecked != true
+                ? true
+                : null,
+            // Likewise the sound: kept only for a warning that plays one.
+            WarningSoundName = warningMinutes is not null
+                && _warningPlaysSound.IsChecked == true
+                && _warningSoundPicker.SelectedIndex > 0
+                    ? (string)_warningSoundPicker.SelectedItem
+                    : null,
             Exercises = exercises,
             RestBetweenExercisesSeconds = restBetweenExercises,
         };

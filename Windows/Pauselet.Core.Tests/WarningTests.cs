@@ -221,4 +221,74 @@ public class WarningTests
         Assert.DoesNotContain("warningMinutes", Encoding.UTF8.GetString(old));
         Assert.Null(AppDataJson.Decode(old).Reminders[0].WarningMinutes);
     }
+
+    // Sound
+
+    [Fact]
+    public void WarningChimesByDefaultAndCanBeQuiet()
+    {
+        var r = Critical(Breaks, Date(2026, 3, 9));
+        Assert.True(Warnings.PlaysSound(r, new Settings()));
+        Assert.False(Warnings.PlaysSound(r with { WarningIsSilent = true }, new Settings()));
+    }
+
+    [Fact]
+    public void SoundsOffSilencesEveryWarning()
+    {
+        var r = Critical(Breaks, Date(2026, 3, 9));
+        Assert.False(Warnings.PlaysSound(r, new Settings { SoundEnabled = false }));
+    }
+
+    [Fact]
+    public void QuietWarningLeavesTheTakeoverSound()
+    {
+        var r = Critical(Breaks, Date(2026, 3, 9)) with { WarningIsSilent = true };
+        Assert.True(new Settings().PlaysSound(r.Priority));
+    }
+
+    [Fact]
+    public void QuietWarningPersistsAndTheDefaultIsNotWritten()
+    {
+        var data = new AppData
+        {
+            Reminders = [Critical(Breaks, Date(2026, 3, 9), warning: 15)],
+            Settings = new Settings(),
+            Events = [],
+        };
+        var chiming = AppDataJson.Encode(data);
+        Assert.DoesNotContain("warningIsSilent", Encoding.UTF8.GetString(chiming));
+        Assert.Null(AppDataJson.Decode(chiming).Reminders[0].WarningIsSilent);
+
+        var quiet = AppDataJson.Encode(
+            data with { Reminders = [data.Reminders[0] with { WarningIsSilent = true }] }
+        );
+        Assert.Contains("\"warningIsSilent\" : true", Encoding.UTF8.GetString(quiet));
+        Assert.True(AppDataJson.Decode(quiet).Reminders[0].WarningIsSilent);
+    }
+
+    [Fact]
+    public void WarningPlaysTheChosenSoundOrTheDefault()
+    {
+        var r = Critical(Breaks, Date(2026, 3, 9));
+        Assert.Equal("Glass", Warnings.Sound(r));
+        Assert.Equal("Submarine", Warnings.Sound(r with { WarningSoundName = "Submarine" }));
+    }
+
+    [Fact]
+    public void WarningSoundPersistsAndTheDefaultIsNotWritten()
+    {
+        var data = new AppData
+        {
+            Reminders = [Critical(Breaks, Date(2026, 3, 9), warning: 15)],
+            Settings = new Settings(),
+            Events = [],
+        };
+        Assert.DoesNotContain("warningSoundName", Encoding.UTF8.GetString(AppDataJson.Encode(data)));
+
+        var chosen = AppDataJson.Encode(
+            data with { Reminders = [data.Reminders[0] with { WarningSoundName = "Hero" }] }
+        );
+        Assert.Contains("\"warningSoundName\" : \"Hero\"", Encoding.UTF8.GetString(chosen));
+        Assert.Equal("Hero", AppDataJson.Decode(chosen).Reminders[0].WarningSoundName);
+    }
 }

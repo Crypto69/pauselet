@@ -37,6 +37,8 @@ struct ReminderEditorView: View {
     @State private var hasActivityDuration: Bool
     @State private var hasWarning: Bool
     @State private var warningMinutes: Int
+    @State private var warningPlaysSound: Bool
+    @State private var warningSoundName: String?
     @State private var activityMinutes: Int
     @State private var soundName: String?
     @State private var usesCustomDisplaySeconds: Bool
@@ -93,6 +95,8 @@ struct ReminderEditorView: View {
         _hasActivityDuration = State(initialValue: duration != nil)
         _hasWarning = State(initialValue: reminder?.warningMinutes != nil)
         _warningMinutes = State(initialValue: reminder?.warningMinutes ?? 5)
+        _warningPlaysSound = State(initialValue: reminder?.warningIsSilent != true)
+        _warningSoundName = State(initialValue: reminder?.warningSoundName)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
 
         // Seed every schedule control with a sensible default, then override
@@ -367,6 +371,34 @@ struct ReminderEditorView: View {
                                 let clamped = min(max(value, range.lowerBound), range.upperBound)
                                 if clamped != value { warningMinutes = clamped }
                             }
+                            HelpRow(
+                                title: "Play a sound",
+                                help: "Turn off for a quiet heads-up. The takeover "
+                                    + "itself still plays its sound."
+                            ) {
+                                Toggle("", isOn: $warningPlaysSound.animation()).labelsHidden()
+                            }
+                            .accessibilityIdentifier("editorWarningSound")
+                            if warningPlaysSound {
+                                // The same list as the reminder's own sound,
+                                // and choosing one plays it.
+                                Picker(
+                                    "Warning sound",
+                                    selection: Binding(
+                                        get: { warningSoundName ?? "" },
+                                        set: {
+                                            warningSoundName = $0.isEmpty ? nil : $0
+                                            if let name = warningSoundName { Sounds.play(named: name) }
+                                        }
+                                    )
+                                ) {
+                                    Text("Default").tag("")
+                                    ForEach(Sounds.available, id: \.self) { name in
+                                        Text(name).tag(name)
+                                    }
+                                }
+                                .accessibilityIdentifier("editorWarningSoundName")
+                            }
                             if Scheduler.warningOutlastsInterval(
                                 warningMinutes, schedule: composedSchedule
                             ) {
@@ -583,6 +615,15 @@ struct ReminderEditorView: View {
                 max(warningMinutes, Scheduler.warningMinutesRange.lowerBound),
                 Scheduler.warningMinutesRange.upperBound
             )
+            : nil
+        // Only a quiet warning is written; the default (a chime) is left off
+        // the reminder entirely, as is any choice for a warning that is off.
+        reminder.warningIsSilent = reminder.warningMinutes != nil && !warningPlaysSound
+            ? true
+            : nil
+        // Likewise the sound: kept only for a warning that plays one.
+        reminder.warningSoundName = reminder.warningMinutes != nil && warningPlaysSound
+            ? warningSoundName
             : nil
         // Tidied (trimmed, line endings unified, empty collapsed to nil) so
         // the same list serializes identically on every platform.

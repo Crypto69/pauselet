@@ -49,6 +49,9 @@ risk.
 | History — adherence + range picker | ✅ | ✅ | ✅ |
 | Shared `EditorCatalog` | ✅ | ✅ | ✅ |
 | Tier colours on the fired surfaces + red edge glow on the takeover | ✅ | ✅ | ✅ *unseen* |
+| Repeating on a set timetable ("Start at a set time") | ✅ | ✅ | ✅ *editor unseen* |
+| Warning before a Critical takeover — quiet, or with a chosen sound | ✅ | ✅ *notification* | ✅ *editor unseen* |
+| Native time control in the editor and quiet hours | ✅ *`DatePicker`* | ✅ *`DatePicker`* | ➖ *text boxes, no stepper* |
 | Music / Spotify | ✅ | ➖ *by design* | ➖ *deferred to v2* |
 
 ✅ done ⚠️ partial ❌ missing ➖ deliberately out of scope · *unseen* = built and compiling, never run

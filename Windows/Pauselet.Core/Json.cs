@@ -153,6 +153,14 @@ public static class AppDataJson
         {
             obj.Members["warningMinutes"] = new JVal.Num(warningMinutes);
         }
+        if (reminder.WarningIsSilent is { } warningIsSilent)
+        {
+            obj.Members["warningIsSilent"] = new JVal.Bool(warningIsSilent);
+        }
+        if (reminder.WarningSoundName is { } warningSoundName)
+        {
+            obj.Members["warningSoundName"] = new JVal.Str(warningSoundName);
+        }
         if (reminder.LastFiredAt is { } fired)
         {
             obj.Members["lastFiredAt"] = EncodeDate(fired);
@@ -493,6 +501,8 @@ public static class AppDataJson
         Exercises = OptionalExercises(element),
         RestBetweenExercisesSeconds = OptionalInt(element, "restBetweenExercisesSeconds"),
         WarningMinutes = OptionalInt(element, "warningMinutes"),
+        WarningIsSilent = OptionalBool(element, "warningIsSilent"),
+        WarningSoundName = OptionalString(element, "warningSoundName"),
         LastFiredAt = OptionalDate(element, "lastFiredAt"),
         LastAcknowledgedAt = OptionalDate(element, "lastAcknowledgedAt"),
         SnoozedUntil = OptionalDate(element, "snoozedUntil"),
@@ -699,6 +709,12 @@ public static class AppDataJson
         element.TryGetProperty(name, out var value)
         && value.ValueKind != JsonValueKind.Null
             ? value.GetInt32()
+            : null;
+
+    private static bool? OptionalBool(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value)
+        && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
             : null;
 
     private static string? OptionalString(JsonElement element, string name) =>

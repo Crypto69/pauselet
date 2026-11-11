@@ -173,9 +173,11 @@ struct NotificationPlan: Equatable {
     /// §3.2 of the plan: subtle goes straight to Notification Center, normal
     /// behaves normally, important (and critical, when demoted to a
     /// notification) pierces Focus modes that allow time-sensitive delivery.
-    /// A warning is a time-sensitive notification with the default chime: it
-    /// must get through a Focus to be any use, and its sound belongs to the
-    /// takeover, not to the heads-up.
+    /// A warning is a time-sensitive notification: it must get through a
+    /// Focus to be any use. It plays its own sound (the system default unless
+    /// one was chosen for it), not the reminder's, which belongs to the
+    /// takeover; or none, for a quiet warning. Both are part of the content
+    /// key, so changing either replaces warnings already pending.
     static func warningItem(
         for reminder: Reminder,
         warnAt: Date,
@@ -185,9 +187,10 @@ struct NotificationPlan: Equatable {
     ) -> Item {
         let title = Scheduler.warningTitle(for: reminder)
         let body = Scheduler.warningMessage(takeoverAt: takeoverAt, calendar: calendar)
-        let playsSound = settings.playsSound(for: .important)
+        let playsSound = Scheduler.warningPlaysSound(for: reminder, settings: settings)
+        let soundName = Sounds.bundledName(for: reminder.warningSoundName)
         let key = contentKey(
-            title: title, body: body, fireDate: warnAt, soundName: nil,
+            title: title, body: body, fireDate: warnAt, soundName: soundName,
             playsSound: playsSound, interruption: .timeSensitive, isWallClockSlot: false
         )
         return Item(
@@ -200,7 +203,7 @@ struct NotificationPlan: Equatable {
             fireDate: warnAt,
             stampDate: takeoverAt,
             priority: reminder.priority,
-            soundName: nil,
+            soundName: soundName,
             playsSound: playsSound,
             interruption: .timeSensitive,
             isWallClockSlot: false,

@@ -121,6 +121,53 @@ final class NotificationPlanTests: XCTestCase {
         XCTAssertLessThanOrEqual(plan.items.count, NotificationPlan.budget)
     }
 
+    /// A quiet warning is posted without a sound, the takeover keeps its
+    /// own, and the choice is part of the identifier so a pending warning
+    /// is replaced when it changes.
+    func testQuietWarningHasNoSoundAndReplacesThePendingOne() {
+        let now = date(2026, 3, 9, 5, 0)
+        var r = warned(createdAt: now)
+        func build() -> NotificationPlan {
+            NotificationPlan.build(
+                reminders: [r], settings: Settings(), now: now,
+                alarmsCarrying: [], calendar: calendar
+            )
+        }
+        let chiming = build()
+        r.warningIsSilent = true
+        let quiet = build()
+
+        XCTAssertTrue(chiming.items.filter(\.isWarning).allSatisfy(\.playsSound))
+        XCTAssertFalse(quiet.items.filter(\.isWarning).contains(where: \.playsSound))
+        XCTAssertTrue(quiet.items.filter { !$0.isWarning }.allSatisfy(\.playsSound))
+        XCTAssertTrue(
+            Set(chiming.items.filter(\.isWarning).map(\.identifier))
+                .isDisjoint(with: quiet.items.filter(\.isWarning).map(\.identifier))
+        )
+    }
+
+    /// A chosen warning sound is the one posted, and choosing it replaces
+    /// the warnings already pending.
+    func testWarningCarriesItsChosenSound() {
+        let now = date(2026, 3, 9, 5, 0)
+        var r = warned(createdAt: now)
+        func warnings() -> [NotificationPlan.Item] {
+            NotificationPlan.build(
+                reminders: [r], settings: Settings(), now: now,
+                alarmsCarrying: [r.id], calendar: calendar
+            ).items.filter(\.isWarning)
+        }
+        let byDefault = warnings()
+        XCTAssertTrue(byDefault.allSatisfy { $0.soundName == nil }, "system default")
+        r.warningSoundName = "Submarine"
+        let chosen = warnings()
+        XCTAssertFalse(chosen.isEmpty)
+        XCTAssertTrue(chosen.allSatisfy { $0.soundName == "Submarine" && $0.playsSound })
+        XCTAssertTrue(
+            Set(byDefault.map(\.identifier)).isDisjoint(with: chosen.map(\.identifier))
+        )
+    }
+
     /// Nothing records that a warning was shown, so one already due is left
     /// out rather than posted again on every refill.
     func testAWarningAlreadyDueIsNotScheduled() {
