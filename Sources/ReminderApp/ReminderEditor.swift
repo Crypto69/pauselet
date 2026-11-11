@@ -263,18 +263,10 @@ struct ReminderEditor: View {
                                     .labelsHidden()
                             }
                             if hasStartTime {
-                                HStack {
-                                    Text("From")
-                                        .offset(y: TimeComponentField.labelCorrection)
-                                    TimeField(hour: $timeHour, minute: $timeMinute)
-                                }
+                                TimeField("From", hour: $timeHour, minute: $timeMinute)
                                 Toggle("End at a set time", isOn: $hasEndTime)
                                 if hasEndTime {
-                                    HStack {
-                                        Text("Until")
-                                            .offset(y: TimeComponentField.labelCorrection)
-                                        TimeField(hour: $endHour, minute: $endMinute)
-                                    }
+                                    TimeField("Until", hour: $endHour, minute: $endMinute)
                                 }
                                 WeekdayPicker(selection: $weekdays)
                                 if endIsBeforeStart {
@@ -287,11 +279,7 @@ struct ReminderEditor: View {
                                 }
                             }
                         case .daily:
-                            HStack {
-                                Text("At")
-                                    .offset(y: TimeComponentField.labelCorrection)
-                                TimeField(hour: $timeHour, minute: $timeMinute)
-                            }
+                            TimeField("At", hour: $timeHour, minute: $timeMinute)
                             Stepper(
                                 dayInterval == 1
                                     ? "Every day"
@@ -300,11 +288,7 @@ struct ReminderEditor: View {
                                 in: 1...30
                             )
                         case .weekly:
-                            HStack {
-                                Text("At")
-                                    .offset(y: TimeComponentField.labelCorrection)
-                                TimeField(hour: $timeHour, minute: $timeMinute)
-                            }
+                            TimeField("At", hour: $timeHour, minute: $timeMinute)
                             WeekdayPicker(selection: $weekdays)
                         }
 

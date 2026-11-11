@@ -69,7 +69,7 @@ enum SnapshotHarness {
 
     /// A representative set of reminders, so snapshots show every priority tier
     /// and schedule kind rather than an empty app.
-    private static func sampleEngine() -> ReminderEngine {
+    private static func sampleEngine(quietHours: QuietHours = QuietHours()) -> ReminderEngine {
         let now = Date()
         var tilt = Reminder(
             title: "Tilt Back",
@@ -138,6 +138,7 @@ enum SnapshotHarness {
             data: AppData(
                 reminders: [tilt, shift, water, physio, physioSet, call],
                 settings: Settings(
+                    quietHours: quietHours,
                     defaultPlaylistURI: "spotify:playlist:37i9dQZF1DX4sWSpwq3LiO"
                 )
             )
@@ -182,6 +183,19 @@ enum SnapshotHarness {
                 .environmentObject(ai),
             size: NSSize(width: 760, height: 560),
             named: "settings",
+            into: directory
+        )
+
+        // The quiet-hours row on its own: two time controls inline in one
+        // sentence ("From 22:00 to 07:00"), to review their alignment.
+        snapshot(
+            PreferencesTab()
+                .environmentObject(sampleEngine(quietHours: QuietHours(isEnabled: true)))
+                .environmentObject(music)
+                .environmentObject(speech)
+                .environmentObject(ai),
+            size: NSSize(width: 700, height: 220),
+            named: "preferences-quiet-hours",
             into: directory
         )
 

@@ -8,7 +8,7 @@ import ReminderAI
 @MainActor
 final class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
-    private let popover = NSPopover()
+    private var popover: MenuBarPopover!
     private let engine: ReminderEngine
     /// Used to show a reminder exactly as it will appear, from the editor.
     private weak var overlays: OverlayPresenter?
@@ -69,14 +69,7 @@ final class StatusBarController: NSObject {
     }
 
     private func configurePopover() {
-        popover.contentSize = NSSize(width: 380, height: 520)
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = NSHostingController(
-            rootView: MenuBarView(engine: engine)
-                .environmentObject(engine)
-                .onOpenSettings { [weak self] in self?.openSettings() }
-        )
+        popover = MenuBarPopover(engine: engine) { [weak self] in self?.openSettings() }
     }
 
     // MARK: - Menu bar title
@@ -124,7 +117,7 @@ final class StatusBarController: NSObject {
 
     private func togglePopover() {
         if popover.isShown {
-            popover.performClose(nil)
+            popover.close()
             return
         }
         guard let button = statusItem.button else { return }
@@ -132,8 +125,7 @@ final class StatusBarController: NSObject {
         // closes the instant it fails to take focus. Activating first is what
         // makes the popover stay on screen and accept clicks.
         NSApp.activate(ignoringOtherApps: true)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        popover.show(below: button)
     }
 
     /// A right-click menu for the things people reach for most: pausing and
@@ -211,7 +203,7 @@ final class StatusBarController: NSObject {
     // MARK: - Settings window
 
     func openSettings() {
-        popover.performClose(nil)
+        popover.close()
 
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)

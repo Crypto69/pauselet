@@ -47,6 +47,15 @@ let package = Package(
             dependencies: ["ReminderCore"],
             path: "Tests/ReminderCoreTests"
         ),
+        // Tests that render the app's SwiftUI views and measure them: the
+        // geometry tests run headless on every `swift test`; the pixel and
+        // popover tests put windows on screen, so they run only with
+        // PAUSELET_VISUAL_TESTS=1 (see scripts/visual_tests.sh).
+        .testTarget(
+            name: "ReminderAppTests",
+            dependencies: ["ReminderApp", "ReminderCore", "ReminderAI"],
+            path: "Tests/ReminderAppTests"
+        ),
         .testTarget(
             name: "ReminderAITests",
             dependencies: ["ReminderAI"],

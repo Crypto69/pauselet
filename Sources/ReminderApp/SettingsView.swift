@@ -240,24 +240,21 @@ struct PreferencesTab: View {
                         )
                         Spacer(minLength: 8)
                         TimeField(
+                            "Quiet hours start",
                             hour: binding(\.quietHours.startHour),
                             minute: binding(\.quietHours.startMinute)
                         )
+                        .labelsHidden()
                         Text("to")
                             // Full contrast, matching "From" — it is a label in
                             // the same sentence, not secondary chrome.
-                            //
-                            // Nudged onto the digits' centre line. TimeField
-                            // carries an internal correction for the stepper's
-                            // phantom label, which moves the row's centre away
-                            // from where a plain label lands; this offset is
-                            // measured from a rendered screenshot to match.
-                            .offset(y: TimeComponentField.separatorCorrection)
                             .padding(.horizontal, 10)
                         TimeField(
+                            "Quiet hours end",
                             hour: binding(\.quietHours.endHour),
                             minute: binding(\.quietHours.endMinute)
                         )
+                        .labelsHidden()
                     }
 
                     HelpRow(
@@ -395,95 +392,80 @@ struct PreferencesTab: View {
     }
 }
 
-/// Two steppers for an hour and minute, kept compact enough to sit inline.
+/// An hour and minute, edited with the system's own time control: a field
+/// showing `07:25` with a stepper beside it.
+///
+/// This used to be two hand-built text fields, each with a SwiftUI `Stepper`.
+/// A labelless `Stepper` still reserves space for its label, and the fixed
+/// offsets that hid that space were measured on one Mac: on another, with
+/// different control metrics, the colon rode high, the rows gained a gap, and
+/// a field jumped while being typed in. A stepper click also left a focused
+/// field showing its old number — and clicking away then wrote that stale
+/// number back. One native control has none of these problems: the colon is
+/// part of it, its layout box is its real size, and typing and stepping edit
+/// the same value. Each part (hour, minute) can be typed into directly, and
+/// the arrow keys and stepper adjust whichever part is selected.
+///
+/// Shows `title` as the row label in a form; add `.labelsHidden()` to place it
+/// inline in a sentence, where the title is still read by VoiceOver.
 struct TimeField: View {
+    let title: String
     @Binding var hour: Int
     @Binding var minute: Int
 
-    var body: some View {
-        HStack(spacing: 3) {
-            TimeComponentField(value: $hour, range: 0...23, label: "Hour")
-            Text(":")
-                .foregroundStyle(.secondary)
-            TimeComponentField(value: $minute, range: 0...59, label: "Minute")
-        }
+    init(_ title: String, hour: Binding<Int>, minute: Binding<Int>) {
+        self.title = title
+        _hour = hour
+        _minute = minute
     }
-}
-
-/// One editable two-digit component of a time, with a stepper beside it.
-///
-/// Typing matters here: stepping from 00 to 59 a minute at a time is no way to
-/// set a time, and it is worse with assistive input. The field accepts a typed
-/// value and clamps it, while the stepper stays for fine adjustment.
-struct TimeComponentField: View {
-    @Binding var value: Int
-    let range: ClosedRange<Int>
-    let label: String
-
-    @State private var text: String = ""
-    @FocusState private var isFocused: Bool
-
-    /// Corrects the stepper's built-in label spacing so its arrows sit level
-    /// with the digits beside them.
-    private static let stepperVerticalCorrection: CGFloat = 11
-
-    /// Shifts a plain label sitting beside these controls onto their centre
-    /// line. Measured from rendered screenshots: it matches the correction the
-    /// stepper itself needs, which is the same phantom-label space.
-    static let separatorCorrection: CGFloat = 11
-
-    /// The same correction for a capitalised label ("At", "From", "Until")
-    /// leading a row of these controls in the reminder editor. Measured from a
-    /// rendered editor: 9 puts the label's cap height exactly on the digits'.
-    static let labelCorrection: CGFloat = 9
 
     var body: some View {
-        // A Stepper wrapping an EmptyView still reserves space for that label
-        // above its arrows, which pushed it up off the digits. Giving the
-        // stepper a fixed size and centring both in a shared-height row is what
-        // actually lines them up.
-        HStack(alignment: .center, spacing: 3) {
-            TextField("", text: $text)
-                .textFieldStyle(.roundedBorder)
-                .multilineTextAlignment(.center)
-                .monospacedDigit()
-                .frame(width: 42)
-                .focused($isFocused)
-                .accessibilityLabel(label)
-                .onSubmit(commit)
-                .onChange(of: isFocused) { focused in
-                    // Commit when focus leaves, so a typed value is not lost by
-                    // clicking elsewhere instead of pressing Return.
-                    if !focused { commit() }
-                }
-
-            // A labelless Stepper still reserves the space its label would
-            // have taken above the arrows, so it renders ~11pt higher than the
-            // field beside it. Measured against a screenshot and corrected
-            // here, since no alignment guide reaches inside the control.
-            Stepper("", value: $value, in: range)
+        // The label sits in a `LabeledContent` rather than on the picker: a
+        // form lays out a labelled picker itself and stretches the field
+        // across to the label, which reads as a text box, not a time.
+        LabeledContent(title) {
+            DatePicker(title, selection: date, displayedComponents: .hourAndMinute)
+                .datePickerStyle(.stepperField)
                 .labelsHidden()
                 .fixedSize()
-                .offset(y: Self.stepperVerticalCorrection)
-                .accessibilityLabel(label)
-        }
-        .onAppear { text = formatted }
-        .onChange(of: value) { _ in
-            // Keep the text in step when the stepper drives the value.
-            if !isFocused { text = formatted }
+                // 24-hour, to read the same as the schedule summary beneath
+                // it ("Every 5 min, 08:25–22:00") and the other platforms.
+                .environment(\.locale, Self.locale)
+                .environment(\.calendar, Self.calendar)
+                .environment(\.timeZone, Self.calendar.timeZone)
         }
     }
 
-    private var formatted: String { String(format: "%02d", value) }
+    /// The time as a moment on one fixed day in GMT, which has no daylight
+    /// saving: every hour and minute exists exactly once, so no value can be
+    /// skipped or doubled on the way through the control.
+    private var date: Binding<Date> {
+        Binding(
+            get: { Self.date(hour: hour, minute: minute) },
+            set: { newValue in
+                let parts = Self.components(of: newValue)
+                if parts.hour != hour { hour = parts.hour }
+                if parts.minute != minute { minute = parts.minute }
+            }
+        )
+    }
 
-    /// Applies whatever was typed, ignoring anything that is not a number and
-    /// clamping to the valid range rather than rejecting it outright.
-    private func commit() {
-        let digits = text.filter(\.isNumber)
-        if let typed = Int(digits) {
-            value = min(max(typed, range.lowerBound), range.upperBound)
-        }
-        text = formatted
+    static let locale = Locale(identifier: "en_GB")
+
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "GMT")!
+        calendar.locale = locale
+        return calendar
+    }()
+
+    static func date(hour: Int, minute: Int) -> Date {
+        Date(timeIntervalSinceReferenceDate: TimeInterval(hour * 3600 + minute * 60))
+    }
+
+    static func components(of date: Date) -> (hour: Int, minute: Int) {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0, parts.minute ?? 0)
     }
 }
 
