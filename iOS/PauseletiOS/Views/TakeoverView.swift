@@ -30,6 +30,9 @@ struct TakeoverView: View {
     @State private var remaining: Int
     @State private var hasStarted = false
     @State private var appeared = false
+    /// Whether the countdown chimes at zero: sounds on, and the reminder not
+    /// set to None. Resolved once, like the voice, when the takeover appears.
+    private let playsChime: Bool
 
     private var reminder: Reminder { item.reminder }
 
@@ -42,6 +45,7 @@ struct TakeoverView: View {
         self.item = item
         self.onAction = onAction
         _remaining = State(initialValue: item.reminder.activityDurationSeconds ?? 0)
+        playsChime = settings.playsSound(for: item.reminder)
         // The voice is resolved once, when the takeover appears: a coach built
         // without speech never announces, which is exactly what the setting
         // means. Rate and voice are pushed onto the shared synthesizer here so
@@ -234,7 +238,7 @@ struct TakeoverView: View {
                 if remaining == 0 {
                     // The activity is finished; let the user hear that before
                     // it closes.
-                    Sounds.play(named: Sounds.countdownComplete)
+                    if playsChime { Sounds.play(named: Sounds.countdownComplete) }
                 }
             }
         }

@@ -141,7 +141,7 @@ final class NotificationPresenter: NSObject {
         content.categoryIdentifier = Action.categoryPrefix
         content.userInfo = [Self.reminderIDKey: reminder.id.uuidString]
 
-        if settings.playsSound(for: reminder.priority) {
+        if settings.playsSound(for: reminder) {
             if let name = reminder.soundName {
                 // The editor offers system sounds (Glass, Submarine, ...) that
                 // live in /System/Library/Sounds, which UNNotificationSound

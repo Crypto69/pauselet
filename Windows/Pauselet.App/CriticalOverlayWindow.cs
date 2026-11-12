@@ -38,6 +38,11 @@ internal sealed class CriticalOverlayWindow : Window
     private readonly System.Drawing.Rectangle _bounds;
     private readonly Action _onComplete;
     private readonly Action _onSnooze;
+    /// <summary>
+    /// Whether the countdown chimes at zero: sounds on, and the reminder not
+    /// set to None. The presenter decides, as it does for the fire itself.
+    /// </summary>
+    private readonly bool _playsChime;
     public bool IsPrimaryScreen { get; }
 
     /// <summary>Raised (from the primary window only) when the monitor set changes.</summary>
@@ -119,11 +124,13 @@ internal sealed class CriticalOverlayWindow : Window
         System.Drawing.Rectangle physicalBounds,
         bool isPrimary,
         ExerciseCoach? coach,
+        bool playsChime,
         Action onComplete,
         Action onSnooze)
     {
         _reminder = reminder;
         _coach = coach;
+        _playsChime = playsChime;
         _bounds = physicalBounds;
         IsPrimaryScreen = isPrimary;
         _onComplete = onComplete;
@@ -995,7 +1002,7 @@ internal sealed class CriticalOverlayWindow : Window
     {
         if (!HasCountdown || !_hasStarted || _remaining <= 0) return;
         _remaining -= 1;
-        if (_remaining == 0 && IsPrimaryScreen)
+        if (_remaining == 0 && IsPrimaryScreen && _playsChime)
         {
             // The activity is finished; let the user see that before it
             // closes. Every monitor's window counts, one of them chimes.

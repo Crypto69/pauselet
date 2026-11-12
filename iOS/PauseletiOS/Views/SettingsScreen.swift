@@ -82,7 +82,8 @@ struct SettingsScreen: View {
                     title: "Play sounds",
                     help: "Plays a sound for Important reminders, and for "
                         + "Critical reminders while Pauselet is open. Subtle "
-                        + "and Normal reminders are always silent. Critical "
+                        + "and Normal reminders are always silent, as is any "
+                        + "reminder whose sound is set to None. Critical "
                         + "alarms on the Lock Screen always sound, so they can "
                         + "reach you."
                 ) {

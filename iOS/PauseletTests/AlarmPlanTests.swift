@@ -276,6 +276,24 @@ final class AlarmPlanTests: XCTestCase {
         XCTAssertEqual(spec(original)?.soundName, Sounds.criticalDefault)
     }
 
+    /// An alarm must name a sound, so None names the silent file — and a
+    /// change to None replaces the alarm like any other sound change.
+    func testSilentReminderGivesTheAlarmTheSilentSound() {
+        let now = date(2026, 3, 10, 9, 0)
+        let original = critical(schedule: .interval(minutes: 60), createdAt: now)
+        var silent = original
+        silent.isSilent = true
+        func spec(_ r: Reminder) -> AlarmPlan.Spec? {
+            AlarmPlan.specs(for: [r], settings: Settings(), now: now, calendar: calendar).first
+        }
+        XCTAssertEqual(spec(silent)?.soundName, Sounds.silence)
+        XCTAssertNotEqual(spec(original), spec(silent))
+        XCTAssertNotNil(
+            Bundle.main.url(forResource: Sounds.silence, withExtension: "caf"),
+            "the silent file ships with the app"
+        )
+    }
+
     // MARK: - Occurrences of a relative rule
 
     func testLatestOccurrenceFindsTheMostRecentSelectedSlot() {

@@ -164,6 +164,14 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     public var activityDurationSeconds: Int?
     /// Optional sound played when the reminder fires. `nil` uses the tier default.
     public var soundName: String?
+    /// Whether the reminder makes no sound at all when it fires, whatever
+    /// the tier and the master switch say: the "None" row of the sound
+    /// picker. Covers the fire itself and the countdown's finishing chime;
+    /// the voice coach's cues are the coach's own setting. `nil` means it
+    /// sounds. Never stored as `false` — the editor collapses that to `nil` —
+    /// so a reminder left at the default encodes exactly as it did before
+    /// this option existed, and an older build simply plays the sound.
+    public var isSilent: Bool?
     /// How long a subtle card stays on screen, in seconds. `nil` uses the global
     /// setting.
     ///
@@ -223,6 +231,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         symbolName: String = "bell",
         activityDurationSeconds: Int? = nil,
         soundName: String? = nil,
+        isSilent: Bool? = nil,
         displaySeconds: Int? = nil,
         music: MusicChoice = .none,
         exercises: [Exercise]? = nil,
@@ -244,6 +253,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.symbolName = symbolName
         self.activityDurationSeconds = activityDurationSeconds
         self.soundName = soundName
+        self.isSilent = isSilent
         self.displaySeconds = displaySeconds
         self.music = music
         self.exercises = exercises
@@ -294,6 +304,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
             Int.self, forKey: .activityDurationSeconds
         )
         soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
+        isSilent = try container.decodeIfPresent(Bool.self, forKey: .isSilent)
         displaySeconds = try container.decodeIfPresent(Int.self, forKey: .displaySeconds)
         music = try container.decodeIfPresent(MusicChoice.self, forKey: .music) ?? .none
         exercises = try container.decodeIfPresent([Exercise].self, forKey: .exercises)
@@ -550,6 +561,15 @@ public struct Settings: Codable, Equatable, Sendable {
     /// drift between them.
     public func playsSound(for priority: Priority) -> Bool {
         soundEnabled && priority >= .important
+    }
+
+    /// Whether `reminder` makes a sound when it fires: its tier's rule, and
+    /// the reminder has not been set to "None". The surfaces that fire a
+    /// particular reminder ask this; the tier overload remains for the
+    /// questions that are about a tier rather than a reminder (the coach's
+    /// cues, the warning's own chime).
+    public func playsSound(for reminder: Reminder) -> Bool {
+        playsSound(for: reminder.priority) && reminder.isSilent != true
     }
 
     /// The playlist `reminder` should start when it fires, or `nil` for silence.

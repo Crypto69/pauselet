@@ -236,6 +236,17 @@ public sealed record Reminder
     /// <summary>Optional sound played when the reminder fires. <c>null</c> uses the tier default.</summary>
     public string? SoundName { get; init; }
     /// <summary>
+    /// Whether the reminder makes no sound at all when it fires, whatever the
+    /// tier and the master switch say: the "None" row of the sound picker.
+    /// Covers the fire itself and the countdown's finishing chime; the voice
+    /// coach's cues are the coach's own setting. <c>null</c> means it sounds.
+    /// Never stored as <c>false</c> — the editor collapses that to
+    /// <c>null</c> — so a reminder left at the default encodes exactly as it
+    /// did before this option existed, and an older build simply plays the
+    /// sound.
+    /// </summary>
+    public bool? IsSilent { get; init; }
+    /// <summary>
     /// How long a subtle card stays on screen, in seconds. <c>null</c> uses the
     /// global setting.
     ///
@@ -328,6 +339,7 @@ public sealed record Reminder
         && SymbolName == other.SymbolName
         && ActivityDurationSeconds == other.ActivityDurationSeconds
         && SoundName == other.SoundName
+        && IsSilent == other.IsSilent
         && DisplaySeconds == other.DisplaySeconds
         && Music == other.Music
         && ExercisesEqual(other.Exercises)
@@ -542,6 +554,16 @@ public sealed record Settings
     /// </summary>
     public bool PlaysSound(Priority priority) =>
         SoundEnabled && priority >= Priority.Important;
+
+    /// <summary>
+    /// Whether <paramref name="reminder"/> makes a sound when it fires: its
+    /// tier's rule, and the reminder has not been set to "None". The surfaces
+    /// that fire a particular reminder ask this; the tier overload remains
+    /// for questions about a tier rather than a reminder (the coach's cues,
+    /// the warning's own chime).
+    /// </summary>
+    public bool PlaysSound(Reminder reminder) =>
+        PlaysSound(reminder.Priority) && reminder.IsSilent != true;
 
     /// <summary>
     /// The playlist <paramref name="reminder"/> should start when it fires, or

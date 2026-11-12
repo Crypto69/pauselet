@@ -238,7 +238,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
     {
         // Always Critical here, but asked of the settings rather than assumed,
         // so the one rule about which tiers make a sound stays in one place.
-        if (settings.PlaysSound(reminder.Priority))
+        if (settings.PlaysSound(reminder))
         {
             Sounds.Play(reminder.SoundName ?? "Submarine");
         }
@@ -255,6 +255,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 screen.Bounds,
                 isPrimary: screen.Primary,
                 coach: _criticalCoach,
+                playsChime: settings.PlaysSound(reminder),
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);
@@ -300,6 +301,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 screen.Bounds,
                 isPrimary: screen.Primary,
                 coach: _criticalCoach,
+                playsChime: settings.PlaysSound(reminder),
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);

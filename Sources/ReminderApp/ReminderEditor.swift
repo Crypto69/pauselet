@@ -44,6 +44,7 @@ struct ReminderEditor: View {
     @State private var warningSoundName: String?
     @State private var activityMinutes: Int
     @State private var soundName: String?
+    @State private var isSilent: Bool
     @State private var usesCustomDisplaySeconds: Bool
     @State private var displaySeconds: Int
     @State private var music: MusicChoice
@@ -90,6 +91,7 @@ struct ReminderEditor: View {
         _priority = State(initialValue: reminder?.priority ?? .normal)
         _symbolName = State(initialValue: reminder?.symbolName ?? "bell")
         _soundName = State(initialValue: reminder?.soundName)
+        _isSilent = State(initialValue: reminder?.isSilent == true)
         _usesCustomDisplaySeconds = State(initialValue: reminder?.displaySeconds != nil)
         _displaySeconds = State(initialValue: reminder?.displaySeconds ?? 8)
         _music = State(initialValue: reminder?.music ?? .none)
@@ -451,19 +453,32 @@ struct ReminderEditor: View {
         .frame(width: 470, height: 760)
     }
 
+    /// The picker's tag for "None": not a sound name, so it can never
+    /// collide with one. Stored as `isSilent`, never as a sound called None.
+    private static let silentTag = "none"
+
     private var soundPicker: some View {
         Picker(
             "Sound",
             selection: Binding(
-                get: { soundName ?? "" },
-                set: { soundName = $0.isEmpty ? nil : $0 }
+                get: { isSilent ? Self.silentTag : (soundName ?? "") },
+                set: { choice in
+                    isSilent = choice == Self.silentTag
+                    soundName = choice.isEmpty || isSilent ? nil : choice
+                }
             )
         ) {
             Text("Default").tag("")
+            Text("None").tag(Self.silentTag)
             ForEach(Sounds.available, id: \.self) { name in
                 Text(name).tag(name)
             }
         }
+        .help(
+            "None keeps this reminder silent even while sounds are on, "
+                + "including the chime when its timer ends. The voice coach "
+                + "has its own setting."
+        )
         .onChange(of: soundName) { newValue in
             if let newValue { Sounds.play(named: newValue) }
         }
@@ -508,6 +523,9 @@ struct ReminderEditor: View {
         reminder.priority = effectivePriority
         reminder.symbolName = symbolName
         reminder.soundName = soundName
+        // Only silence is written; the default (a sound) is left off the
+        // reminder entirely, so an older build reads the file unchanged.
+        reminder.isSilent = isSilent ? true : nil
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
         reminder.music = normalizedMusic
         reminder.exercises = normalizedExercises

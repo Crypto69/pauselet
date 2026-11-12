@@ -76,6 +76,10 @@ internal sealed class ReminderEditorWindow : Window
     private readonly List<RadioButton> _priorityButtons = [];
     private readonly ComboBox _symbolPicker = new() { Width = 200 };
     private readonly ComboBox _soundPicker = new() { Width = 160 };
+    private const int SoundPickerDefaultIndex = 0;
+    private const int SoundPickerNoneIndex = 1;
+    /// <summary>Where the named sounds start in <see cref="_soundPicker"/>.</summary>
+    private const int SoundPickerFirstSoundIndex = 2;
     private readonly TextBox _displaySeconds = new() { Width = 60 };
     private readonly TextBox _activityMinutes = new() { Width = 60 };
     /// <summary>
@@ -499,9 +503,15 @@ internal sealed class ReminderEditorWindow : Window
         optionsGrid.Children.Add(_symbolPicker);
 
         optionsGrid.Children.Add(FieldLabel("Sound (Important and Critical)"));
+        // Index 0 is the tier default and 1 is None, a reminder that stays
+        // silent even while sounds are on (stored as IsSilent, never as a
+        // sound called None); the named sounds follow.
         _soundPicker.Items.Add("Tier default");
+        _soundPicker.Items.Add("None");
         foreach (var sound in Sounds.Available) _soundPicker.Items.Add(sound);
         _soundPicker.SelectedIndex = 0;
+        _soundPicker.ToolTip = "None keeps this reminder silent even while sounds are on, "
+            + "including the chime when its timer ends. The voice coach has its own setting.";
         var soundRow = new StackPanel { Orientation = Orientation.Horizontal };
         soundRow.Children.Add(_soundPicker);
         var listen = new Button
@@ -512,13 +522,17 @@ internal sealed class ReminderEditorWindow : Window
         };
         listen.Click += (_, _) =>
         {
-            if (_soundPicker.SelectedIndex > 0)
+            switch (_soundPicker.SelectedIndex)
             {
-                Sounds.Play((string)_soundPicker.SelectedItem);
-            }
-            else
-            {
-                Sounds.Play("Submarine");
+                case SoundPickerDefaultIndex:
+                    Sounds.Play("Submarine");
+                    break;
+                case SoundPickerNoneIndex:
+                    // Nothing to audition: that is the point of None.
+                    break;
+                default:
+                    Sounds.Play((string)_soundPicker.SelectedItem);
+                    break;
             }
         };
         soundRow.Children.Add(listen);
@@ -1075,10 +1089,16 @@ internal sealed class ReminderEditorWindow : Window
 
         SelectSymbol(existing.SymbolName);
 
-        if (existing.SoundName is { } sound)
+        if (existing.IsSilent == true)
+        {
+            _soundPicker.SelectedIndex = SoundPickerNoneIndex;
+        }
+        else if (existing.SoundName is { } sound)
         {
             var soundIndex = Array.IndexOf(Sounds.Available, sound);
-            _soundPicker.SelectedIndex = soundIndex >= 0 ? soundIndex + 1 : 0;
+            _soundPicker.SelectedIndex = soundIndex >= 0
+                ? soundIndex + SoundPickerFirstSoundIndex
+                : SoundPickerDefaultIndex;
         }
 
         _displaySeconds.Text = existing.DisplaySeconds?.ToString() ?? "";
@@ -1219,7 +1239,12 @@ internal sealed class ReminderEditorWindow : Window
         var priority = IsExerciseType ? Priority.Critical : chosenPriority;
 
         var symbol = SelectedSymbol();
-        var sound = _soundPicker.SelectedIndex > 0 ? (string)_soundPicker.SelectedItem : null;
+        var sound = _soundPicker.SelectedIndex >= SoundPickerFirstSoundIndex
+            ? (string)_soundPicker.SelectedItem
+            : null;
+        // Only silence is written; the default (a sound) is left off the
+        // reminder entirely, so an older build reads the file unchanged.
+        bool? isSilent = _soundPicker.SelectedIndex == SoundPickerNoneIndex ? true : null;
 
         int? displaySeconds = int.TryParse(_displaySeconds.Text, out var display) && display > 0
             ? display
@@ -1257,6 +1282,7 @@ internal sealed class ReminderEditorWindow : Window
             Priority = priority,
             SymbolName = symbol,
             SoundName = sound,
+            IsSilent = isSilent,
             DisplaySeconds = displaySeconds,
             ActivityDurationSeconds = activitySeconds,
             WarningMinutes = warningMinutes,

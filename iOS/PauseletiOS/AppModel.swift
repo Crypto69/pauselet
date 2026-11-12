@@ -299,7 +299,7 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
             if !isPreview {
                 alarms.stopIfAlerting(reminder.id)
             }
-            if settings.playsSound(for: .critical) {
+            if settings.playsSound(for: reminder) {
                 Sounds.play(named: Sounds.criticalSound(for: reminder), route: .piercing)
             }
             showTakeover(reminder, isPreview: isPreview)

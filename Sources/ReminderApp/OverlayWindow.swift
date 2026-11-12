@@ -235,7 +235,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         settings: ReminderCore.Settings,
         isPreview: Bool
     ) {
-        if settings.playsSound(for: reminder.priority) {
+        if settings.playsSound(for: reminder) {
             Sounds.play(named: reminder.soundName ?? "Submarine")
         }
         // A preview's music was started by `preview` itself.
@@ -252,7 +252,8 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         criticalCoach = coach
         let countdown = ActivityCountdown(
             seconds: reminder.activityDurationSeconds ?? 0,
-            playsChime: settings.playsSound(for: .critical)
+            // A reminder set to None is silent at the end too.
+            playsChime: settings.playsSound(for: reminder)
         )
         criticalCountdown = countdown
         criticalDisplay = (reminder, settings, isPreview)
@@ -538,7 +539,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             if Scheduler.warningPlaysSound(for: reminder, settings: settings) {
                 Sounds.play(named: Scheduler.warningSound(for: reminder))
             }
-        } else if settings.playsSound(for: .important) {
+        } else if settings.playsSound(for: reminder) {
             Sounds.play(named: reminder.soundName ?? "Glass")
         }
 

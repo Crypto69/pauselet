@@ -149,6 +149,10 @@ public static class AppDataJson
         {
             obj.Members["restBetweenExercisesSeconds"] = new JVal.Num(restBetweenExercises);
         }
+        if (reminder.IsSilent is { } isSilent)
+        {
+            obj.Members["isSilent"] = new JVal.Bool(isSilent);
+        }
         if (reminder.WarningMinutes is { } warningMinutes)
         {
             obj.Members["warningMinutes"] = new JVal.Num(warningMinutes);
@@ -491,6 +495,7 @@ public static class AppDataJson
             ?? throw new FormatException("symbolName is not a string"),
         ActivityDurationSeconds = OptionalInt(element, "activityDurationSeconds"),
         SoundName = OptionalString(element, "soundName"),
+        IsSilent = OptionalBool(element, "isSilent"),
         DisplaySeconds = OptionalInt(element, "displaySeconds"),
         // Lenient, so a data file written before the music feature existed
         // still loads instead of the engine wiping it with the starter set.
