@@ -148,6 +148,47 @@ public enum Schedule: Codable, Equatable, Sendable {
     }
 }
 
+/// How firmly a Critical takeover holds the screen while its countdown
+/// runs. Only meaningful with a countdown: without one there is no moment
+/// at which the takeover would unlock, so `Scheduler.dismissal(for:)`
+/// answers `.anytime` whatever the field says.
+public enum TakeoverDismissal: String, Codable, Sendable, CaseIterable {
+    /// Done and Snooze whenever: how every takeover behaved before this
+    /// existed. The default, and never stored.
+    case anytime
+    /// Done waits for the timer. Snooze stays available, so a phone call
+    /// has an exit and the reminder comes back.
+    case snoozeOnly
+    /// Neither until the timer ends. On a desktop, holding Escape for five
+    /// seconds leaves anyway, recorded as dismissed; a locked screen with no
+    /// exit would only teach people to force-quit the app.
+    case locked
+
+    /// The editors' label, the same on every platform.
+    public var title: String {
+        switch self {
+        case .anytime: return "Any time"
+        case .snoozeOnly: return "Only snoozed until the timer ends"
+        case .locked: return "Not until the timer ends"
+        }
+    }
+
+    /// What the level means, said under the editors' picker. The first two
+    /// are the same everywhere; the locked level ends with the platform's
+    /// own way out (`lockedExit`): a held key on a desktop, the Home gesture
+    /// on a phone.
+    public func caption(lockedExit: String) -> String {
+        switch self {
+        case .anytime:
+            return "Done and Snooze work at any time."
+        case .snoozeOnly:
+            return "Done waits for the timer. Snooze still works, and the reminder comes back."
+        case .locked:
+            return "Done and Snooze both wait for the timer. " + lockedExit
+        }
+    }
+}
+
 /// A single user-defined recurring reminder.
 public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
@@ -162,8 +203,30 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// For reminders describing a timed activity (e.g. "tilt back for 5 minutes"),
     /// the overlay shows a countdown of this length. `nil` means no countdown.
     public var activityDurationSeconds: Int?
+    /// Whether the takeover closes itself when that countdown reaches zero,
+    /// as if Done had been pressed: for a timed activity whose end is the
+    /// point ("tilt back for five minutes"), the screen hands itself back.
+    /// `nil` means it waits for Done. Only meaningful with a countdown —
+    /// the editor drops it otherwise — and never stored as `false`, so a
+    /// reminder left at the default encodes exactly as before.
+    public var autoFinish: Bool?
+    /// How firmly the takeover holds the screen while that countdown runs.
+    /// `nil` means `.anytime`, which is never stored. Only meaningful with a
+    /// countdown — the editor drops it otherwise, and `Scheduler.dismissal`
+    /// ignores it — so a hand-edited file can never lock a screen with no
+    /// moment to unlock at. Read leniently: a level a newer build wrote is
+    /// treated as unset rather than failing the whole file.
+    public var dismissal: TakeoverDismissal?
     /// Optional sound played when the reminder fires. `nil` uses the tier default.
     public var soundName: String?
+    /// Whether the reminder makes no sound at all when it fires, whatever
+    /// the tier and the master switch say: the "None" row of the sound
+    /// picker. Covers the fire itself and the countdown's finishing chime;
+    /// the voice coach's cues are the coach's own setting. `nil` means it
+    /// sounds. Never stored as `false` — the editor collapses that to `nil` —
+    /// so a reminder left at the default encodes exactly as it did before
+    /// this option existed, and an older build simply plays the sound.
+    public var isSilent: Bool?
     /// How long a subtle card stays on screen, in seconds. `nil` uses the global
     /// setting.
     ///
@@ -222,7 +285,10 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         isEnabled: Bool = true,
         symbolName: String = "bell",
         activityDurationSeconds: Int? = nil,
+        autoFinish: Bool? = nil,
+        dismissal: TakeoverDismissal? = nil,
         soundName: String? = nil,
+        isSilent: Bool? = nil,
         displaySeconds: Int? = nil,
         music: MusicChoice = .none,
         exercises: [Exercise]? = nil,
@@ -243,7 +309,10 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.isEnabled = isEnabled
         self.symbolName = symbolName
         self.activityDurationSeconds = activityDurationSeconds
+        self.autoFinish = autoFinish
+        self.dismissal = dismissal
         self.soundName = soundName
+        self.isSilent = isSilent
         self.displaySeconds = displaySeconds
         self.music = music
         self.exercises = exercises
@@ -293,7 +362,14 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         activityDurationSeconds = try container.decodeIfPresent(
             Int.self, forKey: .activityDurationSeconds
         )
+        autoFinish = try container.decodeIfPresent(Bool.self, forKey: .autoFinish)
+        // The raw string, mapped by hand: an unknown level (from a newer
+        // build) must read as unset, not throw and cost the user every
+        // reminder in the file.
+        dismissal = try container.decodeIfPresent(String.self, forKey: .dismissal)
+            .flatMap(TakeoverDismissal.init(rawValue:))
         soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
+        isSilent = try container.decodeIfPresent(Bool.self, forKey: .isSilent)
         displaySeconds = try container.decodeIfPresent(Int.self, forKey: .displaySeconds)
         music = try container.decodeIfPresent(MusicChoice.self, forKey: .music) ?? .none
         exercises = try container.decodeIfPresent([Exercise].self, forKey: .exercises)
@@ -550,6 +626,15 @@ public struct Settings: Codable, Equatable, Sendable {
     /// drift between them.
     public func playsSound(for priority: Priority) -> Bool {
         soundEnabled && priority >= .important
+    }
+
+    /// Whether `reminder` makes a sound when it fires: its tier's rule, and
+    /// the reminder has not been set to "None". The surfaces that fire a
+    /// particular reminder ask this; the tier overload remains for the
+    /// questions that are about a tier rather than a reminder (the coach's
+    /// cues, the warning's own chime).
+    public func playsSound(for reminder: Reminder) -> Bool {
+        playsSound(for: reminder.priority) && reminder.isSilent != true
     }
 
     /// The playlist `reminder` should start when it fires, or `nil` for silence.

@@ -234,16 +234,22 @@ internal sealed class OverlayPresenter : IReminderPresenting
         DisplayCritical(reminder, settings, isPreview);
     }
 
+    /// <summary>When the current takeover's countdown ends; shared by its windows.</summary>
+    private DateTime _criticalDeadline;
+
     private void DisplayCritical(Reminder reminder, Core.Settings settings, bool isPreview)
     {
         // Always Critical here, but asked of the settings rather than assumed,
         // so the one rule about which tiers make a sound stays in one place.
-        if (settings.PlaysSound(reminder.Priority))
+        if (settings.PlaysSound(reminder))
         {
             Sounds.Play(reminder.SoundName ?? "Submarine");
         }
 
         _criticalCoach = BuildCoach(reminder, settings);
+        // One clock for the takeover, whatever the monitors do: a window
+        // built later (a relayout) joins the countdown where it is.
+        _criticalDeadline = DateTime.UtcNow.AddSeconds(reminder.ActivityDurationSeconds ?? 0);
 
         // One window per monitor: on a multi-display desk the user may not be
         // looking at the main display.
@@ -255,6 +261,9 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 screen.Bounds,
                 isPrimary: screen.Primary,
                 coach: _criticalCoach,
+                playsChime: settings.PlaysSound(reminder),
+                isPreview: isPreview,
+                deadline: _criticalDeadline,
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);
@@ -263,6 +272,13 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 onSnooze: () =>
                 {
                     if (!isPreview) Engine?.Snooze(reminder.Id);
+                    AdvanceCritical(reminder.Id);
+                },
+                // The emergency exit from a locked takeover: recorded as
+                // dismissed, so History shows the lock was overridden.
+                onDismiss: () =>
+                {
+                    if (!isPreview) Engine?.Dismiss(reminder.Id);
                     AdvanceCritical(reminder.Id);
                 }
             );
@@ -300,6 +316,9 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 screen.Bounds,
                 isPrimary: screen.Primary,
                 coach: _criticalCoach,
+                playsChime: settings.PlaysSound(reminder),
+                isPreview: isPreview,
+                deadline: _criticalDeadline,
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);
@@ -308,6 +327,13 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 onSnooze: () =>
                 {
                     if (!isPreview) Engine?.Snooze(reminder.Id);
+                    AdvanceCritical(reminder.Id);
+                },
+                // The emergency exit from a locked takeover: recorded as
+                // dismissed, so History shows the lock was overridden.
+                onDismiss: () =>
+                {
+                    if (!isPreview) Engine?.Dismiss(reminder.Id);
                     AdvanceCritical(reminder.Id);
                 }
             );

@@ -43,7 +43,10 @@ struct ReminderEditor: View {
     @State private var warningPlaysSound: Bool
     @State private var warningSoundName: String?
     @State private var activityMinutes: Int
+    @State private var autoFinish: Bool
+    @State private var dismissal: TakeoverDismissal
     @State private var soundName: String?
+    @State private var isSilent: Bool
     @State private var usesCustomDisplaySeconds: Bool
     @State private var displaySeconds: Int
     @State private var music: MusicChoice
@@ -90,6 +93,7 @@ struct ReminderEditor: View {
         _priority = State(initialValue: reminder?.priority ?? .normal)
         _symbolName = State(initialValue: reminder?.symbolName ?? "bell")
         _soundName = State(initialValue: reminder?.soundName)
+        _isSilent = State(initialValue: reminder?.isSilent == true)
         _usesCustomDisplaySeconds = State(initialValue: reminder?.displaySeconds != nil)
         _displaySeconds = State(initialValue: reminder?.displaySeconds ?? 8)
         _music = State(initialValue: reminder?.music ?? .none)
@@ -107,6 +111,8 @@ struct ReminderEditor: View {
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
+        _autoFinish = State(initialValue: reminder?.autoFinish == true)
+        _dismissal = State(initialValue: reminder?.dismissal ?? .anytime)
 
         // Seed every schedule control with a sensible default, then override
         // the ones the existing reminder's schedule applies to, so switching
@@ -383,21 +389,12 @@ struct ReminderEditor: View {
                     // option is meaningless on any other tier and is hidden
                     // rather than silently ignored.
                     if effectivePriority == .critical {
-                        Section("Activity Timer") {
-                            Toggle("Run a countdown", isOn: $hasActivityDuration)
-                                .help(
-                                    "Show a timer on the full-screen takeover for "
-                                        + "activities with a set length, such as "
-                                        + "tilting back for five minutes."
-                                )
-                            if hasActivityDuration {
-                                Stepper(
-                                    "For \(activityMinutes) min",
-                                    value: $activityMinutes,
-                                    in: 1...120
-                                )
-                            }
-                        }
+                        ReminderCountdownSection(
+                            hasActivityDuration: $hasActivityDuration,
+                            activityMinutes: $activityMinutes,
+                            autoFinish: $autoFinish,
+                            dismissal: $dismissal
+                        )
 
                         ReminderWarningSection(
                             hasWarning: $hasWarning,
@@ -451,19 +448,32 @@ struct ReminderEditor: View {
         .frame(width: 470, height: 760)
     }
 
+    /// The picker's tag for "None": not a sound name, so it can never
+    /// collide with one. Stored as `isSilent`, never as a sound called None.
+    private static let silentTag = "none"
+
     private var soundPicker: some View {
         Picker(
             "Sound",
             selection: Binding(
-                get: { soundName ?? "" },
-                set: { soundName = $0.isEmpty ? nil : $0 }
+                get: { isSilent ? Self.silentTag : (soundName ?? "") },
+                set: { choice in
+                    isSilent = choice == Self.silentTag
+                    soundName = choice.isEmpty || isSilent ? nil : choice
+                }
             )
         ) {
             Text("Default").tag("")
+            Text("None").tag(Self.silentTag)
             ForEach(Sounds.available, id: \.self) { name in
                 Text(name).tag(name)
             }
         }
+        .help(
+            "None keeps this reminder silent even while sounds are on, "
+                + "including the chime when its timer ends. The voice coach "
+                + "has its own setting."
+        )
         .onChange(of: soundName) { newValue in
             if let newValue { Sounds.play(named: newValue) }
         }
@@ -508,6 +518,9 @@ struct ReminderEditor: View {
         reminder.priority = effectivePriority
         reminder.symbolName = symbolName
         reminder.soundName = soundName
+        // Only silence is written; the default (a sound) is left off the
+        // reminder entirely, so an older build reads the file unchanged.
+        reminder.isSilent = isSilent ? true : nil
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
         reminder.music = normalizedMusic
         reminder.exercises = normalizedExercises
@@ -522,6 +535,13 @@ struct ReminderEditor: View {
         // a timer the user can no longer see in the editor.
         reminder.activityDurationSeconds = effectivePriority == .critical && hasActivityDuration
             ? activityMinutes * 60
+            : nil
+        // Only ever written with a countdown, and only as true: the default
+        // (wait for Done) is left off the reminder entirely.
+        reminder.autoFinish = reminder.activityDurationSeconds != nil && autoFinish ? true : nil
+        // Likewise the lock: only with a countdown, never as "any time".
+        reminder.dismissal = reminder.activityDurationSeconds != nil && dismissal != .anytime
+            ? dismissal
             : nil
         reminder.warningMinutes = effectivePriority == .critical && hasWarning
             ? min(max(warningMinutes, Self.warningRange.lowerBound), Self.warningRange.upperBound)
@@ -729,4 +749,60 @@ struct ReminderWarningSection: View {
             }
         }
     }
+}
+
+
+/// The Critical tier's countdown and the two choices that hang off it: an
+/// automatic finish, and how firmly the takeover holds the screen until the
+/// timer ends. Its own view so a snapshot can show it: the editor fixes its
+/// height, and this sits below the fold.
+struct ReminderCountdownSection: View {
+    @Binding var hasActivityDuration: Bool
+    @Binding var activityMinutes: Int
+    @Binding var autoFinish: Bool
+    @Binding var dismissal: TakeoverDismissal
+
+    var body: some View {
+        Section("Activity Timer") {
+            Toggle("Run a countdown", isOn: $hasActivityDuration)
+                .help(
+                    "Show a timer on the full-screen takeover for "
+                        + "activities with a set length, such as "
+                        + "tilting back for five minutes."
+                )
+            if hasActivityDuration {
+                Stepper(
+                    "For \(activityMinutes) min",
+                    value: $activityMinutes,
+                    in: 1...120
+                )
+                Toggle("Finish automatically when the timer ends", isOn: $autoFinish)
+                    .help(
+                        "Closes the takeover by itself when the "
+                            + "countdown reaches zero, as if you had "
+                            + "pressed Done — unless an exercise is "
+                            + "being coached, when it waits for you."
+                    )
+                Picker("Can be dismissed", selection: $dismissal) {
+                    ForEach(TakeoverDismissal.allCases, id: \.self) { level in
+                        Text(level.title).tag(level)
+                    }
+                }
+                .help(
+                    "How firmly the takeover holds the screen while "
+                        + "the timer runs. A preview is never held."
+                )
+                Text(dismissal.caption(lockedExit: Self.lockedExit))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// The Mac's way out of a locked takeover, for the caption's last
+    /// sentence; the hold is the measured one.
+    static let lockedExit =
+        "In an emergency, hold Esc for \(Scheduler.emergencyExitHoldText) seconds "
+        + "to leave; that is recorded as dismissed."
 }

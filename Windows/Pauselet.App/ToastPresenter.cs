@@ -136,7 +136,7 @@ internal sealed class ToastPresenter
 
             // Only the important tier makes noise; normal stays silent so a
             // busy reminder set does not become a stream of chimes.
-            if (settings.PlaysSound(reminder.Priority))
+            if (settings.PlaysSound(reminder))
             {
                 Sounds.Play(reminder.SoundName ?? "Ping");
             }

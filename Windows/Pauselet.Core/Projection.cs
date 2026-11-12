@@ -158,6 +158,7 @@ public static class Warnings
     /// <summary>The warning card's title, the same on every platform.</summary>
     public static string Title(Reminder reminder) => $"Coming up: {reminder.Title}";
 
+
     /// <summary>
     /// The warning card's text, naming the takeover's time rather than a
     /// countdown so it stays true however long it sits on screen.
@@ -215,4 +216,104 @@ public static class NotificationBudget
         }
         return result;
     }
+}
+
+/// <summary>
+/// What a Critical takeover does when its activity countdown ends. Mirrors
+/// the Swift <c>Scheduler.finishesAutomatically</c>.
+/// </summary>
+public static class Takeovers
+{
+    /// <summary>
+    /// Whether <paramref name="reminder"/>'s takeover closes itself when its
+    /// countdown ends. Asked of the reminder rather than read from the field
+    /// so a value without a countdown — a hand-edited file — can never mean
+    /// "close at once": there is no zero to reach without a timer.
+    /// </summary>
+    public static bool FinishesAutomatically(Reminder reminder) =>
+        reminder.AutoFinish == true && (reminder.ActivityDurationSeconds ?? 0) > 0;
+
+    /// <summary>
+    /// How long the finished state stays on screen before an automatic
+    /// finish closes the takeover: long enough to see "complete" and hear
+    /// the chime, short enough not to feel stuck.
+    /// </summary>
+    public static readonly TimeSpan AutoFinishDelay = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>
+    /// How firmly <paramref name="reminder"/>'s takeover holds the screen:
+    /// the level chosen, if there is a countdown for it to run against;
+    /// <see cref="TakeoverDismissal.Anytime"/> otherwise. The overlay asks
+    /// this, never the field.
+    /// </summary>
+    public static TakeoverDismissal Dismissal(Reminder reminder) =>
+        (reminder.ActivityDurationSeconds ?? 0) > 0
+            ? reminder.Dismissal ?? TakeoverDismissal.Anytime
+            : TakeoverDismissal.Anytime;
+
+    /// <summary>Whether Done is available with <paramref name="remaining"/> seconds on the clock.</summary>
+    public static bool CanFinish(TakeoverDismissal dismissal, int remaining) =>
+        dismissal == TakeoverDismissal.Anytime || remaining <= 0;
+
+    /// <summary>Whether Snooze is available with <paramref name="remaining"/> seconds on the clock.</summary>
+    public static bool CanSnooze(TakeoverDismissal dismissal, int remaining) =>
+        dismissal != TakeoverDismissal.Locked || remaining <= 0;
+
+    /// <summary>
+    /// How long Escape must be held to leave a locked takeover early: long
+    /// enough that it cannot happen by reflex, short enough to be usable
+    /// with a phone ringing.
+    /// </summary>
+    public static readonly TimeSpan EmergencyExitHold = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// The hold as the hints and captions say it ("5"), from the constant,
+    /// so the number on screen cannot drift from the one that is measured.
+    /// </summary>
+    public static string EmergencyExitHoldText =>
+        ((int)Math.Round(EmergencyExitHold.TotalSeconds)).ToString();
+
+    /// <summary>
+    /// What the level means, said under the editor's picker; the locked
+    /// level ends with this platform's own way out. Mirrors the Swift
+    /// <c>TakeoverDismissal.caption(lockedExit:)</c>.
+    /// </summary>
+    public static string Caption(TakeoverDismissal dismissal, string lockedExit) => dismissal switch
+    {
+        TakeoverDismissal.Anytime => "Done and Snooze work at any time.",
+        TakeoverDismissal.SnoozeOnly =>
+            "Done waits for the timer. Snooze still works, and the reminder comes back.",
+        TakeoverDismissal.Locked => "Done and Snooze both wait for the timer. " + lockedExit,
+        _ => throw new ArgumentOutOfRangeException(nameof(dismissal)),
+    };
+
+    /// <summary>The editors' label, the same on every platform.</summary>
+    public static string Title(TakeoverDismissal dismissal) => dismissal switch
+    {
+        TakeoverDismissal.Anytime => "Any time",
+        TakeoverDismissal.SnoozeOnly => "Only snoozed until the timer ends",
+        TakeoverDismissal.Locked => "Not until the timer ends",
+        _ => throw new ArgumentOutOfRangeException(nameof(dismissal)),
+    };
+
+    /// <summary>The stored string: the Swift enum's raw value.</summary>
+    public static string RawValue(TakeoverDismissal dismissal) => dismissal switch
+    {
+        TakeoverDismissal.Anytime => "anytime",
+        TakeoverDismissal.SnoozeOnly => "snoozeOnly",
+        TakeoverDismissal.Locked => "locked",
+        _ => throw new ArgumentOutOfRangeException(nameof(dismissal)),
+    };
+
+    /// <summary>
+    /// The level a stored string names, or <c>null</c> for none and for a
+    /// level this build does not know — a newer build's, read as unset.
+    /// </summary>
+    public static TakeoverDismissal? Parse(string? raw) => raw switch
+    {
+        "anytime" => TakeoverDismissal.Anytime,
+        "snoozeOnly" => TakeoverDismissal.SnoozeOnly,
+        "locked" => TakeoverDismissal.Locked,
+        _ => null,
+    };
 }

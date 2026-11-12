@@ -214,6 +214,26 @@ public abstract record Schedule
 }
 
 /// <summary>A single user-defined recurring reminder.</summary>
+/// <summary>
+/// How firmly a Critical takeover holds the screen while its countdown
+/// runs. Only meaningful with a countdown: without one there is no moment
+/// at which the takeover would unlock, so <see cref="Takeovers.Dismissal"/>
+/// answers <see cref="Anytime"/> whatever the field says. Mirrors the Swift
+/// <c>TakeoverDismissal</c>; the stored strings are its raw values.
+/// </summary>
+public enum TakeoverDismissal
+{
+    /// <summary>Done and Snooze whenever: the default, never stored.</summary>
+    Anytime,
+    /// <summary>Done waits for the timer; Snooze stays available.</summary>
+    SnoozeOnly,
+    /// <summary>
+    /// Neither until the timer ends. Holding Escape for five seconds leaves
+    /// anyway, recorded as dismissed.
+    /// </summary>
+    Locked,
+}
+
 public sealed record Reminder
 {
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -233,8 +253,37 @@ public sealed record Reminder
     /// the overlay shows a countdown of this length. <c>null</c> means no countdown.
     /// </summary>
     public int? ActivityDurationSeconds { get; init; }
+    /// <summary>
+    /// Whether the takeover closes itself when that countdown reaches zero,
+    /// as if Done had been pressed: for a timed activity whose end is the
+    /// point ("tilt back for five minutes"), the screen hands itself back.
+    /// <c>null</c> means it waits for Done. Only meaningful with a countdown
+    /// — the editor drops it otherwise — and never stored as <c>false</c>,
+    /// so a reminder left at the default encodes exactly as before.
+    /// </summary>
+    public bool? AutoFinish { get; init; }
+    /// <summary>
+    /// How firmly the takeover holds the screen while that countdown runs.
+    /// <c>null</c> means <see cref="TakeoverDismissal.Anytime"/>, which is
+    /// never stored. Only meaningful with a countdown — the editor drops it
+    /// otherwise, and <see cref="Takeovers.Dismissal"/> ignores it — so a
+    /// hand-edited file can never lock a screen with no moment to unlock
+    /// at. Read leniently: a level a newer build wrote is treated as unset.
+    /// </summary>
+    public TakeoverDismissal? Dismissal { get; init; }
     /// <summary>Optional sound played when the reminder fires. <c>null</c> uses the tier default.</summary>
     public string? SoundName { get; init; }
+    /// <summary>
+    /// Whether the reminder makes no sound at all when it fires, whatever the
+    /// tier and the master switch say: the "None" row of the sound picker.
+    /// Covers the fire itself and the countdown's finishing chime; the voice
+    /// coach's cues are the coach's own setting. <c>null</c> means it sounds.
+    /// Never stored as <c>false</c> — the editor collapses that to
+    /// <c>null</c> — so a reminder left at the default encodes exactly as it
+    /// did before this option existed, and an older build simply plays the
+    /// sound.
+    /// </summary>
+    public bool? IsSilent { get; init; }
     /// <summary>
     /// How long a subtle card stays on screen, in seconds. <c>null</c> uses the
     /// global setting.
@@ -327,7 +376,10 @@ public sealed record Reminder
         && IsEnabled == other.IsEnabled
         && SymbolName == other.SymbolName
         && ActivityDurationSeconds == other.ActivityDurationSeconds
+        && AutoFinish == other.AutoFinish
+        && Dismissal == other.Dismissal
         && SoundName == other.SoundName
+        && IsSilent == other.IsSilent
         && DisplaySeconds == other.DisplaySeconds
         && Music == other.Music
         && ExercisesEqual(other.Exercises)
@@ -542,6 +594,16 @@ public sealed record Settings
     /// </summary>
     public bool PlaysSound(Priority priority) =>
         SoundEnabled && priority >= Priority.Important;
+
+    /// <summary>
+    /// Whether <paramref name="reminder"/> makes a sound when it fires: its
+    /// tier's rule, and the reminder has not been set to "None". The surfaces
+    /// that fire a particular reminder ask this; the tier overload remains
+    /// for questions about a tier rather than a reminder (the coach's cues,
+    /// the warning's own chime).
+    /// </summary>
+    public bool PlaysSound(Reminder reminder) =>
+        PlaysSound(reminder.Priority) && reminder.IsSilent != true;
 
     /// <summary>
     /// The playlist <paramref name="reminder"/> should start when it fires, or

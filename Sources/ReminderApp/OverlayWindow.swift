@@ -59,6 +59,10 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
     /// One clock and one chime for the takeover's activity timer, shared by
     /// every display's panel.
     private var criticalCountdown: ActivityCountdown?
+    /// The held-Escape exit of a locked takeover, and the key monitor that
+    /// feeds it. Both exist only while a locked takeover is up.
+    private var escapeHold: EscapeHold?
+    private var escapeMonitor: Any?
     /// What the panels currently show, so a display change can re-cover the
     /// new set of screens around the same coach and countdown.
     private var criticalDisplay:
@@ -235,7 +239,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         settings: ReminderCore.Settings,
         isPreview: Bool
     ) {
-        if settings.playsSound(for: reminder.priority) {
+        if settings.playsSound(for: reminder) {
             Sounds.play(named: reminder.soundName ?? "Submarine")
         }
         // A preview's music was started by `preview` itself.
@@ -252,10 +256,63 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         criticalCoach = coach
         let countdown = ActivityCountdown(
             seconds: reminder.activityDurationSeconds ?? 0,
-            playsChime: settings.playsSound(for: .critical)
+            // A reminder set to None is silent at the end too.
+            playsChime: settings.playsSound(for: reminder)
         )
         criticalCountdown = countdown
         criticalDisplay = (reminder, settings, isPreview)
+
+        let hold = EscapeHold()
+        escapeHold = hold
+        if !isPreview, Scheduler.dismissal(for: reminder) == .locked {
+            // The one way out of a locked takeover before its timer ends:
+            // Escape held for the full hold, recorded as dismissed. The
+            // monitor swallows Escape so it cannot beep or reach anything
+            // else; every other key passes through.
+            hold.onComplete = { [weak self] in
+                guard let self else { return }
+                // A hold that began with seconds left and outlived the
+                // timer is a finish, not an override: the activity elapsed.
+                if let countdown = self.criticalCountdown, countdown.remaining > 0 {
+                    self.dismissCritical(reminder, isPreview: isPreview)
+                } else {
+                    self.completeCritical(reminder, isPreview: isPreview)
+                }
+            }
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
+                [weak self, weak hold] event in
+                guard let self, let hold, event.keyCode == Self.escapeKeyCode else { return event }
+                // Once the timer ends the buttons work and Escape is just a
+                // key again, for whatever else is on screen.
+                guard let countdown = self.criticalCountdown, countdown.remaining > 0 else {
+                    hold.ended()
+                    return event
+                }
+                if event.type == .keyDown { hold.began() } else { hold.ended() }
+                return nil
+            }
+        }
+
+        if Scheduler.finishesAutomatically(reminder) {
+            // The activity's end is the point: hand the screen back as if
+            // Done had been pressed — unless the coach is mid-hold, in which
+            // case the user finishes when the set does. A preview finishes
+            // too, which shows the setting without touching the schedule.
+            countdown.onFinish = { [weak self, weak coach, weak countdown] in
+                guard let self, coach?.session?.isLive != true else { return }
+                Task { @MainActor [weak self, weak countdown] in
+                    try? await Task.sleep(
+                        nanoseconds: UInt64(Scheduler.autoFinishDelay * 1_000_000_000)
+                    )
+                    // Done may have been pressed during the pause, or a
+                    // preview replaced this takeover: only the countdown
+                    // still on screen may finish it.
+                    guard let self, let countdown, self.criticalCountdown === countdown
+                    else { return }
+                    self.completeCritical(reminder, isPreview: isPreview)
+                }
+            }
+        }
 
         showCriticalPanels(
             reminder, settings: settings, coach: coach, countdown: countdown, isPreview: isPreview
@@ -289,20 +346,13 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
                 reminder: reminder,
                 coach: coach,
                 countdown: countdown,
+                escapeHold: escapeHold,
+                isPreview: isPreview,
                 onComplete: { [weak self] in
-                    guard let self else { return }
-                    if !isPreview { self.engine?.complete(id: reminder.id) }
-                    // Stops the music only if a reminder actually started it
-                    // (or is still starting it); the user's own listening is
-                    // never touched.
-                    self.music.stopReminderMusic()
-                    self.advanceCritical(afterAcknowledging: reminder.id)
+                    self?.completeCritical(reminder, isPreview: isPreview)
                 },
                 onSnooze: { [weak self] in
-                    guard let self else { return }
-                    if !isPreview { self.engine?.snooze(id: reminder.id) }
-                    self.music.stopReminderMusic()
-                    self.advanceCritical(afterAcknowledging: reminder.id)
+                    self?.snoozeCritical(reminder, isPreview: isPreview)
                 }
             )
             panel.contentView = NSHostingView(rootView: view)
@@ -311,6 +361,33 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             criticalPanels.append(panel)
         }
     }
+
+    /// Done, from the button, Return, or the countdown finishing by itself:
+    /// one path, so the three cannot drift.
+    private func completeCritical(_ reminder: Reminder, isPreview: Bool) {
+        if !isPreview { engine?.complete(id: reminder.id) }
+        // Stops the music only if a reminder actually started it (or is still
+        // starting it); the user's own listening is never touched.
+        music.stopReminderMusic()
+        advanceCritical(afterAcknowledging: reminder.id)
+    }
+
+    private func snoozeCritical(_ reminder: Reminder, isPreview: Bool) {
+        if !isPreview { engine?.snooze(id: reminder.id) }
+        music.stopReminderMusic()
+        advanceCritical(afterAcknowledging: reminder.id)
+    }
+
+    /// The emergency exit from a locked takeover: recorded as dismissed, so
+    /// History shows the lock was overridden rather than the activity done.
+    private func dismissCritical(_ reminder: Reminder, isPreview: Bool) {
+        if !isPreview { engine?.dismiss(id: reminder.id) }
+        music.stopReminderMusic()
+        advanceCritical(afterAcknowledging: reminder.id)
+    }
+
+    /// `NSEvent.keyCode` for Escape, which has no character to match on.
+    private static let escapeKeyCode: UInt16 = 53
 
     /// The display set changed while a takeover is up: cover the current
     /// screens again around the same coach and countdown. Focus is left
@@ -374,6 +451,12 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         criticalCountdown?.stop()
         criticalCountdown = nil
         criticalDisplay = nil
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+            self.escapeMonitor = nil
+        }
+        escapeHold?.ended()
+        escapeHold = nil
         for panel in criticalPanels {
             panel.orderOut(nil)
         }
@@ -538,7 +621,7 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             if Scheduler.warningPlaysSound(for: reminder, settings: settings) {
                 Sounds.play(named: Scheduler.warningSound(for: reminder))
             }
-        } else if settings.playsSound(for: .important) {
+        } else if settings.playsSound(for: reminder) {
             Sounds.play(named: reminder.soundName ?? "Glass")
         }
 

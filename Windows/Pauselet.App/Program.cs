@@ -63,8 +63,10 @@ public static class Program
         PackageInfo.ConfigureDataLocation();
         _launchKind = PackageInfo.ReadLaunchKind(args);
 
-        // The zip copy steps aside once the Store copy is installed.
-        if (PackageInfo.HandOverToStoreBuildIfInstalled())
+        // The zip copy steps aside once the Store copy is installed —
+        // unless asked not to: `--standalone` runs this build regardless, so
+        // a zip build can be tested on a PC that has the Store build too.
+        if (!args.Contains("--standalone") && PackageInfo.HandOverToStoreBuildIfInstalled())
         {
             return;
         }

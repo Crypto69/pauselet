@@ -38,6 +38,25 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
         let id = UUID()
         let reminder: Reminder
         let isPreview: Bool
+        /// When the takeover went up: its countdown is this plus the
+        /// activity's length, judged here by the clock so the Lock Screen's
+        /// answers can be held to the same lock as the view's buttons.
+        let startedAt = Date()
+
+        /// Seconds left on the countdown, 0 without one.
+        var remainingSeconds: Int {
+            let total = reminder.activityDurationSeconds ?? 0
+            return max(0, total - Int(Date().timeIntervalSince(startedAt)))
+        }
+
+        /// Whether the lock lets `action` answer this takeover right now.
+        func permits(_ action: TakeoverAction) -> Bool {
+            let level = isPreview ? .anytime : Scheduler.dismissal(for: reminder)
+            switch action {
+            case .complete: return Scheduler.canFinish(level, remaining: remainingSeconds)
+            case .snooze: return Scheduler.canSnooze(level, remaining: remainingSeconds)
+            }
+        }
     }
 
     struct SubtleCardItem: Identifiable, Equatable {
@@ -299,7 +318,7 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
             if !isPreview {
                 alarms.stopIfAlerting(reminder.id)
             }
-            if settings.playsSound(for: .critical) {
+            if settings.playsSound(for: reminder) {
                 Sounds.play(named: Sounds.criticalSound(for: reminder), route: .piercing)
             }
             showTakeover(reminder, isPreview: isPreview)
@@ -348,7 +367,13 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     private func handOffUnacknowledgedTakeover() {
         guard let takeover, !takeover.isPreview, handedOffTakeoverID != takeover.id else { return }
         handedOffTakeoverID = takeover.id
-        handedOffRequestID = notifications.postImmediate(takeover.reminder, settings: engine.settings)
+        // The copy offers only what the takeover does: a held takeover's
+        // notification has no Done button to hand the user on the way out.
+        handedOffRequestID = notifications.postImmediate(
+            takeover.reminder,
+            settings: engine.settings,
+            dismissal: Scheduler.dismissal(for: takeover.reminder)
+        )
     }
 
     /// Takes the lock-screen copy down once its takeover has been answered
@@ -488,6 +513,25 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
             return
         }
 
+        // The lock-screen copy of a takeover held by its timer offers only
+        // the exits the takeover does: a tap on its body (which iOS reports
+        // as the default action, "complete") just brings the app, and the
+        // still-locked takeover, back.
+        if isHandedOffCopy, let takeover, !takeover.isPreview,
+           takeover.reminder.id == reminderID {
+            let permitted: Bool
+            switch action {
+            case .complete: permitted = takeover.permits(.complete)
+            case .snooze: permitted = takeover.permits(.snooze)
+            case .dismiss: permitted = true
+            }
+            if !permitted {
+                handedOffRequestID = nil
+                await rescheduleEverything()
+                return
+            }
+        }
+
         switch action {
         case .complete: engine.complete(id: reminderID)
         case .snooze: engine.snooze(id: reminderID)
@@ -517,7 +561,17 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
         }
         // A background launch: see `handleNotificationResponse`.
         await foldInExternalState()
-        engine.complete(id: reminderID)
+        // A reminder held by its timer cannot be finished from the system
+        // alert, whose Stop is not Pauselet's to gate: stopping it brings
+        // the takeover up instead — locked, its clock running from now —
+        // and hands it to the Lock Screen, as the editor promises.
+        if let reminder = engine.reminder(withID: reminderID),
+           Scheduler.dismissal(for: reminder) != .anytime {
+            presentAlarmTakeover(reminderID: reminderID)
+            handOffUnacknowledgedTakeover()
+        } else {
+            engine.complete(id: reminderID)
+        }
         await rescheduleEverything()
     }
 

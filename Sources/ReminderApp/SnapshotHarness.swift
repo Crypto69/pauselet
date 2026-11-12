@@ -258,6 +258,19 @@ enum SnapshotHarness {
                 named: "overlay-critical",
                 into: directory
             )
+
+            // The same takeover locked until its timer ends: both buttons
+            // held, the hint saying how to leave.
+            var locked = tilt
+            locked.dismissal = .locked
+            snapshot(
+                CriticalOverlayView(
+                    reminder: locked, coach: idleCoach(for: locked), onComplete: {}, onSnooze: {}
+                ),
+                size: NSSize(width: 1280, height: 800),
+                named: "overlay-critical-locked",
+                into: directory
+            )
         }
 
         // The exercise takeover: one row already ticked, so both states show.
@@ -447,6 +460,23 @@ enum SnapshotHarness {
             .environmentObject(ai),
             size: NSSize(width: 470, height: 250),
             named: "editor-music",
+            into: directory
+        )
+
+        // The Critical tier's countdown controls on their own, like the
+        // warning's: every option set, so the lock's caption shows.
+        snapshot(
+            Form {
+                ReminderCountdownSection(
+                    hasActivityDuration: .constant(true),
+                    activityMinutes: .constant(5),
+                    autoFinish: .constant(true),
+                    dismissal: .constant(.locked)
+                )
+            }
+            .formStyle(.grouped),
+            size: NSSize(width: 470, height: 300),
+            named: "editor-countdown",
             into: directory
         )
 

@@ -40,7 +40,10 @@ struct ReminderEditorView: View {
     @State private var warningPlaysSound: Bool
     @State private var warningSoundName: String?
     @State private var activityMinutes: Int
+    @State private var autoFinish: Bool
+    @State private var dismissal: TakeoverDismissal
     @State private var soundName: String?
+    @State private var isSilent: Bool
     @State private var usesCustomDisplaySeconds: Bool
     @State private var displaySeconds: Int
     @State private var type: ReminderType
@@ -48,6 +51,25 @@ struct ReminderEditorView: View {
     @State private var isImportingExercises = false
     @EnvironmentObject private var ai: AIImportController
     @State private var restBetweenExercisesSeconds: Int
+
+    /// The sound picker's tag for "None": not a sound name, so it can never
+    /// collide with one.
+    private static let silentTag = "none"
+
+    /// The one thing iOS cannot promise, for the locked caption's last
+    /// sentence: the Home gesture always works, so the takeover follows the
+    /// user to the Lock Screen instead of holding the phone.
+    static let lockedExit =
+        "Leaving the app is always possible; Pauselet keeps the reminder on the "
+        + "Lock Screen until the timer ends."
+
+    /// What None means on this tier, said where it is chosen. The Lock
+    /// Screen alarm is AlarmKit's, which cannot be silent; Pauselet gives it
+    /// a silent sound file instead, which is as quiet as iOS allows.
+    private var silentCriticalFootnote: String {
+        "The in-app takeover is silent. The Lock Screen alarm plays a silent "
+            + "sound, so it may still vibrate."
+    }
 
     enum ReminderType: String, CaseIterable, Identifiable {
         case standard, exercise
@@ -83,6 +105,7 @@ struct ReminderEditorView: View {
         _priority = State(initialValue: reminder?.priority ?? .normal)
         _symbolName = State(initialValue: reminder?.symbolName ?? "bell")
         _soundName = State(initialValue: reminder?.soundName)
+        _isSilent = State(initialValue: reminder?.isSilent == true)
         _usesCustomDisplaySeconds = State(initialValue: reminder?.displaySeconds != nil)
         _displaySeconds = State(initialValue: reminder?.displaySeconds ?? 8)
         _type = State(initialValue: reminder?.isExercise == true ? .exercise : .standard)
@@ -98,6 +121,8 @@ struct ReminderEditorView: View {
         _warningPlaysSound = State(initialValue: reminder?.warningIsSilent != true)
         _warningSoundName = State(initialValue: reminder?.warningSoundName)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
+        _autoFinish = State(initialValue: reminder?.autoFinish == true)
+        _dismissal = State(initialValue: reminder?.dismissal ?? .anytime)
 
         // Seed every schedule control with a sensible default, then override
         // the ones the existing reminder's schedule applies to, so switching
@@ -301,20 +326,31 @@ struct ReminderEditorView: View {
                     }
 
                     if effectivePriority >= .important {
+                        // "None" is a row of the picker rather than a switch,
+                        // stored as `isSilent` so it can never collide with
+                        // a sound's name.
                         Picker(
                             "Sound",
                             selection: Binding(
-                                get: { soundName ?? "" },
-                                set: {
-                                    soundName = $0.isEmpty ? nil : $0
+                                get: { isSilent ? Self.silentTag : (soundName ?? "") },
+                                set: { choice in
+                                    isSilent = choice == Self.silentTag
+                                    soundName = choice.isEmpty || isSilent ? nil : choice
                                     if let name = soundName { Sounds.play(named: name) }
                                 }
                             )
                         ) {
                             Text("Default").tag("")
+                            Text("None").tag(Self.silentTag)
                             ForEach(Sounds.available, id: \.self) { name in
                                 Text(name).tag(name)
                             }
+                        }
+                        .accessibilityIdentifier("editorSound")
+                        if isSilent, effectivePriority == .critical {
+                            Text(silentCriticalFootnote)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -341,6 +377,25 @@ struct ReminderEditorView: View {
                                 value: $activityMinutes,
                                 in: 1...120
                             )
+                            HelpRow(
+                                title: "Finish automatically",
+                                help: "Closes the takeover by itself when the "
+                                    + "countdown reaches zero, as if you had tapped "
+                                    + "Done — unless an exercise is being coached, "
+                                    + "when it waits for you."
+                            ) {
+                                Toggle("", isOn: $autoFinish).labelsHidden()
+                            }
+                            .accessibilityIdentifier("editorAutoFinish")
+                            Picker("Can be dismissed", selection: $dismissal) {
+                                ForEach(TakeoverDismissal.allCases, id: \.self) { level in
+                                    Text(level.title).tag(level)
+                                }
+                            }
+                            .accessibilityIdentifier("editorDismissal")
+                            Text(dismissal.caption(lockedExit: Self.lockedExit))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
@@ -606,10 +661,20 @@ struct ReminderEditorView: View {
         reminder.priority = effectivePriority
         reminder.symbolName = symbolName
         reminder.soundName = soundName
+        // Only silence is written; the default (a sound) is left off the
+        // reminder entirely, so an older build reads the file unchanged.
+        reminder.isSilent = isSilent ? true : nil
         reminder.displaySeconds = usesCustomDisplaySeconds ? displaySeconds : nil
         // Cleared for any tier that cannot show it (see the editor section).
         reminder.activityDurationSeconds =
             effectivePriority == .critical && hasActivityDuration ? activityMinutes * 60 : nil
+        // Only ever written with a countdown, and only as true: the default
+        // (wait for Done) is left off the reminder entirely.
+        reminder.autoFinish = reminder.activityDurationSeconds != nil && autoFinish ? true : nil
+        // Likewise the lock: only with a countdown, never as "any time".
+        reminder.dismissal = reminder.activityDurationSeconds != nil && dismissal != .anytime
+            ? dismissal
+            : nil
         reminder.warningMinutes = effectivePriority == .critical && hasWarning
             ? min(
                 max(warningMinutes, Scheduler.warningMinutesRange.lowerBound),

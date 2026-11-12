@@ -38,6 +38,20 @@ internal sealed class CriticalOverlayWindow : Window
     private readonly System.Drawing.Rectangle _bounds;
     private readonly Action _onComplete;
     private readonly Action _onSnooze;
+    /// <summary>
+    /// Whether the countdown chimes at zero: sounds on, and the reminder not
+    /// set to None. The presenter decides, as it does for the fire itself.
+    /// </summary>
+    private readonly bool _playsChime;
+    /// <summary>
+    /// How firmly this takeover holds the screen: the reminder's level, or
+    /// none for a preview, whose buttons always work.
+    /// </summary>
+    private readonly TakeoverDismissal _dismissal;
+    /// <summary>What a preview's hint says the real takeover would do, if anything.</summary>
+    private readonly string? _previewNote;
+    /// <summary>The emergency exit from a locked takeover: Escape held for the full hold.</summary>
+    private readonly Action _onDismiss;
     public bool IsPrimaryScreen { get; }
 
     /// <summary>Raised (from the primary window only) when the monitor set changes.</summary>
@@ -52,10 +66,33 @@ internal sealed class CriticalOverlayWindow : Window
 
     private int _remaining;
     private bool _hasStarted;
+    /// <summary>
+    /// When the activity ends, set by the presenter once per takeover and
+    /// shared by every monitor's window. The countdown is derived from the
+    /// wall clock rather than counted per tick, so a PC that sleeps or
+    /// hibernates mid-activity still finishes on time — and "zero" means
+    /// the activity's end, which an automatic finish relies on.
+    /// </summary>
+    private readonly DateTime _deadline;
+
+    private int RemainingUntilDeadline() =>
+        Math.Max(0, (int)Math.Ceiling((_deadline - DateTime.UtcNow).TotalSeconds));
+    /// <summary>The pause between the ring completing and an automatic finish.</summary>
+    private DispatcherTimer? _autoFinishTimer;
     private System.Windows.Shapes.Path? _ringProgress;
     private TextBlock? _ringLabel;
     private TextBlock? _ringSubLabel;
     private Button? _doneButton;
+    private Button? _snoozeButton;
+    private TextBlock? _hintText;
+    /// <summary>The key hint as built, before the lock rewrites its lead.</summary>
+    private string _keyHint = "";
+    private TextBlock? _escapeLabel;
+    private Border? _escapeBar;
+    private System.Windows.Shapes.Rectangle? _escapeFill;
+    private System.Diagnostics.Stopwatch? _escapeHold;
+    private DispatcherTimer? _escapeTimer;
+    private const double EscapeBarWidth = 180;
     private Button? _startAllButton;
     private TextBlock? _exerciseProgress;
 
@@ -119,16 +156,34 @@ internal sealed class CriticalOverlayWindow : Window
         System.Drawing.Rectangle physicalBounds,
         bool isPrimary,
         ExerciseCoach? coach,
+        bool playsChime,
+        bool isPreview,
+        DateTime deadline,
         Action onComplete,
-        Action onSnooze)
+        Action onSnooze,
+        Action onDismiss)
     {
         _reminder = reminder;
         _coach = coach;
+        _playsChime = playsChime;
+        _onDismiss = onDismiss;
+        _deadline = deadline;
+        // Scheduler-style: the level only exists with a countdown, and a
+        // preview is never held — but its hint says what the real one does.
+        var real = Takeovers.Dismissal(reminder);
+        _dismissal = isPreview ? TakeoverDismissal.Anytime : real;
+        _previewNote = isPreview && real != TakeoverDismissal.Anytime
+            ? $"preview: would be {(real == TakeoverDismissal.Locked ? "locked" : "Done-locked")} "
+                + $"for {TimeString(reminder.ActivityDurationSeconds ?? 0)}"
+            : null;
         _bounds = physicalBounds;
         IsPrimaryScreen = isPrimary;
         _onComplete = onComplete;
         _onSnooze = onSnooze;
-        _remaining = reminder.ActivityDurationSeconds ?? 0;
+        // From the presenter's deadline, not the full length: a window built
+        // mid-takeover (a monitor relayout) joins the countdown where it is,
+        // so neither the lock nor an automatic finish starts over.
+        _remaining = HasCountdown ? RemainingUntilDeadline() : 0;
 
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -150,6 +205,7 @@ internal sealed class CriticalOverlayWindow : Window
         // user meant to pause. Tunnelling reaches the window first. (The Mac's
         // .keyboardShortcut(.space) is focus-independent for the same reason.)
         PreviewKeyDown += OnKeyDown;
+        PreviewKeyUp += OnKeyUp;
         SourceInitialized += OnSourceInitialized;
 
         if (_coach is not null)
@@ -189,6 +245,13 @@ internal sealed class CriticalOverlayWindow : Window
         {
             _hasStarted = true;
             _countdownTimer?.Start();
+            // A relayout inside the automatic finish's pause must not lose
+            // it: the old window's one-shot died with the window.
+            if (_remaining == 0 && IsPrimaryScreen && Takeovers.FinishesAutomatically(_reminder))
+            {
+                ScheduleAutoFinish();
+            }
+            UpdateRing();
         }
     }
 
@@ -257,11 +320,17 @@ internal sealed class CriticalOverlayWindow : Window
         if (!_closeRequested && !_acknowledged)
         {
             e.Cancel = true;
-            Dispatcher.BeginInvoke(() => Acknowledge(_onSnooze));
+            // A locked takeover's timer is still running: Alt+F4 is just a
+            // key, and the held Escape is the one way out. Otherwise the
+            // close is answered as the snooze it always was.
+            if (CanSnooze) Dispatcher.BeginInvoke(() => Acknowledge(_onSnooze));
             return;
         }
         base.OnClosing(e);
     }
+
+    private bool CanFinish => Takeovers.CanFinish(_dismissal, _remaining);
+    private bool CanSnooze => Takeovers.CanSnooze(_dismissal, _remaining);
 
     /// <summary>
     /// Timers and subscriptions end with the window however it went — a
@@ -272,6 +341,9 @@ internal sealed class CriticalOverlayWindow : Window
         _topmostTimer.Stop();
         _countdownTimer?.Stop();
         _countdownTimer = null;
+        _autoFinishTimer?.Stop();
+        _autoFinishTimer = null;
+        EndEscapeHold();
         if (_coach is not null) _coach.Changed -= OnCoachChanged;
         base.OnClosed(e);
     }
@@ -291,13 +363,19 @@ internal sealed class CriticalOverlayWindow : Window
     {
         switch (e.Key)
         {
-            case Key.Enter:
+            // Held buttons ignore their keys too: a locked screen can never
+            // be left by Return or S while its timer runs.
+            case Key.Enter when CanFinish:
                 e.Handled = true;
                 Acknowledge(_onComplete);
                 break;
-            case Key.S:
+            case Key.S when CanSnooze:
                 e.Handled = true;
                 Acknowledge(_onSnooze);
+                break;
+            case Key.Escape when _dismissal == TakeoverDismissal.Locked && !CanFinish:
+                e.Handled = true;
+                BeginEscapeHold();
                 break;
             case Key.Space when HasCoach:
                 e.Handled = true;
@@ -326,6 +404,53 @@ internal sealed class CriticalOverlayWindow : Window
                 e.Handled = StartExerciseRow(e.Key - Key.NumPad1);
                 break;
         }
+    }
+
+    private void OnKeyUp(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) EndEscapeHold();
+    }
+
+    /// <summary>
+    /// Escape went down on a locked takeover: start the hold, measured by
+    /// the clock so key-repeat rate does not matter, and show it filling so
+    /// letting go early is a choice rather than a mystery.
+    /// </summary>
+    private void BeginEscapeHold()
+    {
+        if (_escapeHold is not null) return;
+        _escapeHold = System.Diagnostics.Stopwatch.StartNew();
+        if (_escapeLabel is not null) _escapeLabel.Visibility = Visibility.Visible;
+        if (_escapeBar is not null) _escapeBar.Visibility = Visibility.Visible;
+        _escapeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        _escapeTimer.Tick += (_, _) =>
+        {
+            if (_escapeHold is null) return;
+            var progress = Math.Min(
+                1, _escapeHold.Elapsed.TotalSeconds / Takeovers.EmergencyExitHold.TotalSeconds
+            );
+            if (_escapeFill is not null) _escapeFill.Width = EscapeBarWidth * progress;
+            if (progress >= 1)
+            {
+                EndEscapeHold();
+                // The one way out before the timer ends, recorded as
+                // dismissed so History shows the lock was overridden. A hold
+                // that outlived the timer is a finish: the activity elapsed.
+                Acknowledge(CanFinish ? _onComplete : _onDismiss);
+            }
+        };
+        _escapeTimer.Start();
+    }
+
+    /// <summary>Escape came up, or the window is going: back to nothing.</summary>
+    private void EndEscapeHold()
+    {
+        _escapeTimer?.Stop();
+        _escapeTimer = null;
+        _escapeHold = null;
+        if (_escapeFill is not null) _escapeFill.Width = 0;
+        if (_escapeLabel is not null) _escapeLabel.Visibility = Visibility.Collapsed;
+        if (_escapeBar is not null) _escapeBar.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>
@@ -517,15 +642,97 @@ internal sealed class CriticalOverlayWindow : Window
         buttons.Margin = new Thickness(0, buttonsGap, 0, 0);
         footer.Children.Add(buttons);
 
-        var hintText = Ui.Text(
-            hint, 12,
+        _keyHint = hint;
+        _hintText = Ui.Text(
+            HintText(), 12,
             Theme.Brush(Color.FromArgb(97, 255, 255, 255)),
             alignment: TextAlignment.Center
         );
-        hintText.Margin = new Thickness(0, 20, 0, 0);
-        hintText.HorizontalAlignment = HorizontalAlignment.Center;
-        footer.Children.Add(hintText);
+        _hintText.Margin = new Thickness(0, 20, 0, 0);
+        _hintText.HorizontalAlignment = HorizontalAlignment.Center;
+        footer.Children.Add(_hintText);
+
+        // The held-Escape exit of a locked takeover, shown only while Escape
+        // is down: a line of text and a bar that fills over the hold.
+        _escapeLabel = Ui.Text(
+            "Keep holding Esc to leave", 12,
+            Theme.Brush(Color.FromArgb(153, 255, 255, 255)),
+            alignment: TextAlignment.Center
+        );
+        _escapeLabel.Margin = new Thickness(0, 10, 0, 0);
+        _escapeLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _escapeLabel.Visibility = Visibility.Collapsed;
+        footer.Children.Add(_escapeLabel);
+        _escapeFill = new System.Windows.Shapes.Rectangle
+        {
+            Width = 0,
+            Height = 4,
+            Fill = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            RadiusX = 2,
+            RadiusY = 2,
+        };
+        _escapeBar = new Border
+        {
+            Width = EscapeBarWidth,
+            Height = 4,
+            CornerRadius = new CornerRadius(2),
+            Background = Theme.Brush(Color.FromArgb(38, 255, 255, 255)),
+            Margin = new Thickness(0, 6, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Child = _escapeFill,
+        };
+        footer.Children.Add(_escapeBar);
         return footer;
+    }
+
+    /// <summary>
+    /// The key hint for the moment: while the timer holds the buttons it
+    /// says what they are waiting for and how to leave; the exercise keys,
+    /// the automatic finish and a preview's note follow as they apply.
+    /// </summary>
+    private string HintText()
+    {
+        var parts = new List<string>();
+        if (!CanFinish)
+        {
+            parts.Add(_dismissal == TakeoverDismissal.Locked
+                ? $"Unlocks when the timer ends · hold Esc for {Takeovers.EmergencyExitHoldText} s to leave"
+                : "Done unlocks when the timer ends · S to snooze");
+            if (_reminder.IsExercise)
+            {
+                parts.Add("A to start all · 1–9 to start a row · "
+                    + "Space to start or pause the coach · N next · X stop");
+            }
+        }
+        else
+        {
+            parts.Add(_keyHint);
+        }
+        if (Takeovers.FinishesAutomatically(_reminder)) parts.Add("finishes by itself at 0:00");
+        if (_previewNote is { } note) parts.Add(note);
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// The buttons follow the lock: a held one is disabled and dimmed, not
+    /// hidden, so it says what will come back.
+    /// </summary>
+    private void SyncButtons()
+    {
+        if (_doneButton is not null)
+        {
+            _doneButton.IsEnabled = CanFinish;
+            _doneButton.Opacity = CanFinish ? 1 : 0.45;
+            _doneButton.Content = DoneButtonText();
+        }
+        if (_snoozeButton is not null)
+        {
+            _snoozeButton.IsEnabled = CanSnooze;
+            _snoozeButton.Opacity = CanSnooze ? 1 : 0.45;
+        }
+        if (_hintText is not null) _hintText.Text = HintText();
     }
 
     /// <summary>
@@ -970,21 +1177,24 @@ internal sealed class CriticalOverlayWindow : Window
             : Visibility.Collapsed;
         row.Children.Add(_startAllButton);
 
-        var snooze = Ui.RoundedButton(
+        // The guard in each click is belt and braces beside IsEnabled: a
+        // held screen can never be left by a button however it is reached.
+        _snoozeButton = Ui.RoundedButton(
             "Snooze", SecondaryButtonBrush, Brushes.White,
             SecondaryButtonBorderBrush, minWidth: 148
         );
-        snooze.Margin = new Thickness(0, 0, 14, 0);
-        snooze.Click += (_, _) => Acknowledge(_onSnooze);
-        row.Children.Add(snooze);
+        _snoozeButton.Margin = new Thickness(0, 0, 14, 0);
+        _snoozeButton.Click += (_, _) => { if (CanSnooze) Acknowledge(_onSnooze); };
+        row.Children.Add(_snoozeButton);
 
         _doneButton = Ui.RoundedButton(
             DoneButtonText(), PrimaryButtonBrush, PrimaryButtonTextBrush,
             minWidth: 148
         );
-        _doneButton.Click += (_, _) => Acknowledge(_onComplete);
+        _doneButton.Click += (_, _) => { if (CanFinish) Acknowledge(_onComplete); };
         row.Children.Add(_doneButton);
 
+        SyncButtons();
         return row;
     }
 
@@ -994,14 +1204,35 @@ internal sealed class CriticalOverlayWindow : Window
     private void AdvanceCountdown()
     {
         if (!HasCountdown || !_hasStarted || _remaining <= 0) return;
-        _remaining -= 1;
+        _remaining = RemainingUntilDeadline();
         if (_remaining == 0 && IsPrimaryScreen)
         {
             // The activity is finished; let the user see that before it
-            // closes. Every monitor's window counts, one of them chimes.
-            Sounds.Play("Glass");
+            // closes. Every monitor's window counts, one of them chimes —
+            // and one of them, when the reminder asks, finishes the takeover.
+            if (_playsChime) Sounds.Play("Glass");
+            if (Takeovers.FinishesAutomatically(_reminder)) ScheduleAutoFinish();
         }
         UpdateRing();
+    }
+
+    /// <summary>
+    /// The activity's end is the point: hand the screen back as if Done had
+    /// been pressed — unless the coach is mid-hold, in which case the user
+    /// finishes when the set does. <see cref="Acknowledge"/> is idempotent,
+    /// so a Done clicked during the pause simply wins.
+    /// </summary>
+    private void ScheduleAutoFinish()
+    {
+        if (_coach?.Session is { IsLive: true }) return;
+        _autoFinishTimer = new DispatcherTimer { Interval = Takeovers.AutoFinishDelay };
+        _autoFinishTimer.Tick += (_, _) =>
+        {
+            _autoFinishTimer?.Stop();
+            _autoFinishTimer = null;
+            Acknowledge(_onComplete);
+        };
+        _autoFinishTimer.Start();
     }
 
     private void UpdateRing()
@@ -1011,7 +1242,7 @@ internal sealed class CriticalOverlayWindow : Window
         {
             _ringSubLabel.Text = _remaining > 0 ? "remaining" : "complete";
         }
-        if (_doneButton is not null) _doneButton.Content = DoneButtonText();
+        SyncButtons();
 
         if (_ringProgress is null) return;
         var total = _reminder.ActivityDurationSeconds ?? 0;

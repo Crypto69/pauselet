@@ -23,6 +23,11 @@ enum Sounds {
     /// The chime when an activity countdown finishes.
     nonisolated static let countdownComplete = "Glass"
 
+    /// One second of silence, bundled like the chimes. AlarmKit has no silent
+    /// option — an alarm must name a sound — so a reminder set to None hands
+    /// the Lock Screen alarm this file: the quietest an alarm can be made.
+    nonisolated static let silence = "Silence"
+
     /// How in-app playback relates to the rest of the device's audio.
     enum Route {
         /// Mixes with whatever is playing and respects the Ring/Silent switch:
@@ -66,8 +71,10 @@ enum Sounds {
     }
 
     /// The sound a critical fire of `reminder` plays, on every critical
-    /// surface. Never `nil`: critical always makes a sound.
+    /// surface. Never `nil`: an alarm must name a sound, so a reminder set
+    /// to None names the silent one.
     nonisolated static func criticalSound(for reminder: Reminder) -> String {
-        bundledName(for: reminder.soundName) ?? criticalDefault
+        if reminder.isSilent == true { return silence }
+        return bundledName(for: reminder.soundName) ?? criticalDefault
     }
 }

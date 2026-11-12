@@ -76,8 +76,31 @@ internal sealed class ReminderEditorWindow : Window
     private readonly List<RadioButton> _priorityButtons = [];
     private readonly ComboBox _symbolPicker = new() { Width = 200 };
     private readonly ComboBox _soundPicker = new() { Width = 160 };
+    private const int SoundPickerDefaultIndex = 0;
+    private const int SoundPickerNoneIndex = 1;
+    /// <summary>Where the named sounds start in <see cref="_soundPicker"/>.</summary>
+    private const int SoundPickerFirstSoundIndex = 2;
     private readonly TextBox _displaySeconds = new() { Width = 60 };
     private readonly TextBox _activityMinutes = new() { Width = 60 };
+    /// <summary>How firmly the takeover holds the screen while the countdown runs.</summary>
+    private readonly ComboBox _dismissalPicker = new() { Width = 260, IsEnabled = false };
+    /// <summary>What the chosen level means, under the picker.</summary>
+    private readonly TextBlock _dismissalCaption = new()
+    {
+        FontSize = 11,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 4, 0, 0),
+    };
+    /// <summary>Whether the takeover closes itself when the countdown ends.</summary>
+    private readonly CheckBox _autoFinish = new()
+    {
+        Content = "Finish automatically when the timer ends",
+        IsEnabled = false,
+        Margin = new Thickness(0, 6, 0, 0),
+        ToolTip = "Closes the takeover by itself when the countdown reaches zero, as if "
+            + "you had pressed Done — unless an exercise is being coached, when it "
+            + "waits for you.",
+    };
     /// <summary>
     /// Minutes before the takeover to show a warning card; blank for none.
     /// Lives in the Critical-only activity panel.
@@ -499,9 +522,15 @@ internal sealed class ReminderEditorWindow : Window
         optionsGrid.Children.Add(_symbolPicker);
 
         optionsGrid.Children.Add(FieldLabel("Sound (Important and Critical)"));
+        // Index 0 is the tier default and 1 is None, a reminder that stays
+        // silent even while sounds are on (stored as IsSilent, never as a
+        // sound called None); the named sounds follow.
         _soundPicker.Items.Add("Tier default");
+        _soundPicker.Items.Add("None");
         foreach (var sound in Sounds.Available) _soundPicker.Items.Add(sound);
         _soundPicker.SelectedIndex = 0;
+        _soundPicker.ToolTip = "None keeps this reminder silent even while sounds are on, "
+            + "including the chime when its timer ends. The voice coach has its own setting.";
         var soundRow = new StackPanel { Orientation = Orientation.Horizontal };
         soundRow.Children.Add(_soundPicker);
         var listen = new Button
@@ -512,13 +541,17 @@ internal sealed class ReminderEditorWindow : Window
         };
         listen.Click += (_, _) =>
         {
-            if (_soundPicker.SelectedIndex > 0)
+            switch (_soundPicker.SelectedIndex)
             {
-                Sounds.Play((string)_soundPicker.SelectedItem);
-            }
-            else
-            {
-                Sounds.Play("Submarine");
+                case SoundPickerDefaultIndex:
+                    Sounds.Play("Submarine");
+                    break;
+                case SoundPickerNoneIndex:
+                    // Nothing to audition: that is the point of None.
+                    break;
+                default:
+                    Sounds.Play((string)_soundPicker.SelectedItem);
+                    break;
             }
         };
         soundRow.Children.Add(listen);
@@ -536,6 +569,23 @@ internal sealed class ReminderEditorWindow : Window
         _activityPanel = new StackPanel();
         _activityPanel.Children.Add(FieldLabel("Activity countdown (minutes, blank = none)"));
         _activityPanel.Children.Add(_activityMinutes);
+        // Only offered with a countdown: without one there is no zero to reach.
+        _activityPanel.Children.Add(_autoFinish);
+        var dismissalLabel = FieldLabel("Can be dismissed");
+        dismissalLabel.ToolTip = "How firmly the takeover holds the screen while the timer "
+            + "runs. A preview is never held.";
+        _activityPanel.Children.Add(dismissalLabel);
+        foreach (var level in Enum.GetValues<TakeoverDismissal>())
+        {
+            _dismissalPicker.Items.Add(Takeovers.Title(level));
+        }
+        _dismissalPicker.SelectedIndex = 0;
+        _dismissalCaption.Foreground = Theme.Brush(Theme.Current.SecondaryForeground);
+        _dismissalPicker.SelectionChanged += (_, _) => SyncDismissalCaption();
+        SyncDismissalCaption();
+        _activityPanel.Children.Add(_dismissalPicker);
+        _activityPanel.Children.Add(_dismissalCaption);
+        _activityMinutes.TextChanged += (_, _) => SyncCountdownOptions();
         _activityPanel.Children.Add(FieldLabel("Warn before it takes over (minutes, blank = none)"));
         _activityPanel.Children.Add(_warningMinutes);
         _activityPanel.Children.Add(_warningPlaysSound);
@@ -1075,10 +1125,16 @@ internal sealed class ReminderEditorWindow : Window
 
         SelectSymbol(existing.SymbolName);
 
-        if (existing.SoundName is { } sound)
+        if (existing.IsSilent == true)
+        {
+            _soundPicker.SelectedIndex = SoundPickerNoneIndex;
+        }
+        else if (existing.SoundName is { } sound)
         {
             var soundIndex = Array.IndexOf(Sounds.Available, sound);
-            _soundPicker.SelectedIndex = soundIndex >= 0 ? soundIndex + 1 : 0;
+            _soundPicker.SelectedIndex = soundIndex >= 0
+                ? soundIndex + SoundPickerFirstSoundIndex
+                : SoundPickerDefaultIndex;
         }
 
         _displaySeconds.Text = existing.DisplaySeconds?.ToString() ?? "";
@@ -1094,6 +1150,9 @@ internal sealed class ReminderEditorWindow : Window
         _activityMinutes.Text = existing.ActivityDurationSeconds is { } seconds
             ? (seconds / 60).ToString()
             : "";
+        _autoFinish.IsChecked = existing.AutoFinish == true;
+        _dismissalPicker.SelectedIndex = (int)(existing.Dismissal ?? TakeoverDismissal.Anytime);
+        SyncCountdownOptions();
 
         // Rows first, then the type: selecting Exercise seeds a blank row
         // only when there are none.
@@ -1219,7 +1278,12 @@ internal sealed class ReminderEditorWindow : Window
         var priority = IsExerciseType ? Priority.Critical : chosenPriority;
 
         var symbol = SelectedSymbol();
-        var sound = _soundPicker.SelectedIndex > 0 ? (string)_soundPicker.SelectedItem : null;
+        var sound = _soundPicker.SelectedIndex >= SoundPickerFirstSoundIndex
+            ? (string)_soundPicker.SelectedItem
+            : null;
+        // Only silence is written; the default (a sound) is left off the
+        // reminder entirely, so an older build reads the file unchanged.
+        bool? isSilent = _soundPicker.SelectedIndex == SoundPickerNoneIndex ? true : null;
 
         int? displaySeconds = int.TryParse(_displaySeconds.Text, out var display) && display > 0
             ? display
@@ -1257,8 +1321,18 @@ internal sealed class ReminderEditorWindow : Window
             Priority = priority,
             SymbolName = symbol,
             SoundName = sound,
+            IsSilent = isSilent,
             DisplaySeconds = displaySeconds,
             ActivityDurationSeconds = activitySeconds,
+            // Only ever written with a countdown, and only as true: the
+            // default (wait for Done) is left off the reminder entirely.
+            AutoFinish = activitySeconds is not null && _autoFinish.IsChecked == true
+                ? true
+                : null,
+            // Likewise the lock: only with a countdown, never as "any time".
+            Dismissal = activitySeconds is not null && _dismissalPicker.SelectedIndex > 0
+                ? (TakeoverDismissal)_dismissalPicker.SelectedIndex
+                : null,
             WarningMinutes = warningMinutes,
             // Only a quiet warning is written; the default (a chime) is left
             // off the reminder, as is any choice for a warning that is off.
@@ -1274,6 +1348,31 @@ internal sealed class ReminderEditorWindow : Window
             Exercises = exercises,
             RestBetweenExercisesSeconds = restBetweenExercises,
         };
+    }
+
+    /// <summary>
+    /// The options that only mean something with a countdown follow the
+    /// minutes box: enabled while it holds a number, greyed otherwise.
+    /// </summary>
+    private void SyncCountdownOptions()
+    {
+        var hasCountdown = int.TryParse(_activityMinutes.Text, out var minutes) && minutes > 0;
+        _autoFinish.IsEnabled = hasCountdown;
+        _dismissalPicker.IsEnabled = hasCountdown;
+    }
+
+    /// <summary>
+    /// What each level means, said under the picker; the emergency exit is
+    /// a held key here, as on the Mac.
+    /// </summary>
+    private void SyncDismissalCaption()
+    {
+        var level = (TakeoverDismissal)Math.Max(0, _dismissalPicker.SelectedIndex);
+        _dismissalCaption.Text = Takeovers.Caption(
+            level,
+            $"In an emergency, hold Esc for {Takeovers.EmergencyExitHoldText} seconds to "
+            + "leave; that is recorded as dismissed."
+        );
     }
 
     /// <summary>

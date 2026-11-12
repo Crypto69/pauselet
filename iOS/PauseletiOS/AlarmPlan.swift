@@ -27,7 +27,8 @@ enum AlarmPlan {
         let title: String
         let message: String
         let symbolName: String
-        /// The bundled sound the alarm plays. Critical always sounds — see
+        /// The bundled sound the alarm plays. An alarm must name one, so a
+        /// reminder set to None names the silent file — see
         /// `Sounds.criticalSound(for:)`.
         let soundName: String
         let kind: Kind

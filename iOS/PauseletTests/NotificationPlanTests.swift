@@ -36,6 +36,28 @@ final class NotificationPlanTests: XCTestCase {
         )
     }
 
+    /// A takeover handed to the Lock Screen offers only the exits the
+    /// takeover itself does while its timer runs.
+    func testHandedOffTakeoverCategoryFollowsTheLock() {
+        XCTAssertEqual(
+            NotificationScheduler.category(for: .anytime), NotificationScheduler.ActionID.category
+        )
+        XCTAssertEqual(
+            NotificationScheduler.category(for: .snoozeOnly),
+            NotificationScheduler.ActionID.snoozeOnlyCategory
+        )
+        XCTAssertEqual(
+            NotificationScheduler.category(for: .locked), NotificationScheduler.ActionID.lockedCategory
+        )
+        XCTAssertEqual(
+            Set([
+                NotificationScheduler.category(for: .anytime),
+                NotificationScheduler.category(for: .snoozeOnly),
+                NotificationScheduler.category(for: .locked),
+            ]).count, 3, "three distinct categories, registered side by side"
+        )
+    }
+
     func testStaysWithinBudget() {
         let now = date(2026, 3, 10, 9, 0)
         // 20 five-minute reminders project far more fires than the budget.
