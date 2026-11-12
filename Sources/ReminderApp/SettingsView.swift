@@ -484,6 +484,15 @@ struct HistoryTab: View {
     }
 
     var body: some View {
+        // Redrawn once a minute, which is all the "when" column needs: a
+        // record of what happened, not a stopwatch. (SwiftUI's live relative
+        // text redraws every second, times up to 200 rows.)
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content(now: context.date)
+        }
+    }
+
+    private func content(now: Date) -> some View {
         VStack(spacing: 0) {
             HStack {
                 Picker("Window", selection: $windowDays) {
@@ -534,10 +543,11 @@ struct HistoryTab: View {
                                 Text(event.outcome.rawValue.capitalized)
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
-                                Text(event.date, style: .relative)
+                                Text(HistoryTime.label(for: event.date, now: now))
                                     .font(.system(size: 11))
                                     .foregroundStyle(.tertiary)
                                     .frame(width: 96, alignment: .trailing)
+                                    .help(HistoryTime.exact(event.date))
                             }
                         }
                     }
