@@ -82,4 +82,15 @@ final class DismissalTests: XCTestCase {
             XCTAssertFalse(level.title.isEmpty)
         }
     }
+
+    /// The captions are shared; only the locked level's last sentence is
+    /// the platform's, and the hold on screen is the hold that is measured.
+    func testCaptionsAreSharedAndTheLockedOneEndsWithThePlatformsExit() {
+        XCTAssertEqual(
+            TakeoverDismissal.anytime.caption(lockedExit: "x"), "Done and Snooze work at any time."
+        )
+        XCTAssertFalse(TakeoverDismissal.snoozeOnly.caption(lockedExit: "x").contains("x"))
+        XCTAssertTrue(TakeoverDismissal.locked.caption(lockedExit: "Hold Esc.").hasSuffix("Hold Esc."))
+        XCTAssertEqual(Scheduler.emergencyExitHoldText, "5")
+    }
 }

@@ -56,21 +56,12 @@ struct ReminderEditorView: View {
     /// collide with one.
     private static let silentTag = "none"
 
-    /// What each level means, said under the picker — with the one thing
-    /// iOS cannot promise: the Home gesture always works, so the takeover
-    /// follows the user to the Lock Screen instead of holding the phone.
-    static func dismissalCaption(for level: TakeoverDismissal) -> String {
-        switch level {
-        case .anytime:
-            return "Done and Snooze work at any time."
-        case .snoozeOnly:
-            return "Done waits for the timer. Snooze still works, and the reminder comes back."
-        case .locked:
-            return "Done and Snooze both wait for the timer. Leaving the app is always "
-                + "possible; Pauselet keeps the reminder on the Lock Screen until the "
-                + "timer ends."
-        }
-    }
+    /// The one thing iOS cannot promise, for the locked caption's last
+    /// sentence: the Home gesture always works, so the takeover follows the
+    /// user to the Lock Screen instead of holding the phone.
+    static let lockedExit =
+        "Leaving the app is always possible; Pauselet keeps the reminder on the "
+        + "Lock Screen until the timer ends."
 
     /// What None means on this tier, said where it is chosen. The Lock
     /// Screen alarm is AlarmKit's, which cannot be silent; Pauselet gives it
@@ -402,7 +393,7 @@ struct ReminderEditorView: View {
                                 }
                             }
                             .accessibilityIdentifier("editorDismissal")
-                            Text(Self.dismissalCaption(for: dismissal))
+                            Text(dismissal.caption(lockedExit: Self.lockedExit))
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }

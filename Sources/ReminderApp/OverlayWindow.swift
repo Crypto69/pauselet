@@ -270,15 +270,23 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             // monitor swallows Escape so it cannot beep or reach anything
             // else; every other key passes through.
             hold.onComplete = { [weak self] in
-                self?.dismissCritical(reminder, isPreview: isPreview)
+                guard let self else { return }
+                // A hold that began with seconds left and outlived the
+                // timer is a finish, not an override: the activity elapsed.
+                if let countdown = self.criticalCountdown, countdown.remaining > 0 {
+                    self.dismissCritical(reminder, isPreview: isPreview)
+                } else {
+                    self.completeCritical(reminder, isPreview: isPreview)
+                }
             }
             escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
                 [weak self, weak hold] event in
                 guard let self, let hold, event.keyCode == Self.escapeKeyCode else { return event }
-                // Once the timer ends the buttons work; Escape is just a key.
+                // Once the timer ends the buttons work and Escape is just a
+                // key again, for whatever else is on screen.
                 guard let countdown = self.criticalCountdown, countdown.remaining > 0 else {
                     hold.ended()
-                    return nil
+                    return event
                 }
                 if event.type == .keyDown { hold.began() } else { hold.ended() }
                 return nil

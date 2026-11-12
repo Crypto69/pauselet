@@ -792,7 +792,7 @@ struct ReminderCountdownSection: View {
                     "How firmly the takeover holds the screen while "
                         + "the timer runs. A preview is never held."
                 )
-                Text(Self.dismissalCaption(for: dismissal))
+                Text(dismissal.caption(lockedExit: Self.lockedExit))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -800,17 +800,9 @@ struct ReminderCountdownSection: View {
         }
     }
 
-    /// What each level means, said under the picker; the Mac's emergency
-    /// exit is a held key, which the iOS editor words differently.
-    static func dismissalCaption(for level: TakeoverDismissal) -> String {
-        switch level {
-        case .anytime:
-            return "Done and Snooze work at any time."
-        case .snoozeOnly:
-            return "Done waits for the timer. Snooze still works, and the reminder comes back."
-        case .locked:
-            return "Done and Snooze both wait for the timer. In an emergency, hold Esc "
-                + "for five seconds to leave; that is recorded as dismissed."
-        }
-    }
+    /// The Mac's way out of a locked takeover, for the caption's last
+    /// sentence; the hold is the measured one.
+    static let lockedExit =
+        "In an emergency, hold Esc for \(Scheduler.emergencyExitHoldText) seconds "
+        + "to leave; that is recorded as dismissed."
 }

@@ -48,6 +48,14 @@ final class HistoryTimeTests: XCTestCase {
         )
     }
 
+    /// The views pass the last minute tick as `now`; an event recorded
+    /// since then is "now", never "in 40 sec.".
+    func testADateAfterNowIsNeverInTheFuture() {
+        let label = HistoryTime.label(for: now.addingTimeInterval(40), now: now, locale: en)
+        XCTAssertFalse(label.hasPrefix("in "), label)
+        XCTAssertEqual(label, HistoryTime.label(for: now, now: now, locale: en))
+    }
+
     func testExactMomentForTheTooltip() {
         let exact = HistoryTime.exact(now, locale: en)
         XCTAssertTrue(exact.contains("2026"), exact)

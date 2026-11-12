@@ -67,12 +67,16 @@ internal sealed class CriticalOverlayWindow : Window
     private int _remaining;
     private bool _hasStarted;
     /// <summary>
-    /// When the activity ends. The countdown is derived from the wall clock
-    /// rather than counted per tick, so a PC that sleeps or hibernates
-    /// mid-activity still finishes on time — and "zero" means the activity's
-    /// end, which an automatic finish relies on.
+    /// When the activity ends, set by the presenter once per takeover and
+    /// shared by every monitor's window. The countdown is derived from the
+    /// wall clock rather than counted per tick, so a PC that sleeps or
+    /// hibernates mid-activity still finishes on time — and "zero" means
+    /// the activity's end, which an automatic finish relies on.
     /// </summary>
-    private DateTime _deadline;
+    private readonly DateTime _deadline;
+
+    private int RemainingUntilDeadline() =>
+        Math.Max(0, (int)Math.Ceiling((_deadline - DateTime.UtcNow).TotalSeconds));
     /// <summary>The pause between the ring completing and an automatic finish.</summary>
     private DispatcherTimer? _autoFinishTimer;
     private System.Windows.Shapes.Path? _ringProgress;
@@ -154,6 +158,7 @@ internal sealed class CriticalOverlayWindow : Window
         ExerciseCoach? coach,
         bool playsChime,
         bool isPreview,
+        DateTime deadline,
         Action onComplete,
         Action onSnooze,
         Action onDismiss)
@@ -162,6 +167,7 @@ internal sealed class CriticalOverlayWindow : Window
         _coach = coach;
         _playsChime = playsChime;
         _onDismiss = onDismiss;
+        _deadline = deadline;
         // Scheduler-style: the level only exists with a countdown, and a
         // preview is never held — but its hint says what the real one does.
         var real = Takeovers.Dismissal(reminder);
@@ -174,7 +180,10 @@ internal sealed class CriticalOverlayWindow : Window
         IsPrimaryScreen = isPrimary;
         _onComplete = onComplete;
         _onSnooze = onSnooze;
-        _remaining = reminder.ActivityDurationSeconds ?? 0;
+        // From the presenter's deadline, not the full length: a window built
+        // mid-takeover (a monitor relayout) joins the countdown where it is,
+        // so neither the lock nor an automatic finish starts over.
+        _remaining = HasCountdown ? RemainingUntilDeadline() : 0;
 
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -235,8 +244,14 @@ internal sealed class CriticalOverlayWindow : Window
         if (HasCountdown)
         {
             _hasStarted = true;
-            _deadline = DateTime.UtcNow.AddSeconds(_remaining);
             _countdownTimer?.Start();
+            // A relayout inside the automatic finish's pause must not lose
+            // it: the old window's one-shot died with the window.
+            if (_remaining == 0 && IsPrimaryScreen && Takeovers.FinishesAutomatically(_reminder))
+            {
+                ScheduleAutoFinish();
+            }
+            UpdateRing();
         }
     }
 
@@ -419,8 +434,9 @@ internal sealed class CriticalOverlayWindow : Window
             {
                 EndEscapeHold();
                 // The one way out before the timer ends, recorded as
-                // dismissed so History shows the lock was overridden.
-                Acknowledge(_onDismiss);
+                // dismissed so History shows the lock was overridden. A hold
+                // that outlived the timer is a finish: the activity elapsed.
+                Acknowledge(CanFinish ? _onComplete : _onDismiss);
             }
         };
         _escapeTimer.Start();
@@ -682,7 +698,7 @@ internal sealed class CriticalOverlayWindow : Window
         if (!CanFinish)
         {
             parts.Add(_dismissal == TakeoverDismissal.Locked
-                ? "Unlocks when the timer ends · hold Esc for 5 s to leave"
+                ? $"Unlocks when the timer ends · hold Esc for {Takeovers.EmergencyExitHoldText} s to leave"
                 : "Done unlocks when the timer ends · S to snooze");
             if (_reminder.IsExercise)
             {
@@ -1188,8 +1204,7 @@ internal sealed class CriticalOverlayWindow : Window
     private void AdvanceCountdown()
     {
         if (!HasCountdown || !_hasStarted || _remaining <= 0) return;
-        var left = (_deadline - DateTime.UtcNow).TotalSeconds;
-        _remaining = Math.Max(0, (int)Math.Ceiling(left));
+        _remaining = RemainingUntilDeadline();
         if (_remaining == 0 && IsPrimaryScreen)
         {
             // The activity is finished; let the user see that before it

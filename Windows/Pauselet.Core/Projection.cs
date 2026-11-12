@@ -266,6 +266,27 @@ public static class Takeovers
     /// </summary>
     public static readonly TimeSpan EmergencyExitHold = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// The hold as the hints and captions say it ("5"), from the constant,
+    /// so the number on screen cannot drift from the one that is measured.
+    /// </summary>
+    public static string EmergencyExitHoldText =>
+        ((int)Math.Round(EmergencyExitHold.TotalSeconds)).ToString();
+
+    /// <summary>
+    /// What the level means, said under the editor's picker; the locked
+    /// level ends with this platform's own way out. Mirrors the Swift
+    /// <c>TakeoverDismissal.caption(lockedExit:)</c>.
+    /// </summary>
+    public static string Caption(TakeoverDismissal dismissal, string lockedExit) => dismissal switch
+    {
+        TakeoverDismissal.Anytime => "Done and Snooze work at any time.",
+        TakeoverDismissal.SnoozeOnly =>
+            "Done waits for the timer. Snooze still works, and the reminder comes back.",
+        TakeoverDismissal.Locked => "Done and Snooze both wait for the timer. " + lockedExit,
+        _ => throw new ArgumentOutOfRangeException(nameof(dismissal)),
+    };
+
     /// <summary>The editors' label, the same on every platform.</summary>
     public static string Title(TakeoverDismissal dismissal) => dismissal switch
     {

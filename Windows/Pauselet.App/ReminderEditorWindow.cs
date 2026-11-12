@@ -1367,16 +1367,12 @@ internal sealed class ReminderEditorWindow : Window
     /// </summary>
     private void SyncDismissalCaption()
     {
-        _dismissalCaption.Text = (TakeoverDismissal)Math.Max(0, _dismissalPicker.SelectedIndex) switch
-        {
-            TakeoverDismissal.Anytime => "Done and Snooze work at any time.",
-            TakeoverDismissal.SnoozeOnly =>
-                "Done waits for the timer. Snooze still works, and the reminder comes back.",
-            TakeoverDismissal.Locked =>
-                "Done and Snooze both wait for the timer. In an emergency, hold Esc for "
-                + "five seconds to leave; that is recorded as dismissed.",
-            _ => "",
-        };
+        var level = (TakeoverDismissal)Math.Max(0, _dismissalPicker.SelectedIndex);
+        _dismissalCaption.Text = Takeovers.Caption(
+            level,
+            $"In an emergency, hold Esc for {Takeovers.EmergencyExitHoldText} seconds to "
+            + "leave; that is recorded as dismissed."
+        );
     }
 
     /// <summary>

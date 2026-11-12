@@ -279,7 +279,10 @@ struct CriticalOverlayView: View {
         var parts: [String] = []
         switch (lockLevel, canFinish) {
         case (.locked, false):
-            parts.append("Unlocks when the timer ends · hold Esc for 5 s to leave")
+            parts.append(
+                "Unlocks when the timer ends · hold Esc for "
+                    + "\(Scheduler.emergencyExitHoldText) s to leave"
+            )
         case (.snoozeOnly, false):
             parts.append("Done unlocks when the timer ends · S to snooze")
         default:

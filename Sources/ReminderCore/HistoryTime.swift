@@ -9,12 +9,12 @@ import Foundation
 /// `now`.
 public enum HistoryTime {
     /// `date` relative to `now`, abbreviated so it fits a narrow column.
+    ///
+    /// Never in the future: the views pass the last minute tick as `now`,
+    /// and an event recorded since then would otherwise read "in 40 sec."
+    /// until the next tick.
     public static func label(for date: Date, now: Date = Date(), locale: Locale = .current) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = locale
-        formatter.unitsStyle = .abbreviated
-        formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: date, relativeTo: now)
+        formatter(for: locale).localizedString(for: min(date, now), relativeTo: now)
     }
 
     /// The exact moment, for a tooltip or an accessibility value, so the
@@ -23,5 +23,22 @@ public enum HistoryTime {
         date.formatted(
             Date.FormatStyle(date: .abbreviated, time: .shortened, locale: locale)
         )
+    }
+
+    /// One formatter per locale: building one is the expensive part of
+    /// formatting, and the list formats up to 200 rows per redraw.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var formatters: [Locale: RelativeDateTimeFormatter] = [:]
+
+    private static func formatter(for locale: Locale) -> RelativeDateTimeFormatter {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = formatters[locale] { return cached }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = locale
+        formatter.unitsStyle = .abbreviated
+        formatter.dateTimeStyle = .named
+        formatters[locale] = formatter
+        return formatter
     }
 }

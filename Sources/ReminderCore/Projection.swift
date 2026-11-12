@@ -208,6 +208,12 @@ extension Scheduler {
     /// with a phone ringing.
     public static let emergencyExitHoldSeconds: TimeInterval = 5
 
+    /// The hold as the hints and captions say it ("5"), from the constant,
+    /// so the number on screen cannot drift from the one that is measured.
+    public static var emergencyExitHoldText: String {
+        String(Int(emergencyExitHoldSeconds.rounded()))
+    }
+
     /// The warning card's title, the same on every platform.
     public static func warningTitle(for reminder: Reminder) -> String {
         "Coming up: \(reminder.title)"

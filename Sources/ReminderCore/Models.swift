@@ -172,6 +172,21 @@ public enum TakeoverDismissal: String, Codable, Sendable, CaseIterable {
         case .locked: return "Not until the timer ends"
         }
     }
+
+    /// What the level means, said under the editors' picker. The first two
+    /// are the same everywhere; the locked level ends with the platform's
+    /// own way out (`lockedExit`): a held key on a desktop, the Home gesture
+    /// on a phone.
+    public func caption(lockedExit: String) -> String {
+        switch self {
+        case .anytime:
+            return "Done and Snooze work at any time."
+        case .snoozeOnly:
+            return "Done waits for the timer. Snooze still works, and the reminder comes back."
+        case .locked:
+            return "Done and Snooze both wait for the timer. " + lockedExit
+        }
+    }
 }
 
 /// A single user-defined recurring reminder.

@@ -102,6 +102,16 @@ public class DismissalTests
     }
 
     [Fact]
+    public void CaptionsAreSharedAndTheLockedOneEndsWithThePlatformsExit()
+    {
+        Assert.Equal("Done and Snooze work at any time.",
+            Takeovers.Caption(TakeoverDismissal.Anytime, "x"));
+        Assert.DoesNotContain("x", Takeovers.Caption(TakeoverDismissal.SnoozeOnly, "x"));
+        Assert.EndsWith("Hold Esc.", Takeovers.Caption(TakeoverDismissal.Locked, "Hold Esc."));
+        Assert.Equal("5", Takeovers.EmergencyExitHoldText);
+    }
+
+    [Fact]
     public void RawValuesRoundTripAndMatchTheSwiftEnum()
     {
         foreach (var level in Enum.GetValues<TakeoverDismissal>())
