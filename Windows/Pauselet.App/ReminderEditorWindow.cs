@@ -82,6 +82,15 @@ internal sealed class ReminderEditorWindow : Window
     private const int SoundPickerFirstSoundIndex = 2;
     private readonly TextBox _displaySeconds = new() { Width = 60 };
     private readonly TextBox _activityMinutes = new() { Width = 60 };
+    /// <summary>How firmly the takeover holds the screen while the countdown runs.</summary>
+    private readonly ComboBox _dismissalPicker = new() { Width = 260, IsEnabled = false };
+    /// <summary>What the chosen level means, under the picker.</summary>
+    private readonly TextBlock _dismissalCaption = new()
+    {
+        FontSize = 11,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 4, 0, 0),
+    };
     /// <summary>Whether the takeover closes itself when the countdown ends.</summary>
     private readonly CheckBox _autoFinish = new()
     {
@@ -562,6 +571,20 @@ internal sealed class ReminderEditorWindow : Window
         _activityPanel.Children.Add(_activityMinutes);
         // Only offered with a countdown: without one there is no zero to reach.
         _activityPanel.Children.Add(_autoFinish);
+        var dismissalLabel = FieldLabel("Can be dismissed");
+        dismissalLabel.ToolTip = "How firmly the takeover holds the screen while the timer "
+            + "runs. A preview is never held.";
+        _activityPanel.Children.Add(dismissalLabel);
+        foreach (var level in Enum.GetValues<TakeoverDismissal>())
+        {
+            _dismissalPicker.Items.Add(Takeovers.Title(level));
+        }
+        _dismissalPicker.SelectedIndex = 0;
+        _dismissalCaption.Foreground = Theme.Brush(Theme.Current.SecondaryForeground);
+        _dismissalPicker.SelectionChanged += (_, _) => SyncDismissalCaption();
+        SyncDismissalCaption();
+        _activityPanel.Children.Add(_dismissalPicker);
+        _activityPanel.Children.Add(_dismissalCaption);
         _activityMinutes.TextChanged += (_, _) => SyncCountdownOptions();
         _activityPanel.Children.Add(FieldLabel("Warn before it takes over (minutes, blank = none)"));
         _activityPanel.Children.Add(_warningMinutes);
@@ -1128,6 +1151,7 @@ internal sealed class ReminderEditorWindow : Window
             ? (seconds / 60).ToString()
             : "";
         _autoFinish.IsChecked = existing.AutoFinish == true;
+        _dismissalPicker.SelectedIndex = (int)(existing.Dismissal ?? TakeoverDismissal.Anytime);
         SyncCountdownOptions();
 
         // Rows first, then the type: selecting Exercise seeds a blank row
@@ -1305,6 +1329,10 @@ internal sealed class ReminderEditorWindow : Window
             AutoFinish = activitySeconds is not null && _autoFinish.IsChecked == true
                 ? true
                 : null,
+            // Likewise the lock: only with a countdown, never as "any time".
+            Dismissal = activitySeconds is not null && _dismissalPicker.SelectedIndex > 0
+                ? (TakeoverDismissal)_dismissalPicker.SelectedIndex
+                : null,
             WarningMinutes = warningMinutes,
             // Only a quiet warning is written; the default (a chime) is left
             // off the reminder, as is any choice for a warning that is off.
@@ -1330,6 +1358,25 @@ internal sealed class ReminderEditorWindow : Window
     {
         var hasCountdown = int.TryParse(_activityMinutes.Text, out var minutes) && minutes > 0;
         _autoFinish.IsEnabled = hasCountdown;
+        _dismissalPicker.IsEnabled = hasCountdown;
+    }
+
+    /// <summary>
+    /// What each level means, said under the picker; the emergency exit is
+    /// a held key here, as on the Mac.
+    /// </summary>
+    private void SyncDismissalCaption()
+    {
+        _dismissalCaption.Text = (TakeoverDismissal)Math.Max(0, _dismissalPicker.SelectedIndex) switch
+        {
+            TakeoverDismissal.Anytime => "Done and Snooze work at any time.",
+            TakeoverDismissal.SnoozeOnly =>
+                "Done waits for the timer. Snooze still works, and the reminder comes back.",
+            TakeoverDismissal.Locked =>
+                "Done and Snooze both wait for the timer. In an emergency, hold Esc for "
+                + "five seconds to leave; that is recorded as dismissed.",
+            _ => "",
+        };
     }
 
     /// <summary>

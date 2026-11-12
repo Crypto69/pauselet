@@ -59,6 +59,10 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
     /// One clock and one chime for the takeover's activity timer, shared by
     /// every display's panel.
     private var criticalCountdown: ActivityCountdown?
+    /// The held-Escape exit of a locked takeover, and the key monitor that
+    /// feeds it. Both exist only while a locked takeover is up.
+    private var escapeHold: EscapeHold?
+    private var escapeMonitor: Any?
     /// What the panels currently show, so a display change can re-cover the
     /// new set of screens around the same coach and countdown.
     private var criticalDisplay:
@@ -258,6 +262,29 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         criticalCountdown = countdown
         criticalDisplay = (reminder, settings, isPreview)
 
+        let hold = EscapeHold()
+        escapeHold = hold
+        if !isPreview, Scheduler.dismissal(for: reminder) == .locked {
+            // The one way out of a locked takeover before its timer ends:
+            // Escape held for the full hold, recorded as dismissed. The
+            // monitor swallows Escape so it cannot beep or reach anything
+            // else; every other key passes through.
+            hold.onComplete = { [weak self] in
+                self?.dismissCritical(reminder, isPreview: isPreview)
+            }
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
+                [weak self, weak hold] event in
+                guard let self, let hold, event.keyCode == Self.escapeKeyCode else { return event }
+                // Once the timer ends the buttons work; Escape is just a key.
+                guard let countdown = self.criticalCountdown, countdown.remaining > 0 else {
+                    hold.ended()
+                    return nil
+                }
+                if event.type == .keyDown { hold.began() } else { hold.ended() }
+                return nil
+            }
+        }
+
         if Scheduler.finishesAutomatically(reminder) {
             // The activity's end is the point: hand the screen back as if
             // Done had been pressed — unless the coach is mid-hold, in which
@@ -311,6 +338,8 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
                 reminder: reminder,
                 coach: coach,
                 countdown: countdown,
+                escapeHold: escapeHold,
+                isPreview: isPreview,
                 onComplete: { [weak self] in
                     self?.completeCritical(reminder, isPreview: isPreview)
                 },
@@ -340,6 +369,17 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         music.stopReminderMusic()
         advanceCritical(afterAcknowledging: reminder.id)
     }
+
+    /// The emergency exit from a locked takeover: recorded as dismissed, so
+    /// History shows the lock was overridden rather than the activity done.
+    private func dismissCritical(_ reminder: Reminder, isPreview: Bool) {
+        if !isPreview { engine?.dismiss(id: reminder.id) }
+        music.stopReminderMusic()
+        advanceCritical(afterAcknowledging: reminder.id)
+    }
+
+    /// `NSEvent.keyCode` for Escape, which has no character to match on.
+    private static let escapeKeyCode: UInt16 = 53
 
     /// The display set changed while a takeover is up: cover the current
     /// screens again around the same coach and countdown. Focus is left
@@ -403,6 +443,12 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         criticalCountdown?.stop()
         criticalCountdown = nil
         criticalDisplay = nil
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+            self.escapeMonitor = nil
+        }
+        escapeHold?.ended()
+        escapeHold = nil
         for panel in criticalPanels {
             panel.orderOut(nil)
         }

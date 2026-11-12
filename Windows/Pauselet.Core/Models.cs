@@ -214,6 +214,26 @@ public abstract record Schedule
 }
 
 /// <summary>A single user-defined recurring reminder.</summary>
+/// <summary>
+/// How firmly a Critical takeover holds the screen while its countdown
+/// runs. Only meaningful with a countdown: without one there is no moment
+/// at which the takeover would unlock, so <see cref="Takeovers.Dismissal"/>
+/// answers <see cref="Anytime"/> whatever the field says. Mirrors the Swift
+/// <c>TakeoverDismissal</c>; the stored strings are its raw values.
+/// </summary>
+public enum TakeoverDismissal
+{
+    /// <summary>Done and Snooze whenever: the default, never stored.</summary>
+    Anytime,
+    /// <summary>Done waits for the timer; Snooze stays available.</summary>
+    SnoozeOnly,
+    /// <summary>
+    /// Neither until the timer ends. Holding Escape for five seconds leaves
+    /// anyway, recorded as dismissed.
+    /// </summary>
+    Locked,
+}
+
 public sealed record Reminder
 {
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -242,6 +262,15 @@ public sealed record Reminder
     /// so a reminder left at the default encodes exactly as before.
     /// </summary>
     public bool? AutoFinish { get; init; }
+    /// <summary>
+    /// How firmly the takeover holds the screen while that countdown runs.
+    /// <c>null</c> means <see cref="TakeoverDismissal.Anytime"/>, which is
+    /// never stored. Only meaningful with a countdown — the editor drops it
+    /// otherwise, and <see cref="Takeovers.Dismissal"/> ignores it — so a
+    /// hand-edited file can never lock a screen with no moment to unlock
+    /// at. Read leniently: a level a newer build wrote is treated as unset.
+    /// </summary>
+    public TakeoverDismissal? Dismissal { get; init; }
     /// <summary>Optional sound played when the reminder fires. <c>null</c> uses the tier default.</summary>
     public string? SoundName { get; init; }
     /// <summary>
@@ -348,6 +377,7 @@ public sealed record Reminder
         && SymbolName == other.SymbolName
         && ActivityDurationSeconds == other.ActivityDurationSeconds
         && AutoFinish == other.AutoFinish
+        && Dismissal == other.Dismissal
         && SoundName == other.SoundName
         && IsSilent == other.IsSilent
         && DisplaySeconds == other.DisplaySeconds

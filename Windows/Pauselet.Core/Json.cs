@@ -153,6 +153,10 @@ public static class AppDataJson
         {
             obj.Members["autoFinish"] = new JVal.Bool(autoFinish);
         }
+        if (reminder.Dismissal is { } dismissal)
+        {
+            obj.Members["dismissal"] = new JVal.Str(Takeovers.RawValue(dismissal));
+        }
         if (reminder.IsSilent is { } isSilent)
         {
             obj.Members["isSilent"] = new JVal.Bool(isSilent);
@@ -499,6 +503,7 @@ public static class AppDataJson
             ?? throw new FormatException("symbolName is not a string"),
         ActivityDurationSeconds = OptionalInt(element, "activityDurationSeconds"),
         AutoFinish = OptionalBool(element, "autoFinish"),
+        Dismissal = Takeovers.Parse(OptionalString(element, "dismissal")),
         SoundName = OptionalString(element, "soundName"),
         IsSilent = OptionalBool(element, "isSilent"),
         DisplaySeconds = OptionalInt(element, "displaySeconds"),

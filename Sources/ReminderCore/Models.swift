@@ -148,6 +148,32 @@ public enum Schedule: Codable, Equatable, Sendable {
     }
 }
 
+/// How firmly a Critical takeover holds the screen while its countdown
+/// runs. Only meaningful with a countdown: without one there is no moment
+/// at which the takeover would unlock, so `Scheduler.dismissal(for:)`
+/// answers `.anytime` whatever the field says.
+public enum TakeoverDismissal: String, Codable, Sendable, CaseIterable {
+    /// Done and Snooze whenever: how every takeover behaved before this
+    /// existed. The default, and never stored.
+    case anytime
+    /// Done waits for the timer. Snooze stays available, so a phone call
+    /// has an exit and the reminder comes back.
+    case snoozeOnly
+    /// Neither until the timer ends. On a desktop, holding Escape for five
+    /// seconds leaves anyway, recorded as dismissed; a locked screen with no
+    /// exit would only teach people to force-quit the app.
+    case locked
+
+    /// The editors' label, the same on every platform.
+    public var title: String {
+        switch self {
+        case .anytime: return "Any time"
+        case .snoozeOnly: return "Only snoozed until the timer ends"
+        case .locked: return "Not until the timer ends"
+        }
+    }
+}
+
 /// A single user-defined recurring reminder.
 public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
@@ -169,6 +195,13 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// the editor drops it otherwise — and never stored as `false`, so a
     /// reminder left at the default encodes exactly as before.
     public var autoFinish: Bool?
+    /// How firmly the takeover holds the screen while that countdown runs.
+    /// `nil` means `.anytime`, which is never stored. Only meaningful with a
+    /// countdown — the editor drops it otherwise, and `Scheduler.dismissal`
+    /// ignores it — so a hand-edited file can never lock a screen with no
+    /// moment to unlock at. Read leniently: a level a newer build wrote is
+    /// treated as unset rather than failing the whole file.
+    public var dismissal: TakeoverDismissal?
     /// Optional sound played when the reminder fires. `nil` uses the tier default.
     public var soundName: String?
     /// Whether the reminder makes no sound at all when it fires, whatever
@@ -238,6 +271,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         symbolName: String = "bell",
         activityDurationSeconds: Int? = nil,
         autoFinish: Bool? = nil,
+        dismissal: TakeoverDismissal? = nil,
         soundName: String? = nil,
         isSilent: Bool? = nil,
         displaySeconds: Int? = nil,
@@ -261,6 +295,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.symbolName = symbolName
         self.activityDurationSeconds = activityDurationSeconds
         self.autoFinish = autoFinish
+        self.dismissal = dismissal
         self.soundName = soundName
         self.isSilent = isSilent
         self.displaySeconds = displaySeconds
@@ -313,6 +348,11 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
             Int.self, forKey: .activityDurationSeconds
         )
         autoFinish = try container.decodeIfPresent(Bool.self, forKey: .autoFinish)
+        // The raw string, mapped by hand: an unknown level (from a newer
+        // build) must read as unset, not throw and cost the user every
+        // reminder in the file.
+        dismissal = try container.decodeIfPresent(String.self, forKey: .dismissal)
+            .flatMap(TakeoverDismissal.init(rawValue:))
         soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
         isSilent = try container.decodeIfPresent(Bool.self, forKey: .isSilent)
         displaySeconds = try container.decodeIfPresent(Int.self, forKey: .displaySeconds)

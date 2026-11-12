@@ -19,6 +19,20 @@ final class NotificationScheduler: NSObject {
         /// An advance warning: one "Got it" button, which only clears it.
         static let warningCategory = "pauselet.warning"
         static let gotIt = "pauselet.gotit"
+        /// A handed-off takeover whose Done waits for its timer: Snooze only.
+        static let snoozeOnlyCategory = "pauselet.reminder.snoozeonly"
+        /// A handed-off takeover locked until its timer ends: no buttons.
+        static let lockedCategory = "pauselet.reminder.locked"
+    }
+
+    /// The category a handed-off takeover's notification carries, so the
+    /// Lock Screen offers only what the takeover itself does.
+    nonisolated static func category(for dismissal: TakeoverDismissal) -> String {
+        switch dismissal {
+        case .anytime: return ActionID.category
+        case .snoozeOnly: return ActionID.snoozeOnlyCategory
+        case .locked: return ActionID.lockedCategory
+        }
     }
 
     enum ResponseAction {
@@ -71,7 +85,23 @@ final class NotificationScheduler: NSObject {
             intentIdentifiers: [],
             options: []
         )
-        center.setNotificationCategories([category, warningCategory])
+        // A takeover held by its timer hands the Lock Screen only the exits
+        // it offers itself; tapping the body still opens the takeover.
+        let snoozeOnlyCategory = UNNotificationCategory(
+            identifier: ActionID.snoozeOnlyCategory,
+            actions: [snooze],
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+        let lockedCategory = UNNotificationCategory(
+            identifier: ActionID.lockedCategory,
+            actions: [],
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+        center.setNotificationCategories(
+            [category, warningCategory, snoozeOnlyCategory, lockedCategory]
+        )
     }
 
     @discardableResult
@@ -236,9 +266,14 @@ final class NotificationScheduler: NSObject {
     /// - Returns: The request identifier, so the caller can take the
     ///   notification down again.
     @discardableResult
-    func postImmediate(_ reminder: Reminder, settings: ReminderCore.Settings) -> String {
+    func postImmediate(
+        _ reminder: Reminder,
+        settings: ReminderCore.Settings,
+        dismissal: TakeoverDismissal = .anytime
+    ) -> String {
         let item = liveItem(for: reminder, settings: settings)
         let content = makeContent(for: item)
+        content.categoryIdentifier = Self.category(for: dismissal)
         let identifier = "\(Self.livePrefix)\(reminder.id.uuidString)-\(Date().timeIntervalSince1970)"
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         center.add(request)

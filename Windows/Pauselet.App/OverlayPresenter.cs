@@ -256,6 +256,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 isPrimary: screen.Primary,
                 coach: _criticalCoach,
                 playsChime: settings.PlaysSound(reminder),
+                isPreview: isPreview,
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);
@@ -264,6 +265,13 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 onSnooze: () =>
                 {
                     if (!isPreview) Engine?.Snooze(reminder.Id);
+                    AdvanceCritical(reminder.Id);
+                },
+                // The emergency exit from a locked takeover: recorded as
+                // dismissed, so History shows the lock was overridden.
+                onDismiss: () =>
+                {
+                    if (!isPreview) Engine?.Dismiss(reminder.Id);
                     AdvanceCritical(reminder.Id);
                 }
             );
@@ -302,6 +310,7 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 isPrimary: screen.Primary,
                 coach: _criticalCoach,
                 playsChime: settings.PlaysSound(reminder),
+                isPreview: isPreview,
                 onComplete: () =>
                 {
                     if (!isPreview) Engine?.Complete(reminder.Id);
@@ -310,6 +319,13 @@ internal sealed class OverlayPresenter : IReminderPresenting
                 onSnooze: () =>
                 {
                     if (!isPreview) Engine?.Snooze(reminder.Id);
+                    AdvanceCritical(reminder.Id);
+                },
+                // The emergency exit from a locked takeover: recorded as
+                // dismissed, so History shows the lock was overridden.
+                onDismiss: () =>
+                {
+                    if (!isPreview) Engine?.Dismiss(reminder.Id);
                     AdvanceCritical(reminder.Id);
                 }
             );

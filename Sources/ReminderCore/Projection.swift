@@ -178,6 +178,36 @@ extension Scheduler {
     /// the chime, short enough not to feel stuck.
     public static let autoFinishDelay: TimeInterval = 1.5
 
+    /// How firmly `reminder`'s takeover holds the screen: the level chosen,
+    /// if there is a countdown for it to run against; `.anytime` otherwise.
+    /// The overlays ask this, never the field, so a value without a
+    /// countdown can never lock a screen with no moment to unlock at.
+    public static func dismissal(for reminder: Reminder) -> TakeoverDismissal {
+        guard (reminder.activityDurationSeconds ?? 0) > 0 else { return .anytime }
+        return reminder.dismissal ?? .anytime
+    }
+
+    /// Whether Done is available with `remaining` seconds on the clock.
+    public static func canFinish(_ dismissal: TakeoverDismissal, remaining: Int) -> Bool {
+        switch dismissal {
+        case .anytime: return true
+        case .snoozeOnly, .locked: return remaining <= 0
+        }
+    }
+
+    /// Whether Snooze is available with `remaining` seconds on the clock.
+    public static func canSnooze(_ dismissal: TakeoverDismissal, remaining: Int) -> Bool {
+        switch dismissal {
+        case .anytime, .snoozeOnly: return true
+        case .locked: return remaining <= 0
+        }
+    }
+
+    /// How long Escape must be held to leave a locked takeover early: long
+    /// enough that it cannot happen by reflex, short enough to be usable
+    /// with a phone ringing.
+    public static let emergencyExitHoldSeconds: TimeInterval = 5
+
     /// The warning card's title, the same on every platform.
     public static func warningTitle(for reminder: Reminder) -> String {
         "Coming up: \(reminder.title)"

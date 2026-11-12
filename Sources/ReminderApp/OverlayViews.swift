@@ -24,6 +24,12 @@ struct CriticalOverlayView: View {
     /// The activity timer, shared like the coach so every display shows the
     /// same seconds and the finishing chime plays once.
     @ObservedObject var countdown: ActivityCountdown
+    /// The held-Escape exit of a locked takeover, driven by the presenter's
+    /// key monitor; the view only draws its progress.
+    @ObservedObject var escapeHold: EscapeHold
+    /// A preview never locks — the buttons work, and the hint says what the
+    /// real takeover would do.
+    let isPreview: Bool
     @State private var appeared = false
 
     /// - Parameter countdown: `nil` (snapshots) gets a silent countdown of
@@ -32,6 +38,8 @@ struct CriticalOverlayView: View {
         reminder: Reminder,
         coach: ExerciseCoach,
         countdown: ActivityCountdown? = nil,
+        escapeHold: EscapeHold? = nil,
+        isPreview: Bool = false,
         onComplete: @escaping () -> Void,
         onSnooze: @escaping () -> Void
     ) {
@@ -40,8 +48,32 @@ struct CriticalOverlayView: View {
         self.countdown = countdown ?? ActivityCountdown(
             seconds: reminder.activityDurationSeconds ?? 0, playsChime: false
         )
+        self.escapeHold = escapeHold ?? EscapeHold()
+        self.isPreview = isPreview
         self.onComplete = onComplete
         self.onSnooze = onSnooze
+    }
+
+    /// How firmly this takeover holds the screen right now. `Scheduler`
+    /// decides from the reminder; a preview is never held.
+    private var lockLevel: TakeoverDismissal {
+        isPreview ? .anytime : Scheduler.dismissal(for: reminder)
+    }
+
+    private var canFinish: Bool { Scheduler.canFinish(lockLevel, remaining: countdown.remaining) }
+    private var canSnooze: Bool { Scheduler.canSnooze(lockLevel, remaining: countdown.remaining) }
+
+    /// A button's face, with a lock while the timer holds it.
+    private func buttonLabel(_ title: String, locked: Bool) -> some View {
+        HStack(spacing: 6) {
+            if locked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            Text(title)
+        }
+        .frame(minWidth: 108)
+        .padding(.vertical, 11)
     }
 
     /// A soft red glow feathering in from every edge of the screen: the
@@ -143,27 +175,46 @@ struct CriticalOverlayView: View {
                         .keyboardShortcut("a", modifiers: [])
                     }
 
-                    Button(action: onSnooze) {
-                        Text("Snooze")
-                            .frame(minWidth: 108)
-                            .padding(.vertical, 11)
+                    // Disabled buttons ignore their shortcuts; the guard in
+                    // each action is belt and braces, so a held screen can
+                    // never be left by a key however the shortcut is routed.
+                    Button(action: { if canSnooze { onSnooze() } }) {
+                        buttonLabel("Snooze", locked: !canSnooze)
                     }
                     .buttonStyle(OverlayButtonStyle(kind: .secondary))
                     .keyboardShortcut("s", modifiers: [])
+                    .disabled(!canSnooze)
 
-                    Button(action: onComplete) {
-                        Text(countdown.hasStarted && countdown.remaining > 0 ? "Finish Early" : "Done")
-                            .frame(minWidth: 108)
-                            .padding(.vertical, 11)
+                    Button(action: { if canFinish { onComplete() } }) {
+                        buttonLabel(
+                            countdown.hasStarted && countdown.remaining > 0 ? "Finish Early" : "Done",
+                            locked: !canFinish
+                        )
                     }
                     .buttonStyle(OverlayButtonStyle(kind: .primary))
                     .keyboardShortcut(.defaultAction)
+                    .disabled(!canFinish)
                 }
                 .padding(.top, 4)
 
                 Text(keyboardHint)
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.38))
+
+                if escapeHold.progress > 0 {
+                    // Escape is down on a locked takeover: show the hold
+                    // filling, so letting go early is a choice, not a mystery.
+                    VStack(spacing: 6) {
+                        Text("Keep holding Esc to leave")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.6))
+                        ProgressView(value: escapeHold.progress)
+                            .progressViewStyle(.linear)
+                            .tint(.white)
+                            .frame(width: 180)
+                    }
+                    .padding(.top, 2)
+                }
             }
             .padding(60)
             .opacity(appeared ? 1 : 0)
@@ -225,14 +276,38 @@ struct CriticalOverlayView: View {
     }
 
     private var keyboardHint: String {
-        let keys = reminder.isExercise
-            ? "Return when you're done · S to snooze · A to start all · 1–9 to start a row · "
-                + "Space to start or pause the coach · N next · X stop"
-            : "Press Return when you're done · S to snooze"
+        var parts: [String] = []
+        switch (lockLevel, canFinish) {
+        case (.locked, false):
+            parts.append("Unlocks when the timer ends · hold Esc for 5 s to leave")
+        case (.snoozeOnly, false):
+            parts.append("Done unlocks when the timer ends · S to snooze")
+        default:
+            parts.append(
+                reminder.isExercise
+                    ? "Return when you're done · S to snooze"
+                    : "Press Return when you're done · S to snooze"
+            )
+        }
+        if reminder.isExercise {
+            parts.append(
+                "A to start all · 1–9 to start a row · "
+                    + "Space to start or pause the coach · N next · X stop"
+            )
+        }
         // Said up front, so the screen going away at 0:00 is expected.
-        return Scheduler.finishesAutomatically(reminder)
-            ? keys + " · finishes by itself at 0:00"
-            : keys
+        if Scheduler.finishesAutomatically(reminder) {
+            parts.append("finishes by itself at 0:00")
+        }
+        // A preview's buttons work; say what the real takeover would do.
+        let real = Scheduler.dismissal(for: reminder)
+        if isPreview, real != .anytime {
+            parts.append(
+                "preview: would be \(real == .locked ? "locked" : "Done-locked") "
+                    + "for \(timeString(countdown.total))"
+            )
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func exerciseCaption(_ exercises: [Exercise], scrolls: Bool) -> some View {
@@ -403,6 +478,8 @@ struct CriticalOverlayView: View {
 struct OverlayButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary }
     let kind: Kind
+    /// A held button is dimmed, not hidden: it says what will come back.
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -421,7 +498,7 @@ struct OverlayButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .stroke(Color.white.opacity(kind == .primary ? 0 : 0.18), lineWidth: 1)
             )
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .opacity(configuration.isPressed ? 0.75 : (isEnabled ? 1 : 0.45))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }

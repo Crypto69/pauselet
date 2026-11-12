@@ -41,6 +41,7 @@ struct ReminderEditorView: View {
     @State private var warningSoundName: String?
     @State private var activityMinutes: Int
     @State private var autoFinish: Bool
+    @State private var dismissal: TakeoverDismissal
     @State private var soundName: String?
     @State private var isSilent: Bool
     @State private var usesCustomDisplaySeconds: Bool
@@ -54,6 +55,22 @@ struct ReminderEditorView: View {
     /// The sound picker's tag for "None": not a sound name, so it can never
     /// collide with one.
     private static let silentTag = "none"
+
+    /// What each level means, said under the picker — with the one thing
+    /// iOS cannot promise: the Home gesture always works, so the takeover
+    /// follows the user to the Lock Screen instead of holding the phone.
+    static func dismissalCaption(for level: TakeoverDismissal) -> String {
+        switch level {
+        case .anytime:
+            return "Done and Snooze work at any time."
+        case .snoozeOnly:
+            return "Done waits for the timer. Snooze still works, and the reminder comes back."
+        case .locked:
+            return "Done and Snooze both wait for the timer. Leaving the app is always "
+                + "possible; Pauselet keeps the reminder on the Lock Screen until the "
+                + "timer ends."
+        }
+    }
 
     /// What None means on this tier, said where it is chosen. The Lock
     /// Screen alarm is AlarmKit's, which cannot be silent; Pauselet gives it
@@ -114,6 +131,7 @@ struct ReminderEditorView: View {
         _warningSoundName = State(initialValue: reminder?.warningSoundName)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
         _autoFinish = State(initialValue: reminder?.autoFinish == true)
+        _dismissal = State(initialValue: reminder?.dismissal ?? .anytime)
 
         // Seed every schedule control with a sensible default, then override
         // the ones the existing reminder's schedule applies to, so switching
@@ -378,6 +396,15 @@ struct ReminderEditorView: View {
                                 Toggle("", isOn: $autoFinish).labelsHidden()
                             }
                             .accessibilityIdentifier("editorAutoFinish")
+                            Picker("Can be dismissed", selection: $dismissal) {
+                                ForEach(TakeoverDismissal.allCases, id: \.self) { level in
+                                    Text(level.title).tag(level)
+                                }
+                            }
+                            .accessibilityIdentifier("editorDismissal")
+                            Text(Self.dismissalCaption(for: dismissal))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
@@ -653,6 +680,10 @@ struct ReminderEditorView: View {
         // Only ever written with a countdown, and only as true: the default
         // (wait for Done) is left off the reminder entirely.
         reminder.autoFinish = reminder.activityDurationSeconds != nil && autoFinish ? true : nil
+        // Likewise the lock: only with a countdown, never as "any time".
+        reminder.dismissal = reminder.activityDurationSeconds != nil && dismissal != .anytime
+            ? dismissal
+            : nil
         reminder.warningMinutes = effectivePriority == .critical && hasWarning
             ? min(
                 max(warningMinutes, Scheduler.warningMinutesRange.lowerBound),

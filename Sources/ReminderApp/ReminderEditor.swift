@@ -44,6 +44,7 @@ struct ReminderEditor: View {
     @State private var warningSoundName: String?
     @State private var activityMinutes: Int
     @State private var autoFinish: Bool
+    @State private var dismissal: TakeoverDismissal
     @State private var soundName: String?
     @State private var isSilent: Bool
     @State private var usesCustomDisplaySeconds: Bool
@@ -111,6 +112,7 @@ struct ReminderEditor: View {
         _hasActivityDuration = State(initialValue: duration != nil)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
         _autoFinish = State(initialValue: reminder?.autoFinish == true)
+        _dismissal = State(initialValue: reminder?.dismissal ?? .anytime)
 
         // Seed every schedule control with a sensible default, then override
         // the ones the existing reminder's schedule applies to, so switching
@@ -407,6 +409,19 @@ struct ReminderEditor: View {
                                             + "pressed Done — unless an exercise is "
                                             + "being coached, when it waits for you."
                                     )
+                                Picker("Can be dismissed", selection: $dismissal) {
+                                    ForEach(TakeoverDismissal.allCases, id: \.self) { level in
+                                        Text(level.title).tag(level)
+                                    }
+                                }
+                                .help(
+                                    "How firmly the takeover holds the screen while "
+                                        + "the timer runs. A preview is never held."
+                                )
+                                Text(Self.dismissalCaption(for: dismissal))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
 
@@ -493,6 +508,20 @@ struct ReminderEditor: View {
         }
     }
 
+    /// What each level means, said under the picker; the Mac's emergency
+    /// exit is a held key, which the iOS editor words differently.
+    static func dismissalCaption(for level: TakeoverDismissal) -> String {
+        switch level {
+        case .anytime:
+            return "Done and Snooze work at any time."
+        case .snoozeOnly:
+            return "Done waits for the timer. Snooze still works, and the reminder comes back."
+        case .locked:
+            return "Done and Snooze both wait for the timer. In an emergency, hold Esc "
+                + "for five seconds to leave; that is recorded as dismissed."
+        }
+    }
+
     /// The music choice as it should be stored.
     ///
     /// Choosing "its own playlist" and then never pasting a link leaves an
@@ -553,6 +582,10 @@ struct ReminderEditor: View {
         // Only ever written with a countdown, and only as true: the default
         // (wait for Done) is left off the reminder entirely.
         reminder.autoFinish = reminder.activityDurationSeconds != nil && autoFinish ? true : nil
+        // Likewise the lock: only with a countdown, never as "any time".
+        reminder.dismissal = reminder.activityDurationSeconds != nil && dismissal != .anytime
+            ? dismissal
+            : nil
         reminder.warningMinutes = effectivePriority == .critical && hasWarning
             ? min(max(warningMinutes, Self.warningRange.lowerBound), Self.warningRange.upperBound)
             : nil

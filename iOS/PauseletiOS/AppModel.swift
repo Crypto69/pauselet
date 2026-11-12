@@ -348,7 +348,13 @@ final class AppModel: NSObject, ObservableObject, ReminderPresenting {
     private func handOffUnacknowledgedTakeover() {
         guard let takeover, !takeover.isPreview, handedOffTakeoverID != takeover.id else { return }
         handedOffTakeoverID = takeover.id
-        handedOffRequestID = notifications.postImmediate(takeover.reminder, settings: engine.settings)
+        // The copy offers only what the takeover does: a held takeover's
+        // notification has no Done button to hand the user on the way out.
+        handedOffRequestID = notifications.postImmediate(
+            takeover.reminder,
+            settings: engine.settings,
+            dismissal: Scheduler.dismissal(for: takeover.reminder)
+        )
     }
 
     /// Takes the lock-screen copy down once its takeover has been answered

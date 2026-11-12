@@ -79,6 +79,45 @@ struct TakeoverView: View {
 
     private var hasCountdown: Bool { (reminder.activityDurationSeconds ?? 0) > 0 }
 
+    /// How firmly this takeover holds the screen right now. `Scheduler`
+    /// decides from the reminder; a preview is never held.
+    private var lockLevel: TakeoverDismissal {
+        item.isPreview ? .anytime : Scheduler.dismissal(for: reminder)
+    }
+
+    private var canFinish: Bool { Scheduler.canFinish(lockLevel, remaining: remaining) }
+    private var canSnooze: Bool { Scheduler.canSnooze(lockLevel, remaining: remaining) }
+
+    /// What the held buttons are waiting for, or what a preview would hold.
+    /// iOS cannot stop the Home gesture and does not try: leaving keeps the
+    /// reminder on the Lock Screen, and this says so.
+    private var lockHint: String? {
+        switch (lockLevel, canFinish) {
+        case (.locked, false):
+            return "Unlocks when the timer ends. Leaving the app keeps it on the Lock Screen."
+        case (.snoozeOnly, false):
+            return "Done unlocks when the timer ends."
+        default:
+            let real = Scheduler.dismissal(for: reminder)
+            guard item.isPreview, real != .anytime else { return nil }
+            return "Preview: would be \(real == .locked ? "locked" : "Done-locked") "
+                + "for \(timeString(reminder.activityDurationSeconds ?? 0))."
+        }
+    }
+
+    /// A button's face, with a lock while the timer holds it.
+    private func buttonLabel(_ title: String, locked: Bool) -> some View {
+        HStack(spacing: 6) {
+            if locked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            Text(title)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 15)
+    }
+
     private var progress: Double {
         guard let total = reminder.activityDurationSeconds, total > 0 else { return 0 }
         return 1 - (Double(remaining) / Double(total))
@@ -170,27 +209,38 @@ struct TakeoverView: View {
             // before.
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
+                    // The guard in each action is belt and braces beside
+                    // `.disabled`: a held screen can never be left by a tap
+                    // however the button is reached.
                     Button {
+                        guard canFinish else { return }
                         coach.shutDown()
                         onAction(.complete)
                     } label: {
-                        Text(doneTitle)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
+                        buttonLabel(doneTitle, locked: !canFinish)
                     }
                     .buttonStyle(TakeoverButtonStyle(kind: .primary))
+                    .disabled(!canFinish)
                     .accessibilityIdentifier("takeoverDone")
 
                     Button {
+                        guard canSnooze else { return }
                         coach.shutDown()
                         onAction(.snooze)
                     } label: {
-                        Text("Snooze")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
+                        buttonLabel("Snooze", locked: !canSnooze)
                     }
                     .buttonStyle(TakeoverButtonStyle(kind: .secondary))
+                    .disabled(!canSnooze)
                     .accessibilityIdentifier("takeoverSnooze")
+
+                    if let lockHint {
+                        Text(lockHint)
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.5))
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("takeoverLockHint")
+                    }
                 }
                 .padding(.horizontal, 36)
                 .padding(.top, 14)
@@ -449,6 +499,8 @@ struct TakeoverView: View {
 struct TakeoverButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary }
     let kind: Kind
+    /// A held button is dimmed, not hidden: it says what will come back.
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -468,7 +520,7 @@ struct TakeoverButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(Color.white.opacity(kind == .primary ? 0 : 0.18), lineWidth: 1)
             )
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .opacity(configuration.isPressed ? 0.75 : (isEnabled ? 1 : 0.45))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
