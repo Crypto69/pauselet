@@ -165,6 +165,19 @@ extension Scheduler {
         reminder.warningSoundName ?? defaultWarningSound
     }
 
+    /// Whether `reminder`'s takeover closes itself when its countdown ends.
+    /// Asked of the reminder rather than read from the field so a value
+    /// without a countdown — a hand-edited file — can never mean "close at
+    /// once": there is no zero to reach without a timer.
+    public static func finishesAutomatically(_ reminder: Reminder) -> Bool {
+        reminder.autoFinish == true && (reminder.activityDurationSeconds ?? 0) > 0
+    }
+
+    /// How long the finished state stays on screen before an automatic
+    /// finish closes the takeover: long enough to see "complete" and hear
+    /// the chime, short enough not to feel stuck.
+    public static let autoFinishDelay: TimeInterval = 1.5
+
     /// The warning card's title, the same on every platform.
     public static func warningTitle(for reminder: Reminder) -> String {
         "Coming up: \(reminder.title)"

@@ -162,6 +162,13 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
     /// For reminders describing a timed activity (e.g. "tilt back for 5 minutes"),
     /// the overlay shows a countdown of this length. `nil` means no countdown.
     public var activityDurationSeconds: Int?
+    /// Whether the takeover closes itself when that countdown reaches zero,
+    /// as if Done had been pressed: for a timed activity whose end is the
+    /// point ("tilt back for five minutes"), the screen hands itself back.
+    /// `nil` means it waits for Done. Only meaningful with a countdown —
+    /// the editor drops it otherwise — and never stored as `false`, so a
+    /// reminder left at the default encodes exactly as before.
+    public var autoFinish: Bool?
     /// Optional sound played when the reminder fires. `nil` uses the tier default.
     public var soundName: String?
     /// Whether the reminder makes no sound at all when it fires, whatever
@@ -230,6 +237,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         isEnabled: Bool = true,
         symbolName: String = "bell",
         activityDurationSeconds: Int? = nil,
+        autoFinish: Bool? = nil,
         soundName: String? = nil,
         isSilent: Bool? = nil,
         displaySeconds: Int? = nil,
@@ -252,6 +260,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         self.isEnabled = isEnabled
         self.symbolName = symbolName
         self.activityDurationSeconds = activityDurationSeconds
+        self.autoFinish = autoFinish
         self.soundName = soundName
         self.isSilent = isSilent
         self.displaySeconds = displaySeconds
@@ -303,6 +312,7 @@ public struct Reminder: Identifiable, Codable, Equatable, Sendable {
         activityDurationSeconds = try container.decodeIfPresent(
             Int.self, forKey: .activityDurationSeconds
         )
+        autoFinish = try container.decodeIfPresent(Bool.self, forKey: .autoFinish)
         soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
         isSilent = try container.decodeIfPresent(Bool.self, forKey: .isSilent)
         displaySeconds = try container.decodeIfPresent(Int.self, forKey: .displaySeconds)

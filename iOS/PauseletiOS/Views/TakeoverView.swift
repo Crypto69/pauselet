@@ -239,6 +239,19 @@ struct TakeoverView: View {
                     // The activity is finished; let the user hear that before
                     // it closes.
                     if playsChime { Sounds.play(named: Sounds.countdownComplete) }
+                    // The activity's end is the point: hand the screen back
+                    // as if Done had been tapped — unless the coach is
+                    // mid-hold, in which case the user finishes when the set
+                    // does. Dismissing the cover cancels this task, so a
+                    // Done tapped during the pause is not answered twice.
+                    if Scheduler.finishesAutomatically(reminder), coach.session?.isLive != true {
+                        try? await Task.sleep(
+                            nanoseconds: UInt64(Scheduler.autoFinishDelay * 1_000_000_000)
+                        )
+                        guard !Task.isCancelled else { return }
+                        coach.shutDown()
+                        onAction(.complete)
+                    }
                 }
             }
         }

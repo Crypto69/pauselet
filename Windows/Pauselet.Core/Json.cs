@@ -149,6 +149,10 @@ public static class AppDataJson
         {
             obj.Members["restBetweenExercisesSeconds"] = new JVal.Num(restBetweenExercises);
         }
+        if (reminder.AutoFinish is { } autoFinish)
+        {
+            obj.Members["autoFinish"] = new JVal.Bool(autoFinish);
+        }
         if (reminder.IsSilent is { } isSilent)
         {
             obj.Members["isSilent"] = new JVal.Bool(isSilent);
@@ -494,6 +498,7 @@ public static class AppDataJson
         SymbolName = Require(element, "symbolName").GetString()
             ?? throw new FormatException("symbolName is not a string"),
         ActivityDurationSeconds = OptionalInt(element, "activityDurationSeconds"),
+        AutoFinish = OptionalBool(element, "autoFinish"),
         SoundName = OptionalString(element, "soundName"),
         IsSilent = OptionalBool(element, "isSilent"),
         DisplaySeconds = OptionalInt(element, "displaySeconds"),

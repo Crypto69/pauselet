@@ -225,10 +225,14 @@ struct CriticalOverlayView: View {
     }
 
     private var keyboardHint: String {
-        reminder.isExercise
+        let keys = reminder.isExercise
             ? "Return when you're done · S to snooze · A to start all · 1–9 to start a row · "
                 + "Space to start or pause the coach · N next · X stop"
             : "Press Return when you're done · S to snooze"
+        // Said up front, so the screen going away at 0:00 is expected.
+        return Scheduler.finishesAutomatically(reminder)
+            ? keys + " · finishes by itself at 0:00"
+            : keys
     }
 
     private func exerciseCaption(_ exercises: [Exercise], scrolls: Bool) -> some View {

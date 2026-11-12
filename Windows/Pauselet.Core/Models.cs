@@ -233,6 +233,15 @@ public sealed record Reminder
     /// the overlay shows a countdown of this length. <c>null</c> means no countdown.
     /// </summary>
     public int? ActivityDurationSeconds { get; init; }
+    /// <summary>
+    /// Whether the takeover closes itself when that countdown reaches zero,
+    /// as if Done had been pressed: for a timed activity whose end is the
+    /// point ("tilt back for five minutes"), the screen hands itself back.
+    /// <c>null</c> means it waits for Done. Only meaningful with a countdown
+    /// — the editor drops it otherwise — and never stored as <c>false</c>,
+    /// so a reminder left at the default encodes exactly as before.
+    /// </summary>
+    public bool? AutoFinish { get; init; }
     /// <summary>Optional sound played when the reminder fires. <c>null</c> uses the tier default.</summary>
     public string? SoundName { get; init; }
     /// <summary>
@@ -338,6 +347,7 @@ public sealed record Reminder
         && IsEnabled == other.IsEnabled
         && SymbolName == other.SymbolName
         && ActivityDurationSeconds == other.ActivityDurationSeconds
+        && AutoFinish == other.AutoFinish
         && SoundName == other.SoundName
         && IsSilent == other.IsSilent
         && DisplaySeconds == other.DisplaySeconds

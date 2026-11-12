@@ -12,6 +12,10 @@ final class ActivityCountdown: ObservableObject {
     @Published private(set) var hasStarted = false
 
     let total: Int
+    /// Called once, on the main actor, the moment the clock reaches zero —
+    /// after the chime. The presenter uses it to finish the takeover by
+    /// itself when the reminder asks for that.
+    var onFinish: (() -> Void)?
     private let playsChime: Bool
     private var deadline: Date?
     private var timer: Timer?
@@ -58,6 +62,7 @@ final class ActivityCountdown: ObservableObject {
             // The activity is finished; let the user see that before it closes.
             if playsChime { Sounds.play(named: "Glass") }
             stop()
+            onFinish?()
         }
     }
 }

@@ -82,6 +82,16 @@ internal sealed class ReminderEditorWindow : Window
     private const int SoundPickerFirstSoundIndex = 2;
     private readonly TextBox _displaySeconds = new() { Width = 60 };
     private readonly TextBox _activityMinutes = new() { Width = 60 };
+    /// <summary>Whether the takeover closes itself when the countdown ends.</summary>
+    private readonly CheckBox _autoFinish = new()
+    {
+        Content = "Finish automatically when the timer ends",
+        IsEnabled = false,
+        Margin = new Thickness(0, 6, 0, 0),
+        ToolTip = "Closes the takeover by itself when the countdown reaches zero, as if "
+            + "you had pressed Done — unless an exercise is being coached, when it "
+            + "waits for you.",
+    };
     /// <summary>
     /// Minutes before the takeover to show a warning card; blank for none.
     /// Lives in the Critical-only activity panel.
@@ -550,6 +560,9 @@ internal sealed class ReminderEditorWindow : Window
         _activityPanel = new StackPanel();
         _activityPanel.Children.Add(FieldLabel("Activity countdown (minutes, blank = none)"));
         _activityPanel.Children.Add(_activityMinutes);
+        // Only offered with a countdown: without one there is no zero to reach.
+        _activityPanel.Children.Add(_autoFinish);
+        _activityMinutes.TextChanged += (_, _) => SyncCountdownOptions();
         _activityPanel.Children.Add(FieldLabel("Warn before it takes over (minutes, blank = none)"));
         _activityPanel.Children.Add(_warningMinutes);
         _activityPanel.Children.Add(_warningPlaysSound);
@@ -1114,6 +1127,8 @@ internal sealed class ReminderEditorWindow : Window
         _activityMinutes.Text = existing.ActivityDurationSeconds is { } seconds
             ? (seconds / 60).ToString()
             : "";
+        _autoFinish.IsChecked = existing.AutoFinish == true;
+        SyncCountdownOptions();
 
         // Rows first, then the type: selecting Exercise seeds a blank row
         // only when there are none.
@@ -1285,6 +1300,11 @@ internal sealed class ReminderEditorWindow : Window
             IsSilent = isSilent,
             DisplaySeconds = displaySeconds,
             ActivityDurationSeconds = activitySeconds,
+            // Only ever written with a countdown, and only as true: the
+            // default (wait for Done) is left off the reminder entirely.
+            AutoFinish = activitySeconds is not null && _autoFinish.IsChecked == true
+                ? true
+                : null,
             WarningMinutes = warningMinutes,
             // Only a quiet warning is written; the default (a chime) is left
             // off the reminder, as is any choice for a warning that is off.
@@ -1300,6 +1320,16 @@ internal sealed class ReminderEditorWindow : Window
             Exercises = exercises,
             RestBetweenExercisesSeconds = restBetweenExercises,
         };
+    }
+
+    /// <summary>
+    /// The options that only mean something with a countdown follow the
+    /// minutes box: enabled while it holds a number, greyed otherwise.
+    /// </summary>
+    private void SyncCountdownOptions()
+    {
+        var hasCountdown = int.TryParse(_activityMinutes.Text, out var minutes) && minutes > 0;
+        _autoFinish.IsEnabled = hasCountdown;
     }
 
     /// <summary>

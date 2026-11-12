@@ -258,6 +258,27 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
         criticalCountdown = countdown
         criticalDisplay = (reminder, settings, isPreview)
 
+        if Scheduler.finishesAutomatically(reminder) {
+            // The activity's end is the point: hand the screen back as if
+            // Done had been pressed — unless the coach is mid-hold, in which
+            // case the user finishes when the set does. A preview finishes
+            // too, which shows the setting without touching the schedule.
+            countdown.onFinish = { [weak self, weak coach, weak countdown] in
+                guard let self, coach?.session?.isLive != true else { return }
+                Task { @MainActor [weak self, weak countdown] in
+                    try? await Task.sleep(
+                        nanoseconds: UInt64(Scheduler.autoFinishDelay * 1_000_000_000)
+                    )
+                    // Done may have been pressed during the pause, or a
+                    // preview replaced this takeover: only the countdown
+                    // still on screen may finish it.
+                    guard let self, let countdown, self.criticalCountdown === countdown
+                    else { return }
+                    self.completeCritical(reminder, isPreview: isPreview)
+                }
+            }
+        }
+
         showCriticalPanels(
             reminder, settings: settings, coach: coach, countdown: countdown, isPreview: isPreview
         )
@@ -291,19 +312,10 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
                 coach: coach,
                 countdown: countdown,
                 onComplete: { [weak self] in
-                    guard let self else { return }
-                    if !isPreview { self.engine?.complete(id: reminder.id) }
-                    // Stops the music only if a reminder actually started it
-                    // (or is still starting it); the user's own listening is
-                    // never touched.
-                    self.music.stopReminderMusic()
-                    self.advanceCritical(afterAcknowledging: reminder.id)
+                    self?.completeCritical(reminder, isPreview: isPreview)
                 },
                 onSnooze: { [weak self] in
-                    guard let self else { return }
-                    if !isPreview { self.engine?.snooze(id: reminder.id) }
-                    self.music.stopReminderMusic()
-                    self.advanceCritical(afterAcknowledging: reminder.id)
+                    self?.snoozeCritical(reminder, isPreview: isPreview)
                 }
             )
             panel.contentView = NSHostingView(rootView: view)
@@ -311,6 +323,22 @@ final class OverlayPresenter: NSObject, ReminderPresenting {
             panel.orderFrontRegardless()
             criticalPanels.append(panel)
         }
+    }
+
+    /// Done, from the button, Return, or the countdown finishing by itself:
+    /// one path, so the three cannot drift.
+    private func completeCritical(_ reminder: Reminder, isPreview: Bool) {
+        if !isPreview { engine?.complete(id: reminder.id) }
+        // Stops the music only if a reminder actually started it (or is still
+        // starting it); the user's own listening is never touched.
+        music.stopReminderMusic()
+        advanceCritical(afterAcknowledging: reminder.id)
+    }
+
+    private func snoozeCritical(_ reminder: Reminder, isPreview: Bool) {
+        if !isPreview { engine?.snooze(id: reminder.id) }
+        music.stopReminderMusic()
+        advanceCritical(afterAcknowledging: reminder.id)
     }
 
     /// The display set changed while a takeover is up: cover the current

@@ -158,6 +158,7 @@ public static class Warnings
     /// <summary>The warning card's title, the same on every platform.</summary>
     public static string Title(Reminder reminder) => $"Coming up: {reminder.Title}";
 
+
     /// <summary>
     /// The warning card's text, naming the takeover's time rather than a
     /// countdown so it stays true however long it sits on screen.
@@ -215,4 +216,27 @@ public static class NotificationBudget
         }
         return result;
     }
+}
+
+/// <summary>
+/// What a Critical takeover does when its activity countdown ends. Mirrors
+/// the Swift <c>Scheduler.finishesAutomatically</c>.
+/// </summary>
+public static class Takeovers
+{
+    /// <summary>
+    /// Whether <paramref name="reminder"/>'s takeover closes itself when its
+    /// countdown ends. Asked of the reminder rather than read from the field
+    /// so a value without a countdown — a hand-edited file — can never mean
+    /// "close at once": there is no zero to reach without a timer.
+    /// </summary>
+    public static bool FinishesAutomatically(Reminder reminder) =>
+        reminder.AutoFinish == true && (reminder.ActivityDurationSeconds ?? 0) > 0;
+
+    /// <summary>
+    /// How long the finished state stays on screen before an automatic
+    /// finish closes the takeover: long enough to see "complete" and hear
+    /// the chime, short enough not to feel stuck.
+    /// </summary>
+    public static readonly TimeSpan AutoFinishDelay = TimeSpan.FromSeconds(1.5);
 }

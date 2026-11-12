@@ -43,6 +43,7 @@ struct ReminderEditor: View {
     @State private var warningPlaysSound: Bool
     @State private var warningSoundName: String?
     @State private var activityMinutes: Int
+    @State private var autoFinish: Bool
     @State private var soundName: String?
     @State private var isSilent: Bool
     @State private var usesCustomDisplaySeconds: Bool
@@ -109,6 +110,7 @@ struct ReminderEditor: View {
         let duration = reminder?.activityDurationSeconds
         _hasActivityDuration = State(initialValue: duration != nil)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
+        _autoFinish = State(initialValue: reminder?.autoFinish == true)
 
         // Seed every schedule control with a sensible default, then override
         // the ones the existing reminder's schedule applies to, so switching
@@ -398,6 +400,13 @@ struct ReminderEditor: View {
                                     value: $activityMinutes,
                                     in: 1...120
                                 )
+                                Toggle("Finish automatically when the timer ends", isOn: $autoFinish)
+                                    .help(
+                                        "Closes the takeover by itself when the "
+                                            + "countdown reaches zero, as if you had "
+                                            + "pressed Done — unless an exercise is "
+                                            + "being coached, when it waits for you."
+                                    )
                             }
                         }
 
@@ -541,6 +550,9 @@ struct ReminderEditor: View {
         reminder.activityDurationSeconds = effectivePriority == .critical && hasActivityDuration
             ? activityMinutes * 60
             : nil
+        // Only ever written with a countdown, and only as true: the default
+        // (wait for Done) is left off the reminder entirely.
+        reminder.autoFinish = reminder.activityDurationSeconds != nil && autoFinish ? true : nil
         reminder.warningMinutes = effectivePriority == .critical && hasWarning
             ? min(max(warningMinutes, Self.warningRange.lowerBound), Self.warningRange.upperBound)
             : nil

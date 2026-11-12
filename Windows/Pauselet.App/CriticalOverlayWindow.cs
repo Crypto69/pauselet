@@ -57,6 +57,15 @@ internal sealed class CriticalOverlayWindow : Window
 
     private int _remaining;
     private bool _hasStarted;
+    /// <summary>
+    /// When the activity ends. The countdown is derived from the wall clock
+    /// rather than counted per tick, so a PC that sleeps or hibernates
+    /// mid-activity still finishes on time — and "zero" means the activity's
+    /// end, which an automatic finish relies on.
+    /// </summary>
+    private DateTime _deadline;
+    /// <summary>The pause between the ring completing and an automatic finish.</summary>
+    private DispatcherTimer? _autoFinishTimer;
     private System.Windows.Shapes.Path? _ringProgress;
     private TextBlock? _ringLabel;
     private TextBlock? _ringSubLabel;
@@ -195,6 +204,7 @@ internal sealed class CriticalOverlayWindow : Window
         if (HasCountdown)
         {
             _hasStarted = true;
+            _deadline = DateTime.UtcNow.AddSeconds(_remaining);
             _countdownTimer?.Start();
         }
     }
@@ -279,6 +289,8 @@ internal sealed class CriticalOverlayWindow : Window
         _topmostTimer.Stop();
         _countdownTimer?.Stop();
         _countdownTimer = null;
+        _autoFinishTimer?.Stop();
+        _autoFinishTimer = null;
         if (_coach is not null) _coach.Changed -= OnCoachChanged;
         base.OnClosed(e);
     }
@@ -1001,14 +1013,36 @@ internal sealed class CriticalOverlayWindow : Window
     private void AdvanceCountdown()
     {
         if (!HasCountdown || !_hasStarted || _remaining <= 0) return;
-        _remaining -= 1;
-        if (_remaining == 0 && IsPrimaryScreen && _playsChime)
+        var left = (_deadline - DateTime.UtcNow).TotalSeconds;
+        _remaining = Math.Max(0, (int)Math.Ceiling(left));
+        if (_remaining == 0 && IsPrimaryScreen)
         {
             // The activity is finished; let the user see that before it
-            // closes. Every monitor's window counts, one of them chimes.
-            Sounds.Play("Glass");
+            // closes. Every monitor's window counts, one of them chimes —
+            // and one of them, when the reminder asks, finishes the takeover.
+            if (_playsChime) Sounds.Play("Glass");
+            if (Takeovers.FinishesAutomatically(_reminder)) ScheduleAutoFinish();
         }
         UpdateRing();
+    }
+
+    /// <summary>
+    /// The activity's end is the point: hand the screen back as if Done had
+    /// been pressed — unless the coach is mid-hold, in which case the user
+    /// finishes when the set does. <see cref="Acknowledge"/> is idempotent,
+    /// so a Done clicked during the pause simply wins.
+    /// </summary>
+    private void ScheduleAutoFinish()
+    {
+        if (_coach?.Session is { IsLive: true }) return;
+        _autoFinishTimer = new DispatcherTimer { Interval = Takeovers.AutoFinishDelay };
+        _autoFinishTimer.Tick += (_, _) =>
+        {
+            _autoFinishTimer?.Stop();
+            _autoFinishTimer = null;
+            Acknowledge(_onComplete);
+        };
+        _autoFinishTimer.Start();
     }
 
     private void UpdateRing()

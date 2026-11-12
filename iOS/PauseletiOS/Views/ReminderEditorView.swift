@@ -40,6 +40,7 @@ struct ReminderEditorView: View {
     @State private var warningPlaysSound: Bool
     @State private var warningSoundName: String?
     @State private var activityMinutes: Int
+    @State private var autoFinish: Bool
     @State private var soundName: String?
     @State private var isSilent: Bool
     @State private var usesCustomDisplaySeconds: Bool
@@ -112,6 +113,7 @@ struct ReminderEditorView: View {
         _warningPlaysSound = State(initialValue: reminder?.warningIsSilent != true)
         _warningSoundName = State(initialValue: reminder?.warningSoundName)
         _activityMinutes = State(initialValue: max(1, (duration ?? 300) / 60))
+        _autoFinish = State(initialValue: reminder?.autoFinish == true)
 
         // Seed every schedule control with a sensible default, then override
         // the ones the existing reminder's schedule applies to, so switching
@@ -366,6 +368,16 @@ struct ReminderEditorView: View {
                                 value: $activityMinutes,
                                 in: 1...120
                             )
+                            HelpRow(
+                                title: "Finish automatically",
+                                help: "Closes the takeover by itself when the "
+                                    + "countdown reaches zero, as if you had tapped "
+                                    + "Done — unless an exercise is being coached, "
+                                    + "when it waits for you."
+                            ) {
+                                Toggle("", isOn: $autoFinish).labelsHidden()
+                            }
+                            .accessibilityIdentifier("editorAutoFinish")
                         }
                     }
 
@@ -638,6 +650,9 @@ struct ReminderEditorView: View {
         // Cleared for any tier that cannot show it (see the editor section).
         reminder.activityDurationSeconds =
             effectivePriority == .critical && hasActivityDuration ? activityMinutes * 60 : nil
+        // Only ever written with a countdown, and only as true: the default
+        // (wait for Done) is left off the reminder entirely.
+        reminder.autoFinish = reminder.activityDurationSeconds != nil && autoFinish ? true : nil
         reminder.warningMinutes = effectivePriority == .critical && hasWarning
             ? min(
                 max(warningMinutes, Scheduler.warningMinutesRange.lowerBound),
