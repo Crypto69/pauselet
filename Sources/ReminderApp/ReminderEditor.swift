@@ -389,41 +389,12 @@ struct ReminderEditor: View {
                     // option is meaningless on any other tier and is hidden
                     // rather than silently ignored.
                     if effectivePriority == .critical {
-                        Section("Activity Timer") {
-                            Toggle("Run a countdown", isOn: $hasActivityDuration)
-                                .help(
-                                    "Show a timer on the full-screen takeover for "
-                                        + "activities with a set length, such as "
-                                        + "tilting back for five minutes."
-                                )
-                            if hasActivityDuration {
-                                Stepper(
-                                    "For \(activityMinutes) min",
-                                    value: $activityMinutes,
-                                    in: 1...120
-                                )
-                                Toggle("Finish automatically when the timer ends", isOn: $autoFinish)
-                                    .help(
-                                        "Closes the takeover by itself when the "
-                                            + "countdown reaches zero, as if you had "
-                                            + "pressed Done — unless an exercise is "
-                                            + "being coached, when it waits for you."
-                                    )
-                                Picker("Can be dismissed", selection: $dismissal) {
-                                    ForEach(TakeoverDismissal.allCases, id: \.self) { level in
-                                        Text(level.title).tag(level)
-                                    }
-                                }
-                                .help(
-                                    "How firmly the takeover holds the screen while "
-                                        + "the timer runs. A preview is never held."
-                                )
-                                Text(Self.dismissalCaption(for: dismissal))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
+                        ReminderCountdownSection(
+                            hasActivityDuration: $hasActivityDuration,
+                            activityMinutes: $activityMinutes,
+                            autoFinish: $autoFinish,
+                            dismissal: $dismissal
+                        )
 
                         ReminderWarningSection(
                             hasWarning: $hasWarning,
@@ -505,20 +476,6 @@ struct ReminderEditor: View {
         )
         .onChange(of: soundName) { newValue in
             if let newValue { Sounds.play(named: newValue) }
-        }
-    }
-
-    /// What each level means, said under the picker; the Mac's emergency
-    /// exit is a held key, which the iOS editor words differently.
-    static func dismissalCaption(for level: TakeoverDismissal) -> String {
-        switch level {
-        case .anytime:
-            return "Done and Snooze work at any time."
-        case .snoozeOnly:
-            return "Done waits for the timer. Snooze still works, and the reminder comes back."
-        case .locked:
-            return "Done and Snooze both wait for the timer. In an emergency, hold Esc "
-                + "for five seconds to leave; that is recorded as dismissed."
         }
     }
 
@@ -790,6 +747,70 @@ struct ReminderWarningSection: View {
                         .foregroundStyle(.orange)
                 }
             }
+        }
+    }
+}
+
+
+/// The Critical tier's countdown and the two choices that hang off it: an
+/// automatic finish, and how firmly the takeover holds the screen until the
+/// timer ends. Its own view so a snapshot can show it: the editor fixes its
+/// height, and this sits below the fold.
+struct ReminderCountdownSection: View {
+    @Binding var hasActivityDuration: Bool
+    @Binding var activityMinutes: Int
+    @Binding var autoFinish: Bool
+    @Binding var dismissal: TakeoverDismissal
+
+    var body: some View {
+        Section("Activity Timer") {
+            Toggle("Run a countdown", isOn: $hasActivityDuration)
+                .help(
+                    "Show a timer on the full-screen takeover for "
+                        + "activities with a set length, such as "
+                        + "tilting back for five minutes."
+                )
+            if hasActivityDuration {
+                Stepper(
+                    "For \(activityMinutes) min",
+                    value: $activityMinutes,
+                    in: 1...120
+                )
+                Toggle("Finish automatically when the timer ends", isOn: $autoFinish)
+                    .help(
+                        "Closes the takeover by itself when the "
+                            + "countdown reaches zero, as if you had "
+                            + "pressed Done — unless an exercise is "
+                            + "being coached, when it waits for you."
+                    )
+                Picker("Can be dismissed", selection: $dismissal) {
+                    ForEach(TakeoverDismissal.allCases, id: \.self) { level in
+                        Text(level.title).tag(level)
+                    }
+                }
+                .help(
+                    "How firmly the takeover holds the screen while "
+                        + "the timer runs. A preview is never held."
+                )
+                Text(Self.dismissalCaption(for: dismissal))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// What each level means, said under the picker; the Mac's emergency
+    /// exit is a held key, which the iOS editor words differently.
+    static func dismissalCaption(for level: TakeoverDismissal) -> String {
+        switch level {
+        case .anytime:
+            return "Done and Snooze work at any time."
+        case .snoozeOnly:
+            return "Done waits for the timer. Snooze still works, and the reminder comes back."
+        case .locked:
+            return "Done and Snooze both wait for the timer. In an emergency, hold Esc "
+                + "for five seconds to leave; that is recorded as dismissed."
         }
     }
 }

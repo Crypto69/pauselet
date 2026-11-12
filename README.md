@@ -84,13 +84,28 @@ Three kinds of schedule:
 - **An icon** — chosen from a picker, shown in the popover and on the overlay
 - **A countdown** — Critical reminders only: for a timed activity ("tilt back
   for five minutes"), the takeover runs a timer of that length. The option is
-  hidden for other tiers, whose surfaces have nowhere to show it
+  hidden for other tiers, whose surfaces have nowhere to show it. With a
+  countdown, two more choices appear:
+  - **Finish automatically** — the takeover closes itself about a second and
+    a half after the timer reaches zero, as if you had pressed Done. It waits
+    for you instead if an exercise is being coached at that moment
+  - **Can be dismissed** — *Any time* (Done and Snooze whenever, the
+    default); *Only snoozed until the timer ends* (Done waits, Snooze still
+    works and the reminder comes back); or *Not until the timer ends*
+    (neither until the ring completes). A locked takeover on the Mac or
+    Windows can still be left in an emergency by holding Esc for five
+    seconds, which History records as dismissed. On iPhone, leaving the app
+    is always possible; the reminder stays on the Lock Screen, without a
+    Done button, until the timer ends. A preview is never held
 - **A warning** — Critical reminders only: a card that appears any number of
   minutes before the takeover (one minute up to a day) — "Coming up: Tilt Back.
   Takes over your screen at 05:45." — and stays until you tick it. Ticking it
   does not move the takeover. On iPhone it is a time-sensitive notification;
   set Pauselet's banner style to Persistent to keep it on screen
-- **A sound** — the tier default, or a specific one you pick
+- **A sound** — the tier default, a specific one you pick, or **None** for a
+  reminder that stays silent even while sounds are on (its finishing chime
+  too). On iPhone the Lock Screen alarm for a silent Critical reminder plays
+  a silent sound file, which is as quiet as iOS allows an alarm to be
 - **How long a subtle card lingers** — per reminder, overriding the global setting
 - **Music** — a Spotify playlist to start when it fires (see below)
 - **Exercises** — turning it into an exercise reminder (see below)
@@ -265,6 +280,9 @@ Every time a reminder fires, the outcome is recorded — *fired*, *completed*,
 *snoozed*, *dismissed*, or *missed* — and the History tab turns that into a
 per-reminder **adherence** summary, plus a list of recent activity. It answers
 the question the app exists for: are you actually doing them?
+
+The "when" column says roughly how long ago each thing happened and refreshes
+once a minute; hover a row on the Mac for the exact time.
 
 History can be cleared at any time.
 

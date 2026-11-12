@@ -52,6 +52,10 @@ risk.
 | Repeating on a set timetable ("Start at a set time") | ✅ | ✅ | ✅ *editor unseen* |
 | Warning before a Critical takeover — quiet, or with a chosen sound | ✅ | ✅ *notification* | ✅ *editor unseen* |
 | Native time control in the editor and quiet hours | ✅ *`DatePicker`* | ✅ *`DatePicker`* | ➖ *text boxes, no stepper* |
+| Sound "None" — a reminder silent even with sounds on | ✅ | ✅ *in-app; the Lock Screen alarm gets a silent file, unverified on a device* | ✅ *editor unseen* |
+| Countdown finishes the takeover by itself | ✅ | ✅ | ✅ *VM-checked 2026-11-12* |
+| Takeover held until the timer ends (snooze-only / locked, Esc held to leave) | ✅ | ✅ *in-app only, by design; the handed-off notification drops its Done button* | ✅ *VM-checked 2026-11-12* |
+| History "when" column static, refreshed by the minute | ✅ | ✅ | ➖ *already static* |
 | Music / Spotify | ✅ | ➖ *by design* | ➖ *deferred to v2* |
 
 ✅ done ⚠️ partial ❌ missing ➖ deliberately out of scope · *unseen* = built and compiling, never run

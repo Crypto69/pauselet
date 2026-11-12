@@ -463,6 +463,23 @@ enum SnapshotHarness {
             into: directory
         )
 
+        // The Critical tier's countdown controls on their own, like the
+        // warning's: every option set, so the lock's caption shows.
+        snapshot(
+            Form {
+                ReminderCountdownSection(
+                    hasActivityDuration: .constant(true),
+                    activityMinutes: .constant(5),
+                    autoFinish: .constant(true),
+                    dismissal: .constant(.locked)
+                )
+            }
+            .formStyle(.grouped),
+            size: NSSize(width: 470, height: 300),
+            named: "editor-countdown",
+            into: directory
+        )
+
         // The blank editor: what you see when adding a reminder from scratch.
         snapshot(
             ReminderEditor(reminder: nil) { _ in }
