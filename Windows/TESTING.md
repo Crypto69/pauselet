@@ -68,6 +68,12 @@ dotnet test Windows/Pauselet.Core.Tests
 ```powershell
 dotnet run --project Windows/Pauselet.App -- --open-settings
 ```
+If the Store build is installed on this PC, an unpackaged build hands over
+to it at launch (see `PackageInfo.HandOverToStoreBuildIfInstalled`). Pass
+`--standalone` to run the build under test instead:
+```powershell
+dotnet run --project Windows/Pauselet.App -- --standalone --open-settings
+```
 - [ ] App starts, no crash, settings window opens, a tray icon exists in the
       taskbar overflow (click the ^ chevron near the clock).
 - [ ] Pin the icon: Settings → Personalization → Taskbar → Other system tray
@@ -157,6 +163,23 @@ reminders with 1-minute intervals.
       3+ minutes while another critical fires behind it → acknowledging shows
       **nothing** (the stale queue entry is dropped) and History shows it as
       "missed".
+- [ ] **Sound None (1.3.0):** editor → Sound → None, save; fire it. Expected:
+      no sound at the fire and no chime when the timer ends, with "Play
+      sounds" on. Listen beside the picker plays nothing for None.
+- [ ] **Finish automatically (1.3.0):** a 1-minute Critical reminder with the
+      checkbox on. Expected: ring completes, chime, ~1.5 s later the takeover
+      closes by itself; History shows *completed*. With an exercise being
+      coached at 0:00 it stays until you finish.
+- [ ] **Can be dismissed (1.3.0):** *Only snoozed until the timer ends* —
+      Done and Return do nothing (button dimmed, hint says why), S and
+      Snooze work, Alt+F4 snoozes. *Not until the timer ends* — neither
+      button nor key works, Alt+F4 does nothing, holding Esc shows "Keep
+      holding Esc to leave" with a bar that fills over 5 s and then closes
+      the takeover; History shows *dismissed*. Letting go early resets the
+      bar. At 0:00 both buttons come back. Both pickers are greyed until the
+      countdown minutes box holds a number.
+- [ ] **Preview of a held takeover (1.3.0):** Preview on a locked reminder.
+      Expected: buttons work, hint ends "preview: would be locked for 5:00".
 - [ ] **Preview:** editor → Preview on a critical reminder. It shows the same
       takeover; pressing Done on the preview does NOT complete the real
       reminder (its countdown in the flyout is unchanged).
